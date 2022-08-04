@@ -1,0 +1,5110 @@
+// $Header: r:/t2repos/thief2/src/physics/cattype.h,v 1.1 2000/01/26 15:17:37 BFarquha Exp $
+#pragma once
+#ifndef __CATTYPE_H
+#define __CATTYPE_H
+
+
+#define CanAttachType_Rope 0x1
+#define CanAttachType_Vine 0x2
+
+
+#endif
+// $Header: r:/t2repos/thief2/src/physics/collide.cpp,v 1.43 2000/02/19 12:32:13 toml Exp $
+
+// basic collision stuff
+
+#include <collide.h>
+
+#include <collprop.h>
+#include <partprop.h>
+#include <physapi.h>
+#include <sndgen.h>
+
+#include <dmgmodel.h>
+#include <iobjsys.h>
+#include <dmgbase.h>
+#include <appagg.h>
+#include <globalid.h>
+
+#include <phclsn.H>
+#include <phcollev.h>
+
+#include <textarch.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+static BOOL is_terrain(ObjID obj)
+{
+   return GetObjTextureIdx(obj) >= 0; 
+}
+
+IDamageModel* damage_model()
+{
+   static IDamageModel* dam = NULL;
+   if (dam == NULL)
+   {
+      dam = AppGetObj(IDamageModel);
+   }
+   return dam;
+}
+
+IObjectSystem* object_system()
+{
+   static IObjectSystem* objsys = NULL;
+   if (objsys == NULL)
+      objsys = AppGetObj(IObjectSystem);
+   return objsys;
+}
+
+#define SOUND_BITS (COLLISION_NO_SOUND_US|COLLISION_NO_SOUND_THEM)
+
+
+// Apply a collision result to an object 
+static int apply_result(ObjID us, ObjID them, int bits, sChainedEvent* ev)
+{
+   int rv = 0; 
+   if (bits & COLLISION_SLAY)
+   {
+      eDamageResult result = damage_model()->SlayObject(us,them,ev);
+      if (result >= kDamageSlay)
+         rv |= COLLISION_SLAY;
+   }
+
+   if (bits & COLLISION_KILL)
+   {
+      object_system()->Destroy(us); 
+      rv |= COLLISION_KILL;
+   }
+
+   if (!PhysObjHasPhysics(us))
+      rv |= COLLISION_NON_PHYS;
+
+   return rv; 
+
+}
+
+// returns flags of what it killed
+int CollideEventRaw(ObjID us, ObjID them, int bits, float mag, cPhysClsn* clsn)
+{
+   sImpact impact = { mag}; 
+   int rv=0;
+
+   int type1 = 0, type2 = 0;
+
+   if (!ObjGetCollisionType(us, &type1))
+      type1 = COLLISION_NONE;
+   if (!ObjGetCollisionType(them, &type2))
+      type2 = COLLISION_NONE;
+
+   if (type1 & COLLISION_NO_SOUND)
+      rv |= COLLISION_NO_SOUND_US;
+   if (type2 & COLLISION_NO_SOUND)
+      rv |= COLLISION_NO_SOUND_THEM;
+
+   sPhysClsnEvent event(clsn); 
+
+   eDamageResult result;
+   result = damage_model()->HandleImpact(us,them,&impact,&event);
+   if (result > kDamageSlay)
+      rv |= COLLISION_SLAY_US;
+
+   // By convention, the terrain is always second 
+   if (!is_terrain(them))
+   {
+      result = damage_model()->HandleImpact(them,us,&impact,&event);
+      if (result >= kDamageSlay)
+         rv |= COLLISION_SLAY_THEM;
+   }
+
+   rv |= apply_result(us,them,bits >> CF_US_SHF,&event)     << CF_US_SHF; 
+   rv |= apply_result(them,us,bits >> CF_THEM_SHF,&event)   << CF_THEM_SHF; 
+
+   // terrain has no physics model
+   if (is_terrain(them) || (them == OBJ_NULL))
+      rv &= ~COLLISION_NON_PHYS_THEM;
+
+   return rv;
+}
+
+
+// returns flags of what it killed
+int CollideEvent(ObjID obj1, ObjID obj2, int bits, float mag, cPhysClsn* coll)
+{
+#ifdef NETWORK_ENABLED
+   if ((bits & COLLISION_LOCAL_ONLY) == 0)
+      SendCollidePacket(obj1, obj2, bits, data);
+#endif
+
+   if (bits != COLLISION_NONE)
+   {
+      if ((bits & SOUND_BITS) != SOUND_BITS)
+         CollisionSoundObjects(obj1, obj2, bits, mag);
+   }
+
+   int rv = CollideEventRaw(obj1, obj2, bits, mag, coll);
+
+
+   return rv;
+}
+
+
+int CollideTest(ObjID obj1, ObjID obj2)
+{
+   int type1, type2; 
+   if (!ObjGetCollisionType(obj1, &type1))
+      type1 = COLLISION_NONE;
+   if (!ObjGetCollisionType(obj2, &type2))
+      type2 = COLLISION_NONE;
+
+   return (type1 << CF_US_SHF) | (type2 << CF_THEM_SHF);
+}
+
+
+
+
+
+// $Header: r:/t2repos/thief2/src/physics/collide.h,v 1.17 1998/07/16 13:29:32 mahk Exp $
+
+#ifndef __COLLIDE_H
+#define __COLLIDE_H
+#pragma once
+
+#include <objtype.h>
+#include <collprop.h>
+#include <phclsn.h>
+// collision testing return values
+
+#define COLLISION_NONE           0
+
+#define CF_US_SHF 0
+#define CF_THEM_SHF 16
+
+#define COLLISION_BOUNCE_US      (COLLISION_BOUNCE   << CF_US_SHF)
+#define COLLISION_BOUNCE_THEM    (COLLISION_BOUNCE   << CF_THEM_SHF)
+#define COLLISION_DAMAGE_US      (COLLISION_DAMAGE   << CF_US_SHF)
+#define COLLISION_DAMAGE_THEM    (COLLISION_DAMAGE   << CF_THEM_SHF)
+#define COLLISION_SLAY_US        (COLLISION_SLAY     << CF_US_SHF)
+#define COLLISION_SLAY_THEM      (COLLISION_SLAY     << CF_THEM_SHF)
+#define COLLISION_NO_SOUND_US    (COLLISION_NO_SOUND << CF_US_SHF)
+#define COLLISION_NO_SOUND_THEM  (COLLISION_NO_SOUND << CF_THEM_SHF)
+#define COLLISION_KILL_US        (COLLISION_KILL     << CF_US_SHF)
+#define COLLISION_KILL_THEM      (COLLISION_KILL     << CF_THEM_SHF)
+#define COLLISION_NOTHING_US     (COLLISION_NORESULT << CF_US_SHF)
+#define COLLISION_NOTHING_THEM   (COLLISION_NORESULT << CF_THEM_SHF)
+
+#define COLLISION_NON_PHYS       (1 << 12)
+#define COLLISION_NON_PHYS_US    (COLLISION_NON_PHYS << CF_US_SHF)
+#define COLLISION_NON_PHYS_THEM  (COLLISION_NON_PHYS << CF_THEM_SHF)
+
+
+// don't send a network packet
+#define COLLISION_LOCAL_ONLY           (1<<31)
+
+class cPhysClsn; 
+
+// return whether flags (KILL) for which were destroyed
+extern int CollideEvent(ObjID obj1, ObjID obj2, int bits, float mag, cPhysClsn* clsn);
+
+// test for the collision using the collision property, returns bits
+extern int CollideTest(ObjID obj1, ObjID obj2);
+
+
+#endif // __COLLIDE_H
+
+
+
+// $Header: r:/t2repos/thief2/src/physics/collprop.cpp,v 1.13 1998/10/24 19:52:22 CCAROLLO Exp $
+
+//
+// Collision property
+//
+
+#include <collprop.h>
+
+#include <property.h>
+#include <propface.h>
+#include <propbase.h>
+
+#include <sdesc.h>
+#include <sdesbase.h>
+#include <sdestool.h>
+
+// must be last header
+#include <dbmem.h>
+
+static IIntProperty* collisionprop = NULL;
+
+////////////////////////////////////////////////////////////
+// COLLISION PROPERTY CREATION 
+//
+
+#define COLLISIONPROP_IMPL kPropertyImplDense
+
+static sPropertyDesc collisionprop_desc =
+{
+   PROP_COLLISION_NAME,
+   kPropertyInstantiate,
+   NULL, 0, 0,
+   { "Physics: Misc", "Collision Type" }
+};
+
+static char* coll_bits[] = 
+{ 
+   "Bounce", 
+   "Destroy on Impact", 
+   "Slay on Impact", 
+   "No Collision Sound",
+   "No Result",
+   "Full Collision Sound",
+};
+ 
+#define COLLTYPE_NAME "CollType"
+
+static sFieldDesc coll_field[] = 
+{
+   { "", kFieldTypeBits, sizeof(int), 0, kFieldFlagUnsigned, 0, 6, 6, coll_bits },
+}; 
+
+static sStructDesc coll_sdesc = 
+{
+   COLLTYPE_NAME, 
+   sizeof(int),
+   kStructFlagNone,
+   sizeof(coll_field)/sizeof(coll_field[0]),
+   coll_field,
+}; 
+
+static sPropertyTypeDesc coll_tdesc = { COLLTYPE_NAME, sizeof(int)}; 
+   
+
+// Init the property
+void CollisionTypePropInit(void)
+{
+   StructDescRegister(&coll_sdesc);
+   collisionprop = CreateIntegralProperty(&collisionprop_desc, &coll_tdesc, COLLISIONPROP_IMPL);
+   
+}
+
+// get and set functions
+BOOL ObjGetCollisionType(ObjID obj, int *num)
+{
+   Assert_(collisionprop);
+   int temp;
+   BOOL retval = collisionprop->Get(obj, &temp);
+   if (retval)
+      *num = temp;
+   else
+      *num = COLLISION_BOUNCE;
+   return TRUE;
+}
+
+void ObjSetCollisionType(ObjID obj, int num)
+{
+   collisionprop->Set(obj, num);
+}
+
+// $Header: r:/t2repos/thief2/src/physics/collprop.h,v 1.9 2000/01/29 13:32:33 adurant Exp $
+#pragma once
+
+//
+// Collision property header
+//
+
+#ifndef __COLLPROP_H
+#define __COLLPROP_H
+
+#include <objtype.h>
+
+#define PROP_COLLISION_NAME "CollisionType"
+
+// collision property bitfield values
+#define COLLISION_NONE           0
+#define COLLISION_BOUNCE         (1<<0)
+#define COLLISION_KILL           (1<<1)
+#define COLLISION_SLAY           (1<<2)
+#define COLLISION_NO_SOUND       (1<<3)
+#define COLLISION_NORESULT       (1<<4)
+#define COLLISION_FULL_SOUND     (1<<5)
+
+EXTERN void CollisionTypePropInit(void);
+EXTERN BOOL ObjGetCollisionType(ObjID obj, int *num);
+EXTERN void ObjSetCollisionType(ObjID obj, int num);
+
+#endif   // __COLLPROP_H
+#include "gunproj.h"
+
+extern "C"
+{
+#include <matrix.h>
+}
+
+#include <mprintf.h>
+
+#include <matrixc.h>
+#include <appagg.h>
+#include <traitman.h>
+#include <iobjsys.h>
+#include <osysbase.h>
+#include <objpos.h>
+#include <dmgbase.h>
+#include <portal.h>
+#include <camera.h>
+#include <playrobj.h>
+#include <objsys.h>
+#include <propman.h>
+#include <prjctile.h>
+#include <psnd.h>
+#include <schema.h>
+#include <rand.h>
+
+#include <stimprop.h>   // source scaling
+
+#include <phprop.h>
+#include <phoprop.h>
+#include <phcore.h>
+#include <physapi.h>
+
+#include <spherchk.h>
+#include <gunprop.h>
+#include <projbase.h>
+#include <projprop.h>
+
+#include <property.h>
+#include <propbase.h>
+
+#include <sdesc.h>
+#include <sdestype.h>
+#include <sdesbase.h>
+
+#include <netmsg.h>
+#include <netprops.h>
+
+#include <aiman.h>
+
+// must be last header
+#include <dbmem.h>
+
+// from prjctile.cpp
+extern BOOL has_projectile_type(ObjID obj);
+
+sLaunchParams g_defaultLaunchParams = 
+{
+   0,
+   1.0,
+   1.0,  
+   {0, 0, 0}, 
+   0,    
+   0, 
+   0,
+   0,
+   NULL, 
+};
+
+//////////
+//
+// Networking projectiles
+//
+// The general design for projectiles is that they are local-only objects;
+// this is more or less necessary due to timing issues. (Otherwise, the
+// projectile might get destroyed on its host machine before it has a
+// chance to hit anything on the client.)
+//
+// So, we treat them at a high level -- we broadcast the message to create
+// the projectile, and let each machine deal with the effects individually.
+// In particular, each client is responsible for deciding whether its local
+// player gets hit. This *can* lead to mild anomalies (eg, two players
+// getting hit by the same bullet, or it getting destroyed without hitting
+// anything that can take damage), but they look to be uncommon and mild
+// enough that we can live with them.
+//
+// @TBD: does this work right if the projectile already exists?
+//
+ObjID GunFireProjectile(ObjID owner, ObjID archetype, int flags,
+                          float intensityMult, mxs_vector *pPos,
+                          mxs_angvec *pAng, mxs_vector *pVel);
+
+static cNetMsg *g_pFireProjectileMsg = NULL;
+
+static void handleFireProjectile(ObjID owner, ObjID archetype, int flags,
+                                 float intensityMult, mxs_vector *pPos,
+                                 mxs_angvec *pAng, mxs_vector *pVel)
+{
+   ObjID bullet = GunFireProjectile(owner, archetype, flags, intensityMult,
+                                      pPos, pAng, pVel);
+   if (bullet != OBJ_NULL) {
+      // Note that this is just a copy of the "real" bullet; this will
+      // affect damage later:
+      gLocalCopyProp->Set(bullet, TRUE);
+   }
+}
+
+static sNetMsgDesc sFireProjectileDesc =
+{
+   kNMF_Broadcast,
+   "FireProj",
+   "Fire Projectile",
+   NULL,
+   handleFireProjectile,
+   {{kNMPT_SenderObjID, kNMPF_None, "Owner"},
+    {kNMPT_AbstractObjID, kNMPF_None, "Archetype"},
+    {kNMPT_Int, kNMPF_None, "Flags"},
+    {kNMPT_Float, kNMPF_None, "Intensity Multiplier"},
+    {kNMPT_Vector, kNMPF_None, "Position"},
+    {kNMPT_Block, kNMPF_None, "Angle", sizeof(mxs_angvec)},
+    {kNMPT_Vector, kNMPF_None, "Velocity"},
+    {kNMPT_End}}
+};
+
+//
+// Tell everyone that we're firing a projectile.
+// This runs on the shooter's machine.
+//
+// This only runs if we're firing a local-only projectile, which is the
+// usual, but not universal, case. If we're firing a hosted projectile,
+// then we let it be created normally, and the send a message giving its
+// velocity.
+//
+static void BroadcastFireProjectile(ObjID owner, ObjID archetype, int flags,
+                                    float intensityMult, mxs_vector *pPos,
+                                    mxs_angvec *pAng, mxs_vector *pVel)
+{
+   if (NetworkCategory(archetype) == kLocalOnly)
+   {
+      g_pFireProjectileMsg->Send(OBJ_NULL, owner, archetype, flags, 
+                                 intensityMult, pPos, pAng, pVel);
+   }
+}
+
+//
+// The other side of the equation -- hosted projectiles.
+//
+// If a projectile is long-lived, then it should be hosted. In that case,
+// we only create it on its creating host, and tell the other machines
+// about its trajectory.
+//
+static cNetMsg *g_pProjTrajMsg = NULL;
+
+static void handleProjTraj(ObjID bulletID,
+                           mxs_vector *pPos,
+                           mxs_angvec *pAng,
+                           mxs_vector *pVel)
+{
+   PhysSetModLocation(bulletID, pPos);
+   PhysSetModRotation(bulletID, pAng);
+   PhysSetVelocity(bulletID, pVel);
+}
+
+static sNetMsgDesc sProjTrajDesc =
+{
+   kNMF_Broadcast,
+   "ProjTraj",
+   "Projectile Trajectory",
+   NULL,
+   handleProjTraj,
+   {{kNMPT_SenderObjID, kNMPF_None, "Bullet"},
+    {kNMPT_Vector, kNMPF_None, "Position"},
+    {kNMPT_Block, kNMPF_None, "Angle", sizeof(mxs_angvec)},
+    {kNMPT_Vector, kNMPF_None, "Velocity"},
+    {kNMPT_End}}
+};
+
+static void BroadcastProjectileTrajectory(ObjID bulletID,
+                                          mxs_vector *pPos,
+                                          mxs_angvec *pAng,
+                                          mxs_vector *pVel)
+{
+   if (NetworkCategory(bulletID) == kHosted)
+   {
+      g_pProjTrajMsg->Send(OBJ_NULL, bulletID, pPos, pAng, pVel);
+   }
+}
+
+//////////
+
+ObjID CannisterSpawn(ObjID projID, sCannister *pCannister)
+{
+   ObjID  newID;
+   mxs_vector vel;
+   mxs_vector angvel;
+   mxs_angvec ang;
+   mxs_vector *pNorm = NULL;
+   mxs_matrix rotMat;
+   cMxsVector unitVec(1, 0, 0);
+   mxs_real dp;
+   ObjID archID;
+   ITraitManager *pTraitMan = AppGetObj(ITraitManager);
+   IObjectSystem *pObjSys = AppGetObj(IObjectSystem);
+   sCannister newCannister = *pCannister;
+   Position *pos = ObjPosGet(projID);
+
+   // find where physics last hit (what a hack!)
+   if ((PortalRaycastCell != -1) && (PortalRaycastFindPolygon() != -1))
+      pNorm = (mxs_vector *) &WR_CELL(PortalRaycastCell)->plane_list[PortalRaycastPlane].normal;
+   // else we have no clue what to reflect off...
+   do
+   {
+      // angle between 0x0000 and 0xffff
+      ang.tx = Rand() << 1;
+      ang.ty = Rand() << 1;
+      ang.tz = Rand() << 1;
+      // make rot matrix
+      mx_ang2mat(&rotMat,&ang);
+      // rotate unit vector by random amount
+      mx_mat_mul_vec(&vel, &rotMat, &unitVec);
+      // test dot prod
+      if (pNorm == NULL)
+         break;
+      dp = mx_dot_vec(&vel, pNorm);
+   } while (dp<0);
+   
+   mx_scaleeq_vec(&vel, pCannister->m_speed);
+
+   // angular velocity between -pi/2 and pi/2 (-90 and 90 degrees)
+   angvel.x = ((Rand() % 314) - 157) / 100.0;
+   angvel.y = ((Rand() % 314) - 157) / 100.0;
+   angvel.z = ((Rand() % 314) - 157) / 100.0;
+
+   archID = pTraitMan->GetArchetype(projID);
+   SafeRelease(pTraitMan);
+   newID = pObjSys->BeginCreate(archID, kObjectConcrete);
+//   newID = pObjSys->Create(archID, kObjectConcrete);
+   if (newID != OBJ_NULL)
+   {
+      // set all of our fields that we care about
+      ObjPosUpdate(newID, &(pos->loc.vec), &ang);
+
+      cPhysTypeProp typeProp;
+      typeProp.type = kSphereProp;
+      g_pPhysTypeProp->Set(newID, &typeProp);
+
+      pObjSys->EndCreate(newID);
+
+      pObjSys->CloneObject(newID, projID);
+      SafeRelease(pObjSys);
+
+      PhysSetSubModRadius(newID, 0, 0);
+      PhysSetModLocation(newID, &(pos->loc.vec));
+      PhysSetModRotation(newID, &ang);
+
+      // set the initial velocity and angular velocity
+      PhysSetVelocity(newID, &vel);
+      PhysSetRotationalVelocity(newID, &angvel);
+   
+      newCannister.m_generations -=1;
+      CANNISTER_SET(newID, &newCannister);
+   
+   }
+   else
+      Warning(("Cannister spawn - obj Create says no free objects!\n"));
+   return newID;
+}
+
+// for when a projectile strikes terrain
+eDamageResult GunProjTerrImpactHandler(ObjID projID)
+{
+   // cannister producing objects
+   sCannister *pCannister;
+   if (CannisterGet(projID, &pCannister))
+   {
+      int i;
+      sCannister oldCannister = *pCannister;
+      
+      if (pCannister->m_generations>0)
+         for (i = 0; i < pCannister->m_num; i++)
+            CannisterSpawn(projID, pCannister);
+      oldCannister.m_generations = 0;
+      CANNISTER_SET(projID, &oldCannister);
+   }
+   return kDamageNoOpinion;
+}
+
+// @HACK: following code stolen from prjctile.cpp because we want to be able to
+// modify the projectile start position relative to firer.
+
+static ObjID projArch = ROOT_ARCHETYPE;
+
+inline void ApplyRandomization(mxs_ang randAngle, mxs_ang *pPitch, mxs_ang *pHeading)
+{
+   // add random angle 
+   if (randAngle != 0)
+   {
+      mxs_ang randAdjust = RandRange(0, 2*randAngle)-randAngle;
+      (*pHeading) += randAdjust;
+      randAdjust = RandRange(0, 2*randAngle)-randAngle;
+      (*pPitch) += randAdjust;
+   }
+}
+
+// Having done the calculations in GunLaunchProjectile, this actually
+// fires the thing. Note that, while GunLaunchProjectile only gets run
+// on the host that actually fires the bullet, this gets run on every
+// machine.
+static ObjID GunFireProjectile(ObjID owner, ObjID archetype, int flags,
+                                 float intensityMult, mxs_vector *pPos,
+                                 mxs_angvec *pAng, mxs_vector *pVel)
+{
+   ObjID bulletID = OBJ_NULL;
+   BOOL new_object = !OBJ_IS_CONCRETE(archetype);
+
+   if (new_object && (archetype == OBJ_NULL)) {
+      archetype = projArch;
+   }
+   
+   if (new_object) {
+      bulletID = BeginObjectCreate(archetype, kObjectConcrete);
+   } else {
+      bulletID = archetype;
+   }
+
+   if (bulletID == OBJ_NULL) {
+      // Should this be an assertion?
+      Warning(("GunMakeProjectile: couldn't create new projectile!\n"));
+      return OBJ_NULL;
+   }
+
+   // apply stimulus intensity modifier
+   if (intensityMult != 1)
+   {
+      float scale;
+
+      if (g_pSourceScaleProperty->Get(bulletID, &scale))
+         intensityMult *= scale;
+      g_pSourceScaleProperty->Set(bulletID, intensityMult);
+   }
+
+   ObjPosUpdate(bulletID, pPos, pAng);
+
+   // If we're really launching a "projectile" then inform physics
+   if (has_projectile_type(bulletID))
+      PhysSetProjectile(bulletID);
+
+   // Finish off creation
+   if (new_object)
+      EndObjectCreate(bulletID);
+      
+   // Inform the AI
+   if ((flags&kLaunchTellAI) && ((flags&kLaunchCheckPlayerHead) || IsPlayerObj(owner)))
+   {
+      AutoAppIPtr(AIManager);
+      if (!!pAIManager)
+         pAIManager->NotifyFastObj(PlayerObject(), bulletID, *pVel);
+   }
+
+   // Set up physics
+   PhysSetModLocation(bulletID, pPos);
+   PhysSetModRotation(bulletID, pAng);
+
+   // Set velocity
+   PhysSetVelocity(bulletID, pVel);
+
+   BroadcastProjectileTrajectory(bulletID, pPos, pAng, pVel);
+
+   SetProjectileFirer(bulletID, owner);
+
+   return (bulletID);
+}
+
+// this is a hacked down, simplified version of launchProjectileVel
+// All of the calculations for generating the projectile should go here.
+ObjID GunLaunchProjectile(ObjID owner, ObjID archetype, sLaunchParams *pParams)
+{
+   ObjPos* ownerPos = ObjPosGet(owner);
+   mxs_vector *pInitVel;
+   mxs_vector defvel, baseVel = {0, 0, 0};
+   mxs_vector basePos = ownerPos->loc.vec;
+   mxs_vector pos;
+   mxs_angvec baseAng = ownerPos->fac;
+   mxs_angvec ang;
+   mxs_matrix mat;
+   sProjectile *pProjectile;
+   int spray;
+   mxs_ang spread;
+   ObjID projID;
+   mxs_vector vel;
+
+   if (pParams == NULL)
+      pParams = &g_defaultLaunchParams;
+
+   // Launch heading & pitch
+   if ((pParams->flags)&kLaunchBankOverride)
+      baseAng.tx = pParams->bank;
+   else
+      baseAng.tx += pParams->bank;
+   if ((pParams->flags)&kLaunchPitchOverride)
+      baseAng.ty = pParams->pitch;
+   else
+      baseAng.ty += pParams->pitch;
+   if ((pParams->flags)&kLaunchHeadingOverride)
+      baseAng.tz = pParams->heading;
+   else
+      baseAng.tz += pParams->heading;
+   mx_ang2mat(&mat, &baseAng);
+
+   // Launch position
+   if ((pParams->flags)&kLaunchLocOverride)
+      pos = pParams->loc;
+   else
+   {
+      pos = basePos;
+      for (int j=0; j<3; j++)
+         mx_scale_addeq_vec(&pos, &mat.vec[j], pParams->loc.el[j]);
+   }
+
+   // Check start pos
+   if ((pParams->flags)&(kLaunchCheck|kLaunchCheckPlayerHead))
+   {
+      Location hitLoc;
+      BOOL good = true;
+      Location validLoc;
+      Location *pValidLoc;
+      Location testLoc;
+
+      if ((pParams->flags)&kLaunchCheckPlayerHead)
+      {
+         // setup valid location from player head 
+         mxs_vector headVec;
+
+         PhysGetSubModLocation(PlayerObject(), PLAYER_HEAD, &headVec);
+         MakeHintedLocationFromVector(&validLoc, &headVec, &(ObjPosGet(PlayerObject())->loc));
+         pValidLoc = &validLoc;
+      }
+      else
+      {
+         // pParams->flags&kLaunchCheck
+         if (pParams->pValidLoc != NULL)
+            pValidLoc = pParams->pValidLoc;
+         else
+            pValidLoc = &(ownerPos->loc);
+      }
+      testLoc.vec = pos;
+      UpdateChangedLocation(&testLoc);
+      good = PortalRaycast(pValidLoc, &testLoc, &hitLoc, 0);
+      if (good)
+      {
+         cPhysTypeProp* pPhysType;
+
+         // @TODO: this isn't working - figure out why
+         // Is this the right way to test if archetype is a sphere?
+         if (g_pPhysTypeProp->Get(archetype, &pPhysType) && (pPhysType->type == kSphereProp))
+         {
+            cPhysDimsProp* pPhysDims;
+            float radius;
+
+            if (g_pPhysDimsProp->Get(archetype, &pPhysDims))
+               // assume no sub-models...
+               radius = pPhysDims->radius[0];
+            else
+               radius = 0;
+            good = ShockCheckSphereLocation(testLoc, radius);
+         }
+      }
+      if (!good)
+         pos = pValidLoc->vec;
+   }
+
+   // Apply global randomization to heading & pitch
+   ApplyRandomization(pParams->error, &baseAng.ty, &baseAng.tz);
+
+   // Get the default physics property for the archetype
+   if (!OBJ_IS_CONCRETE(archetype) && 
+       (g_pPhysInitVelProp->Get(archetype, &pInitVel)))
+      defvel = *pInitVel;
+   else
+      mx_mk_vec(&defvel, 1, 0, 0);
+
+   if ((pParams->flags)&kLaunchRelativeVelocity)
+      PhysGetVelocity(owner, &baseVel);
+
+   // Now, iterate over each projectile in spray (if any)
+   if (ProjectileGet(archetype, &pProjectile))
+   {
+      spray = pProjectile->m_spray;
+      spread = pProjectile->m_spread;
+   }
+   else
+   {
+      spray = 1;
+      spread = 0;
+   }
+
+   for (int i=0; i<spray; i++)
+   {
+      // Apply individual randomization
+      ang = baseAng;
+      ApplyRandomization(spread, &ang.ty, &ang.tz);
+      
+      // Create final rotation matrix
+      mx_ang2mat(&mat, &ang);
+      
+      // Add in default velocity
+      vel = baseVel;
+      for (int j=0; j<3; j++)
+         mx_scale_addeq_vec(&vel, &mat.vec[j], defvel.el[j]);
+      
+      // Apply speed multiplier
+      if (pParams->speedMult != 1)
+      {
+         mxs_matrix rotMat;
+         cMxsVector xVec(1, 0, 0);
+         mxs_vector normVel;
+         float norm;
+
+         norm = mx_norm_vec(&normVel, &vel);
+         mx_mk_move_x_mat(&rotMat, &normVel);
+         mx_mat_mul_vec(&vel, &rotMat, &xVec);
+         mx_scaleeq_vec(&vel, norm*pParams->speedMult);
+      }
+      
+      // Now, tell everyone to actually fire the thing:
+      BroadcastFireProjectile(owner, archetype, pParams->flags, pParams->intensityMult, &pos, &ang, &vel);
+      projID = GunFireProjectile(owner, archetype, pParams->flags, pParams->intensityMult, &pos, &ang, &vel);
+   }
+   return projID;
+}
+
+//////////
+//
+// Startup and Shutdown
+//
+
+void GunProjectileInit(void)
+{
+   g_pFireProjectileMsg = new cNetMsg(&sFireProjectileDesc);
+   g_pProjTrajMsg = new cNetMsg(&sProjTrajDesc);
+}
+
+void GunProjectileTerm(void)
+{
+   delete g_pFireProjectileMsg;
+   delete g_pProjTrajMsg;
+}
+#pragma once
+
+#ifndef __GUNPROJ_H
+//used to have SHKPROJ above, SHOPROJ below... made them the same when
+//I changed... AMSD
+#define __GUNPROJ_H
+
+#include <dmgmodel.h>
+#include <objtype.h>
+#include <matrixs.h>
+#include <propface.h>
+#include <wrtype.h>
+
+eDamageResult GunProjTerrImpactHandler(ObjID projID);
+
+/////////////////////////////////////////
+//
+// Projectile launcher
+//
+
+enum eLaunchParamFlags
+{
+   kLaunchCheck = 0x0001,           // do launch physics check - fill in valid loc field in params or will use owner's loc
+   kLaunchCheckPlayerHead = 0x0002, // launch check - will use player head as valid loc
+   kLaunchRelativeVelocity = 0x0004,// add in owner's velocity to launch
+   kLaunchTellAI = 0x0008,          // inform AI about launch
+   kLaunchLocOverride = 0x0010,     // override launch location
+   kLaunchPitchOverride = 0x0020,   // override launch pitch       
+   kLaunchHeadingOverride = 0x0040, // override launch heading       
+   kLaunchBankOverride = 0x0080,    // override launch bank
+};
+
+struct sLaunchParams
+{
+   int flags;     
+   float speedMult;     // speed multiplier
+   float intensityMult; // intensity multiplier
+   mxs_vector loc;      // launch location or location offset (defaults to offset)
+   mxs_ang pitch;       // pitch or pitch offset (defaults to offset)
+   mxs_ang heading;     // heading or heading offset (defaults to offset)
+   mxs_ang bank;        // bank or bank offset (defaults to offset)
+   mxs_ang error;       // random angle for all launched 
+   Location* pValidLoc; // known location in world to use for launch check
+};
+
+// Use these params as a template if you want - these are the defaults
+// No flags are set by default, everything else zero or one as appropriate
+extern sLaunchParams g_defaultLaunchParams;
+
+// Launch 'em
+// Returns object ID of last projectile launched (if there is a spray of more than 1)
+// If you want all the objIDs, then get them out of the launch params
+EXTERN ObjID GunLaunchProjectile(ObjID owner, ObjID archetype, sLaunchParams *pParams = NULL);
+
+// Startup and shutdown
+EXTERN void GunProjectileInit();
+EXTERN void GunProjectileTerm();
+
+#endif
+
+#include <matrix.h>
+extern "C" 
+{
+#include <r3d.h>
+#include <md.h>
+}
+#include <objpos.h>
+#include <rendprop.h>
+#include <mnamprop.h>
+#include <objmodel.h>
+#include <objscale.h>
+#include <portal.h>
+#include <rendobj.h>
+
+#include <mprintf.h>
+
+// must be last header
+#include <dbmem.h>
+
+// from rendobj.c
+EXTERN mds_parm *getRendParms(ObjID obj, mds_model *m);
+
+// This is almost entirely copied from a function in litprop.cpp
+// but I wanted to add the ability to set the actual joint positions
+EXTERN void VHotGetRaw(mxs_vector *pOffset, ObjID objID, int vhotNum)
+{
+   char model_name[80];
+
+   if (ObjGetModelName(objID, model_name)) 
+   {
+      int idx = objmodelGetIdx(model_name);
+
+      if (objmodelGetModelType(idx) == OM_TYPE_MD) 
+      {
+         mds_model *model = (mds_model *) objmodelGetModel(idx);
+         mds_vhot* pVhots = md_vhot_list(model);
+         *pOffset = pVhots[vhotNum].v;
+      }
+   }
+}
+
+EXTERN void VHotGetOffset(mxs_vector *pOffset, ObjID objID, int vhotNum)
+{
+   char model_name[80];
+   mxs_vector scale;   
+   mds_parm *pParms;
+
+   pOffset->x = 0;
+   pOffset->y = 0;
+   pOffset->z = 0;
+   // vhot time.  We get the model type from the model idx, which we
+   // get from the model name.  That will tell us whether it's an md
+   // model, which is the only kind with vhots.  There is almost
+   // certainly a simpler way to do this.
+   if (ObjGetModelName(objID, model_name)) 
+   {
+      int idx = objmodelGetIdx(model_name);
+
+      if (objmodelGetModelType(idx) == OM_TYPE_MD) 
+      {
+         mds_model *model = (mds_model *) objmodelGetModel(idx);
+         if (model->vhots<=vhotNum)
+            return;
+         // get joint posns
+         pParms = getRendParms(objID, model);
+         r3_start_frame();
+         md_eval_vhots(model, pParms);
+         r3_end_frame();
+         
+         mx_addeq_vec(pOffset, &mdd_vhot_tab[vhotNum]);
+      }
+   }
+
+   // Of course, the object may have a scale property.
+   if (ObjGetScale(objID, &scale))
+      mx_elmuleq_vec(pOffset, &scale);
+}
+
+// This is almost entirely copied from a function in litprop.cpp
+// but I wanted to add the ability to set the actual joint positions
+EXTERN void VHotGetLoc(mxs_vector *pLoc, ObjID objID, int vhotNum)
+{
+   mxs_vector offset;
+   mxs_matrix trans;
+   ObjPos *pos = ObjPosGet(objID);
+
+   VHotGetOffset(&offset, objID, vhotNum);
+
+   // And, at last, we put the offset into worldspace and add in the
+   // object's coordinates.
+   mx_ang2mat(&trans, &pos->fac);
+   mx_mat_mul_vec(pLoc, &trans, &offset);
+
+   mx_addeq_vec(pLoc, &pos->loc.vec);
+}
+#pragma once
+#ifndef __GUNVHOT_H
+#define __GUNVHOT_H
+
+#include <matrixs.h>
+#include <objtype.h>
+
+// Get the location of a vhot, taking into account joint rotations
+EXTERN void VHotGetRaw(mxs_vector *pLoc, ObjID objID, int vhotNum);
+// Get the location of a vhot, taking into account joint rotations
+EXTERN void VHotGetLoc(mxs_vector *pLoc, ObjID objID, int vhotNum);
+// Get the raw vhot offset
+EXTERN void VHotGetOffset(mxs_vector *pOffset, ObjID objID, int vhotNum);
+
+#endif // __GUNVHOT_H
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/objmedia.cpp,v 1.6 1999/03/31 17:00:10 Justin Exp $
+//
+// Object media stuff
+//
+
+#include <lg.h>
+#include <comtools.h>
+#include <appagg.h>
+#include <config.h>
+#include <objtype.h>
+#include <wrfunc.h>
+
+#include <phcore.h>
+#include <phmods.h>
+#include <phmod.h>
+
+#include <property.h>
+#include <propman.h>
+#include <flowarch.h>
+
+#include <ctagset.h>
+#include <esnd.h>
+#include <psndapi.h>
+
+#include <objpos.h>
+#include <playrobj.h>
+#include <plyrmode.h>
+#include <phmedtr.h>
+#include <media.h>
+
+#include <objmedia.h>
+
+#include <mprintf.h>
+
+// Must be last header
+#include <dbmem.h>
+
+////////////////////////////////////////
+
+static int g_MediaAmbHandle = -1;
+static char *g_MediaAmbWater = "underwat";
+
+
+void ObjMediaTrans(ObjID objID, int cellID, eMediaState old_medium, eMediaState new_medium)
+{
+   #ifndef SHIP
+   if (config_is_defined("MediaSpew"))
+      mprintf("[%d] Media Trans (%d -> %d)\n", objID, old_medium, new_medium);
+   #endif
+
+   // Get the new flow obj
+   AutoAppIPtr_(PropertyManager, pPropMan);
+   IFlowGroupProperty *pFlowProp = (IFlowGroupProperty *)pPropMan->GetPropertyNamed(PROP_FLOW_GROUP_NAME);
+
+   ObjID flow_arch;
+
+   if (cellID != CELL_INVALID)
+      flow_arch = pFlowProp->GetObj(WR_CELL(cellID)->motion_index);
+   else
+      flow_arch = OBJ_NULL;
+
+   // Get the object's velocity
+   mxs_vector velocity;
+
+   cPhysModel *pModel = g_PhysModels.Get(objID);
+   if (pModel)
+      velocity = pModel->GetVelocity();
+   else
+      mx_zero_vec(&velocity);
+
+   if (PlayerObjectExists() && (objID == PlayerObject()))
+   {
+      // Surfacing
+      if ((old_medium == kMS_Liquid_Submerged) && (new_medium != kMS_Liquid_Submerged))
+      {
+         #ifndef SHIP
+         if (config_is_defined("MediaSpew"))
+            mprintf("  surfacing\n");
+         #endif
+
+         // stop underwater sample
+         if (g_MediaAmbHandle != -1)
+         {
+            SoundHalt(g_MediaAmbHandle);
+            g_MediaAmbHandle = -1;
+         }
+
+         // surfacing schema
+         cTagSet SoundEvent("Event MediaTrans");
+         SoundEvent.Add(cTag("MedTransDir", "Exit"));
+         SoundEvent.Add(cTag("MediaLevel", "Head"));
+
+         ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+      }
+
+      // Submerging
+      if ((old_medium != kMS_Liquid_Submerged) && (new_medium == kMS_Liquid_Submerged))
+      {
+         #ifndef SHIP
+         if (config_is_defined("MediaSpew"))
+            mprintf("  submerging\n");
+         #endif
+
+         // play underwater sample
+         sfx_parm loop_parm = { 64, SFXFLG_LOOP, 0, 0, 0, -2000, 0, 0, 0, 0, NULL, NULL };
+
+         if (g_MediaAmbHandle != -1)
+            SoundHalt(g_MediaAmbHandle);
+         g_MediaAmbHandle = GenerateSound(g_MediaAmbWater, &loop_parm);
+
+         // submerging schema
+         cTagSet SoundEvent("Event MediaTrans");
+         SoundEvent.Add(cTag("MedTransDir", "Enter"));
+         SoundEvent.Add(cTag("MediaLevel", "Head"));
+
+         ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+      }
+
+      // Body entering water
+      if (((new_medium == kMS_Liquid_Submerged) || (new_medium == kMS_Liquid_Wading)) &&
+          ((old_medium == kMS_Liquid_Standing) || (old_medium == kMS_Air)))
+      {
+         // play body splash if velocity high enough
+         if (velocity.z < -5.0)
+         {
+            #ifndef SHIP
+            if (config_is_defined("MediaSpew"))
+               mprintf("  body entering water\n");
+            #endif
+
+            cTagSet SoundEvent("Event MediaTrans");
+            SoundEvent.Add(cTag("MedTransDir", "Enter"));
+            SoundEvent.Add(cTag("MediaLevel", "Body"));
+
+            ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+         }
+
+         g_pPlayerMode->SetMode(kPM_Swim);
+      }
+
+      // Body exiting water
+      if (((new_medium == kMS_Liquid_Standing) || (new_medium == kMS_Air)) &&
+          ((old_medium == kMS_Liquid_Submerged) || (old_medium == kMS_Liquid_Wading)))
+      {
+         if (velocity.z > 5.0)
+         {
+            #ifndef SHIP
+            if (config_is_defined("MediaSpew"))
+               mprintf("  body exiting water\n");
+            #endif
+
+            // play out of water schema
+            cTagSet SoundEvent("Event MediaTrans");
+            SoundEvent.Add(cTag("MedTransDir", "Exit"));
+            SoundEvent.Add(cTag("MediaLevel", "Body"));
+
+            ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+         }
+
+         g_pPlayerMode->SetMode(kPM_Stand);
+      }
+
+      // Foot entering water
+      if (((new_medium == kMS_Liquid_Standing) || (new_medium == kMS_Liquid_Wading) ||
+           (new_medium == kMS_Liquid_Submerged)) &&
+          (old_medium == kMS_Air))
+      {
+         #ifndef SHIP
+         if (config_is_defined("MediaSpew"))
+            mprintf("  foot entering water\n");
+         #endif
+
+         // play foot hitting water schema if velocity high enough
+         if (velocity.z < -5.0)
+         {
+            cTagSet SoundEvent("Event MediaTrans");
+            SoundEvent.Add(cTag("MedTransDir", "Enter"));
+            SoundEvent.Add(cTag("MediaLevel", "Foot"));
+
+            ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+         }
+      }
+   }
+   else
+   {
+      if ((old_medium == kMS_Liquid_Submerged) && (new_medium == kMS_Air))
+      {
+         #ifndef SHIP
+         if (config_is_defined("MediaSpew"))
+            mprintf("  obj exits water\n");
+         #endif
+
+         // @TBD: do we want an emerge sound for objects?
+      }
+
+      if ((old_medium == kMS_Air) && (new_medium == kMS_Liquid_Submerged))
+      {
+         #ifndef SHIP
+         if (config_is_defined("MediaSpew"))
+            mprintf("  obj enters water\n");
+         #endif
+
+         if (velocity.z < - 5.0)
+         {
+            cTagSet SoundEvent("Event MediaTrans");
+            SoundEvent.Add(cTag("MedTransDir", "Enter"));
+
+            ESndPlayLoc(&SoundEvent, objID, flow_arch, &ObjPosGet(objID)->loc.vec);
+         }
+      }
+   }
+
+   sPhysMediaEvent event = { objID, cellID, old_medium, new_medium }; 
+   PhysSendMediaEvent(&event); 
+}
+
+////////////////////////////////////////
+
+int ObjMediumToPortalMedium(eMediaState obj_medium)
+{
+   switch (obj_medium)
+   {
+      case kMS_Air: 
+         return MEDIA_AIR;
+
+      case kMS_Liquid_Submerged:
+         return MEDIA_WATER;
+
+      case kMS_Invalid:
+         return MEDIA_SOLID;
+
+      case kMS_Liquid_Standing:
+      case kMS_Liquid_Wading:
+
+      default:
+         return MEDIA_AIR;
+   }
+}
+
+////////////////////////////////////////
+
+eMediaState PortalMediumToObjMedium(int portal_medium)
+{
+   switch (portal_medium)
+   {
+      case MEDIA_AIR:
+         return kMS_Air;
+
+      case MEDIA_WATER:
+         return kMS_Liquid_Submerged;
+
+      case MEDIA_SOLID:
+      case NO_MEDIUM:
+
+      default:
+         return kMS_Invalid;
+   }
+}
+
+////////////////////////////////////////
+
+
+
+#include <spherchk.h>
+
+#include <matrix.h>
+#include <phcore.h>
+#include <phmod.h>
+#include <phmodobb.h>
+#include <phmods.h>
+#include <physapi.h>
+#include <sphrcst.h>
+#include <wrtype.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+//////////////////////////////////////////////////////////////
+//
+// Test for sphere intersecting doors
+//
+
+BOOL ShockCheckSphereIntersectsDoor(mxs_vector &vec, float radius)
+{
+   mxs_vector norm_list[6];
+   mxs_real   const_list[6];
+
+   cPhysModel *pIterModel;
+   cPhysOBBModel *pDoorModel;
+   
+   pIterModel = g_PhysModels.GetFirstActive();
+   while (pIterModel)
+   {
+      if (pIterModel->IsDoor())
+      {
+         pDoorModel = (cPhysOBBModel *)pIterModel;
+         
+         if (mx_dist_vec(&vec, &pDoorModel->GetLocationVec()) < (radius + mx_mag_vec(&pDoorModel->GetEdgeLengths())))
+         {
+            pDoorModel->GetNormals(norm_list);
+            pDoorModel->GetConstants(const_list, norm_list);
+            
+            BOOL inside = TRUE;
+
+            for (int i=0; i<6 && inside; i++)
+            {
+               mxs_real dist = mx_dot_vec(&vec, &norm_list[i]) - (const_list[i] + radius);
+               
+               if (dist > 0.0)
+               {
+                  inside = FALSE;
+                  break;
+               }
+            }
+            
+            if (inside)
+               return TRUE;
+         }
+      }
+      
+      pIterModel = g_PhysModels.GetNextActive(pIterModel);
+   }
+   return FALSE;
+}
+
+///////////////////////////////////////////////////
+// Check start location for sphere
+//
+
+BOOL ShockCheckSphereLocation(const Location& testLoc, float radius)
+{
+   // Check start location
+   if (!SphrSphereInWorld((Location*)(&testLoc), radius, 0))
+      return FALSE;
+   
+   // Check start location against doors
+   if (ShockCheckSphereIntersectsDoor((mxs_vector&)(testLoc.vec), radius))
+      return FALSE;
+
+   return TRUE;
+}
+
+
+
+#pragma once
+
+#ifndef __SPHERCHK_H
+#define __SPHERCHK_H
+
+#include <wrtype.h>
+
+BOOL ShockCheckSphereLocation(const Location& testLoc, float radius);
+
+#endif  // !__SPHERHCK_H
+
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/phmod.cpp,v 1.154 2000/03/20 09:45:23 adurant Exp $
+//
+// Model-specific code
+//
+
+//#define PROFILE_ON
+
+#include <lg.h>
+#include <config.h>
+#include <allocapi.h>
+#include <matrixs.h>
+#include <timings.h>
+#include <float.h>
+
+#include <wrtype.h>
+#include <objpos.h>
+#include <sphrcst.h>
+#include <creatext.h>
+#include <doorprop.h>
+#include <prjctile.h>
+#include <port.h>
+#include <plyrspd.h>
+
+#include <playrobj.h>
+#include <plyrmode.h>
+#include <netman.h>
+#include <iobjnet.h>
+
+// for squishing
+#include <stimtype.h>
+#include <stimbase.h>
+#include <stimsens.h>
+#include <stimul8r.h>
+#include <simtime.h>
+
+#include <autolink.h>
+#include <lnkquery.h>
+#include <linkbase.h>
+
+#include <aiapi.h>  // for ObjIsAI()
+#include <media.h>
+#include <objmedia.h>
+#include <physapi.h>
+#include <phclimb.h>
+#include <phconst.h>
+#include <phcontct.h>
+#include <phcore.h>
+#include <phmod.h>
+#include <phmods.h>
+#include <phdyn.h>
+#include <phctrl.h>
+#include <phclsn.h>
+#include <phref.h>
+#include <phutils.h>
+#include <phmoapi.h>
+#include <phprop.h>
+#include <phoprop.h>
+#include <phmtprop.h>
+#include <phnet.h>
+
+#include <phmsg.h>
+#include <phscrt.h>
+
+#include <iobjsys.h>
+#include <appagg.h>
+
+// For disk check:
+#include <aipthobb.h>
+#include <aiprcore.h>
+
+
+#include <hshsttem.h>
+
+
+// Must be last header
+#include <dbmem.h>
+
+extern BOOL gInsideMT;
+
+mxs_real kSpringCapMag = 25.0; //extern deffed in phconst
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysModelTable
+//
+
+#if defined(_MSC_VER)
+template cPhysModelTableBase;
+#endif
+
+tHashSetKey cPhysModelTable::GetKey(tHashSetNode node) const
+{
+   return (tHashSetKey)((((cPhysModel *)(node))->m_objID));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysModel
+//
+
+cPhysModel::cPhysModel(ObjID objID, ePhysModelType type,
+                       tPhysSubModId numSubModels, unsigned flags)
+ : m_objID(objID),
+   m_nSubModels(numSubModels),
+   m_flags(0),
+   m_base_friction(0),
+   m_nObjectContacts(0),
+   m_nFaceContacts(0),
+   m_nEdgeContacts(0),
+   m_nVertexContacts(0),
+   m_pointVsTerrain(FALSE),
+   m_passThruDT(0),
+   bDiskCheck(TRUE)
+{
+   ILinkQuery *query;
+   int i;
+
+   // Sphere-hats always have 2 submodels
+   if (type == kPMT_SphereHat)
+      m_nSubModels = 2;
+
+   // Init the flags
+   if (flags & kPMCF_LowDetail)
+      m_flags |= kPMF_LowDetail;
+   if (flags & kPMCF_Remote)
+      m_flags |= kPMF_Remote;
+   if (flags & kPMCF_NonMoveable)
+      m_flags |= kPMF_NonMoveable;
+   if (flags & kPMCF_Uncontrollable)
+      m_flags |= kPMF_Uncontrollable;
+   if (flags & kPMCF_Player)
+      m_flags |= kPMF_Player;
+   if (flags & kPMCF_Creature)
+      m_flags |= kPMF_Creature;
+   if (flags & kPMCF_Rope)
+      m_flags |= kPMF_Rope;
+   if (flags & kPMCF_Weapon)
+      m_flags |= kPMF_Weapon;
+   if (flags & kPMF_DiskCheck)
+      m_flags |= kPMF_DiskCheck;
+
+   BOOL facevel;
+   if (g_pPhysFaceVelProp->Get(objID, &facevel) && facevel)
+      m_flags |= kPMF_FacesVel;
+
+   if (g_pMovingTerrainProperty->IsRelevant(objID))
+      m_flags |= kPMF_MovingTerrain;
+
+   if (g_pRotDoorProperty->IsRelevant(objID) || g_pTransDoorProperty->IsRelevant(objID))
+      m_flags |= kPMF_Door;
+
+   BOOL ai_collides;
+   if (g_pPhysAICollideProp->Get(objID, &ai_collides) && ai_collides)
+      m_flags |= kPMF_AICollides;
+
+   if (flags & kPMCF_NoGravity)
+      m_gravity = 0.0;
+   else
+      m_gravity = 1.0;
+
+   // Init all submodels to the given type
+   m_pType = new ePhysModelType[m_nSubModels];
+   for (i=0; i<m_nSubModels; i++)
+      m_pType[i] = type;
+
+   m_base_friction = 0.0;
+
+   // Init the spring constant
+   LGALLOC_PUSH_CREDIT();
+   m_springInfo.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+   for (i=0; i<m_nSubModels; i++)
+   {
+      m_springInfo[i].tension = 0.0;
+      m_springInfo[i].damping = 0.0;
+   }
+
+   // Init overall model position & cog offset
+   MakePositionFromVectors(&m_pos.m_position, &(ObjPosGet(objID)->loc.vec), &(ObjPosGet(objID)->fac));
+   MakePositionFromVectors(&m_pos.m_endposition, &m_pos.m_position.loc.vec, &m_pos.m_position.fac);
+   MakePositionFromVectors(&m_pos.m_targetposition, &m_pos.m_position.loc.vec, &m_pos.m_position.fac);
+
+   mx_zero_vec(&m_cog);
+
+   // Check for PhysAttach links
+   query = g_pPhysAttachRelation->Query(objID, LINKOBJ_WILDCARD);
+   if (!query->Done())
+      m_isAttached = TRUE;
+   else
+      m_isAttached = FALSE;
+   SafeRelease(query);
+
+   query = g_pPhysAttachRelation->Query(LINKOBJ_WILDCARD, objID);
+   m_nAttachments = 0;
+   for (; !query->Done(); query->Next())
+      m_nAttachments++;
+   SafeRelease(query);
+
+   m_rotAxes = ZAxis;
+   m_restAxes = NoAxes;
+   m_atRest = FALSE;
+
+   m_climbingObj = OBJ_NULL;
+   m_ropeSegment = -1;
+   m_ropePct = 0.0;
+   m_mantlingState = 0;
+   mx_zero_vec(&m_mantlingTargVec);
+
+   m_referenceFrameObj = OBJ_NULL;
+
+   m_lastSquishTime = -1.0;
+
+   // Allocate force list array for location controlling
+   m_pForceList = new cPhysForceList[m_nSubModels];
+
+   // Allocate position lists
+   m_pPosition = new cPhysPos[m_nSubModels];
+
+   // Allocate and initialize offsets
+   LGALLOC_PUSH_CREDIT();
+   m_Offset.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+   for (i=0; i<m_nSubModels; i++)
+      mx_zero_vec(&m_Offset[i]);
+
+   // Place all submodels at center of object with a zero facing
+   // and init backpointers while we're at it
+   for (i=0; i<m_nSubModels; i++)
+   {
+      MakePositionFromVectors(&m_pPosition[i].m_position, &m_pos.m_position.loc.vec, &m_pos.m_position.fac);
+      mx_zero_vec(&m_pPosition[i].m_endposition.loc.vec);
+      mx_zero_vec(&m_pPosition[i].m_targetposition.loc.vec);
+      mx_mk_angvec(&m_pPosition[i].m_endposition.fac, 0, 0, 0);
+      mx_mk_angvec(&m_pPosition[i].m_targetposition.fac, 0, 0, 0);
+      m_pPosition[i].m_pModel = this;
+   }
+
+   // Initialize submodel constraint lists
+   LGALLOC_PUSH_CREDIT();
+   m_SubModConstraintList.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+
+   // Allocate dynamics if moveable
+   if (!(flags & kPMCF_NonMoveable) && (type != kPMT_OBB))
+      m_pDynamicsData.SetSize(m_nSubModels);
+   else
+      m_pDynamicsData.SetSize(0);
+
+   // Allocate controls if controllable
+   if (!(flags & kPMCF_Uncontrollable) && (type != kPMT_OBB))
+      m_pControlData.SetSize(m_nSubModels);
+   else
+      m_pControlData.SetSize(0);
+
+   // Set up backpointers
+   m_DynamicsData.SetModel(this);
+   m_DynamicsData.SetSubModId(-1);
+   m_ControlData.SetModel(this);
+   m_ControlData.SetSubModId(-1);
+
+   for (i=0; i<m_nSubModels && m_pDynamicsData.Size() && m_pControlData.Size(); i++)
+   {
+      m_pDynamicsData[i].SetModel(this);
+      m_pDynamicsData[i].SetSubModId(i);
+      m_pControlData[i].SetModel(this);
+      m_pControlData[i].SetSubModId(i);
+   }
+
+   // Add to model lists
+   if (IsActive())
+   {
+      if (IsMoveable())
+         g_PhysModels.AddToMoving(this);
+      else
+         g_PhysModels.AddToStationary(this);
+   }
+   else
+      // low detail models start inactive by default
+      g_PhysModels.AddToInactive(this);
+
+   m_AngLimitList.SetSize(0);
+
+   m_medium = kMS_Invalid;
+
+   if (m_flags & kPMF_Weapon)
+      SetSleep(TRUE);
+}
+
+///////////////////////////////////////
+
+cPhysModel::cPhysModel(PhysReadWrite func) :
+   m_nFaceContacts(0),
+   m_nEdgeContacts(0),
+   m_nVertexContacts(0),
+   m_nObjectContacts(0),
+   bDiskCheck(FALSE)
+{
+   int flag;
+   int i;
+   tPhysRef dummy;
+
+   AutoAppIPtr_(ObjectSystem,pObjSys);
+
+   func((void *)&m_objID, sizeof(ObjID), 1);
+   m_objID = pObjSys->RemapOnLoad(m_objID);
+   func((void *)&m_nSubModels, sizeof(int), 1);
+   func((void *)&m_flags, sizeof(unsigned), 1);
+
+   BOOL facevel;
+   if (g_pPhysFaceVelProp->Get(m_objID, &facevel) && facevel)
+      m_flags |= kPMF_FacesVel;
+
+   if (g_pMovingTerrainProperty->IsRelevant(m_objID))
+      m_flags |= kPMF_MovingTerrain;
+
+   if (g_pRotDoorProperty->IsRelevant(m_objID) || g_pTransDoorProperty->IsRelevant(m_objID))
+      m_flags |= kPMF_Door;
+
+   BOOL ai_collides = FALSE;
+   if (g_pPhysAICollideProp->Get(m_objID, &ai_collides) && ai_collides)
+      m_flags |= kPMF_AICollides;
+
+   if (g_PhysVersion >= 6)
+      func((void *)&m_gravity, sizeof(mxs_real), 1);
+   else
+      m_gravity = 1.0;
+
+   m_pType = new ePhysModelType[m_nSubModels];
+   func((void *)m_pType, sizeof(ePhysModelType), m_nSubModels);
+
+   func((void *)&m_base_friction, sizeof(mxs_real), 1);
+
+   if (g_PhysVersion >= 8)
+      func((void *)&m_medium, sizeof(int), 1);
+   else
+      m_medium = 1;
+
+   if (g_PhysVersion < 26)
+      m_medium = kMS_Invalid;
+
+   LGALLOC_PUSH_CREDIT();
+   m_springInfo.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+   if (g_PhysVersion >= 11)
+   {
+      for (i=0; i<m_nSubModels; i++)
+      {
+         func((void *)&m_springInfo[i].tension, sizeof(mxs_real), 1);
+         func((void *)&m_springInfo[i].damping, sizeof(mxs_real), 1);
+      }
+   }
+   else
+   {
+      for (i=0; i<m_nSubModels; i++)
+      {
+         m_springInfo[i].tension = 0.0;
+         m_springInfo[i].damping = 0.0;
+      }
+   }
+
+   if (g_PhysVersion >= 13)
+      func((void *)&m_pointVsTerrain, sizeof(BOOL), 1);
+   else
+      m_pointVsTerrain = FALSE;
+
+   if (g_PhysVersion >= 22)
+      func((void *)&m_passThruDT, sizeof(BOOL), 1);
+   else
+      m_passThruDT = 0;
+
+   if (g_PhysVersion >= 14)
+   {
+      func((void *)&m_nAttachments, sizeof(int), 1);
+      func((void *)&m_isAttached, sizeof(BOOL), 1);
+   }
+   else
+   {
+      m_nAttachments = 0;
+      m_isAttached = FALSE;
+   }
+
+   if (g_PhysVersion >= 15)
+   {
+      func((void *)&m_rotAxes, sizeof(ePhysAxes), 1);
+      func((void *)&m_restAxes, sizeof(ePhysAxes), 1);
+   }
+   else
+   {
+      m_rotAxes = ZAxis;
+      m_restAxes = NoAxes;
+   }
+   m_atRest = FALSE;
+
+   if (g_PhysVersion >= 18)
+      func((void *)&m_climbingObj, sizeof(ObjID), 1);
+   else
+      m_climbingObj = OBJ_NULL;
+
+   if (g_PhysVersion >= 21)
+   {
+      func((void *)&m_ropeSegment, sizeof(int), 1);
+      func((void *)&m_ropePct, sizeof(mxs_real), 1);
+   }
+   else
+   {
+      m_ropeSegment = -1;
+      m_ropePct = 0.0;
+   }
+
+   if (g_PhysVersion >= 19)
+   {
+      func((void *)&m_mantlingState, sizeof(int), 1);
+      func((void *)&m_mantlingTargVec, sizeof(mxs_vector), 1);
+   }
+   else
+   {
+      m_mantlingState = 0;
+      mx_zero_vec(&m_mantlingTargVec);
+   }
+
+   if (g_PhysVersion >= 31)
+      func((void *)&m_referenceFrameObj, sizeof(ObjID), 1);
+   else
+      m_referenceFrameObj = NULL;
+
+   if (g_PhysVersion >= 25)
+      func((void *)&m_lastSquishTime, sizeof(long), 1);
+   else
+      m_lastSquishTime = -1.0;
+
+   m_pForceList = new cPhysForceList[m_nSubModels];
+
+   // Allocate and Read positions for each submodel
+   m_pPosition = new cPhysPos[m_nSubModels];
+   if (g_PhysVersion >= 9)
+      func(m_pPosition, sizeof(cPhysPos), m_nSubModels);
+   else
+   {
+      for (i=0; i<m_nSubModels; i++)
+      {
+         func(&m_pPosition[i].m_position, sizeof(Position), 1);
+         func(&m_pPosition[i].m_endposition, sizeof(Position), 1);
+         func(&dummy, sizeof(tPhysRef), 1);
+         func(&m_pPosition[i].m_pModel, sizeof(cPhysModel *), 1);
+      }
+   }
+
+   if (g_PhysVersion >= 9)
+      func((void *)&m_pos, sizeof(cPhysPos), 1);
+   else
+   {
+      func(&m_pos.m_position, sizeof(Position), 1);
+      func(&m_pos.m_endposition, sizeof(Position), 1);
+      func(&dummy, sizeof(tPhysRef), 1);
+      func(&m_pos.m_pModel, sizeof(cPhysModel *), 1);
+   }
+
+   // Update pointers
+   for (i=0; i<m_nSubModels; i++)
+      m_pPosition[i].m_pModel = this;
+   m_pos.m_pModel = this;
+
+   // Read center-of-gravity
+   func((void *)&m_cog, sizeof(mxs_vector), 1);
+
+   // Read submodel offsets
+   LGALLOC_PUSH_CREDIT();
+   m_Offset.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+   if (g_PhysVersion >= 10)
+   {
+      for (i=0; i<m_nSubModels; i++)
+         func((void *)&m_Offset[i], sizeof(mxs_vector), 1);
+   }
+   else
+   {
+      for (i=0; i<m_nSubModels; i++)
+         mx_sub_vec(&m_Offset[i], &m_pPosition[i].m_position.loc.vec, &m_pos.m_position.loc.vec);
+   }
+
+   // Initialize any pressure plates that are currently in-transit
+   if ((g_PhysVersion >= 29) && IsPressurePlate())
+   {
+      int state;
+
+      func((void *)&state, sizeof(int), 1);
+
+      if ((state == kPPS_Activating) ||
+          (state == kPPS_Deactivating))
+      {
+         mxs_vector limit;
+
+         func((void *)&limit, sizeof(mxs_vector), 1);
+
+         ClearTransLimits();
+         AddTransLimit(limit, PressurePlateCallback);
+      }
+   }
+
+   // Initialize submodel constraint lists
+   LGALLOC_PUSH_CREDIT();
+   m_SubModConstraintList.SetSize(m_nSubModels);
+   LGALLOC_POP_CREDIT();
+
+   // Allocate and Read dynamics and control info, if applicable
+   func(&flag, sizeof(int), 1);
+   if (flag == 0x0001)
+   {
+      if (g_PhysVersion <= 11)
+         m_DynamicsData.LoadV11(func);
+      else
+         func(&m_DynamicsData, sizeof(cPhysDynData), 1);
+      m_pDynamicsData.SetSize(0);
+   }
+   else
+   if (flag == 0x0002)
+   {
+      if (g_PhysVersion >= 7)
+      {
+         if (g_PhysVersion <= 11)
+            m_DynamicsData.LoadV11(func);
+         else
+            func(&m_DynamicsData, sizeof(cPhysDynData), 1);
+      }
+      if (g_PhysVersion <= 11)
+      {
+         for (i=0; i<m_nSubModels; i++)
+            m_pDynamicsData[i].LoadV11(func);
+      }
+      else
+      {
+         if (g_PhysVersion >= 28)
+         {
+            int size;
+
+            func(&size, sizeof(int), 1);
+            m_pDynamicsData.SetSize(size);
+
+            for (i=0; i<size; i++)
+               func(&m_pDynamicsData[i], sizeof(cPhysDynData), 1);
+         }
+         else
+         {
+            if (m_pType[0] == kPMT_OBB)
+            {
+               cPhysDynData dummy;
+
+               m_pDynamicsData.SetSize(0);
+               for (i=0; i<m_nSubModels; i++)
+                  func(&dummy, sizeof(cPhysDynData), 1);
+            }
+            else
+            {
+               m_pDynamicsData.SetSize(m_nSubModels);
+               for (i=0; i<m_nSubModels; i++)
+                  func(&m_pDynamicsData[i], sizeof(cPhysDynData), 1);
+            }
+         }
+      }
+   }
+
+   func(&flag, sizeof(int), 1);
+   if (flag == 0x0001)
+   {
+      func(&m_ControlData, sizeof(cPhysCtrlData), 1);
+      m_pControlData.SetSize(0);
+   }
+   else
+   if (flag == 0x0002)
+   {
+      if (g_PhysVersion >= 7)
+         func(&m_ControlData, sizeof(cPhysCtrlData), 1);
+      if (g_PhysVersion >= 28)
+      {
+         int size;
+
+         func(&size, sizeof(int), 1);
+         m_pControlData.SetSize(size);
+
+         for(i=0; i<size; i++)
+            func(&m_pControlData[i], sizeof(cPhysCtrlData), 1);
+      }
+      else
+      {
+         if (m_pType[0] == kPMT_OBB)
+         {
+            cPhysCtrlData dummy;
+
+            m_pControlData.SetSize(0);
+            for (i=0; i<m_nSubModels; i++)
+               func(&dummy, sizeof(cPhysCtrlData), 1);
+         }
+         else
+         {
+            m_pControlData.SetSize(m_nSubModels);
+            for (i=0; i<m_nSubModels; i++)
+               func(&m_pControlData[i], sizeof(cPhysCtrlData), 1);
+         }
+      }
+   }
+
+   // Set up backpointers
+   m_DynamicsData.SetModel(this);
+   m_DynamicsData.SetSubModId(-1);
+   m_ControlData.SetModel(this);
+   m_ControlData.SetSubModId(-1);
+
+   for (i=0; i<m_pDynamicsData.Size(); i++)
+   {
+      m_pDynamicsData[i].SetModel(this);
+      m_pDynamicsData[i].SetSubModId(i);
+   }
+
+   for (i=0; i<m_pControlData.Size(); i++)
+   {
+      m_pControlData[i].SetModel(this);
+      m_pControlData[i].SetSubModId(i);
+   }
+
+   m_AngLimitList.SetSize(0);
+
+#ifdef SHIP
+#define DO_SUBMOD_ROT_FIXUP (TRUE)
+#else
+#define DO_SUBMOD_ROT_FIXUP (!config_is_defined("no_submod_rot_fixup"))
+#endif
+
+   if (DO_SUBMOD_ROT_FIXUP)
+   {
+      // @HACK: if we have rest axes and submodel offsest, make sure we're
+      // rotation controlled
+      BOOL rot_ctrl = FALSE;
+      if (GetRestAxes() != NoAxes)
+      {
+         for (i=0; i<NumSubModels(); i++)
+         {
+            if (mx_mag2_vec(&GetSubModOffset(i)) > 0.0)
+            {
+               rot_ctrl = TRUE;
+               break;
+            }
+         }
+      }
+
+      if (rot_ctrl)
+      {
+         cPhysCtrlData *pControls = GetControls();
+         if (pControls)
+            pControls->ControlRotation(GetRotation());
+      }
+   }
+}
+
+
+
+void cPhysModel::UpdateDiskInfo()
+{
+   bDiskCheck = TRUE;
+   // If this is an AI, or a pathable object, then set "disk" bit
+   if (g_pObjPathableProperty->IsRelevant(m_objID) ||
+       g_pAIProperty->IsRelevant(m_objID))
+      m_flags |= kPMF_DiskCheck;
+}
+
+
+///////////////////////////////////////
+
+cPhysModel::~cPhysModel()
+{
+   int i;
+
+   delete[] m_pType;
+   delete[] m_pForceList;
+   delete[] m_pPosition;
+
+   m_pDynamicsData.SetSize(0);
+   m_pControlData.SetSize(0);
+
+   for (i=0; i<m_AngLimitList.Size(); i++)
+      delete m_AngLimitList[i];
+   m_AngLimitList.SetSize(0);
+
+   for (i=0; i<m_TransLimitList.Size(); i++)
+      delete m_TransLimitList[i];
+   m_TransLimitList.SetSize(0);
+}
+
+///////////////////////////////////////
+
+void cPhysModel::Write(PhysReadWrite func) const
+{
+   int i;
+   int flag;
+
+   // Write General info
+   func((void *)&m_objID, sizeof(ObjID), 1);
+   func((void *)&m_nSubModels, sizeof(int), 1);
+   func((void *)&m_flags, sizeof(unsigned), 1);
+
+   func((void *)&m_gravity, sizeof(mxs_real), 1);
+
+   func((void *)m_pType, sizeof(ePhysModelType), m_nSubModels);
+
+   func((void *)&m_base_friction, sizeof(mxs_real), 1);
+
+   func((void *)&m_medium, sizeof(int), 1);
+
+   for (i=0; i<m_nSubModels; i++)
+   {
+      func((void *)&m_springInfo[i].tension, sizeof(mxs_real), 1);
+      func((void *)&m_springInfo[i].damping, sizeof(mxs_real), 1);
+   }
+
+   func((void *)&m_pointVsTerrain, sizeof(BOOL), 1);
+   func((void *)&m_passThruDT, sizeof(BOOL), 1);
+
+   func((void *)&m_nAttachments, sizeof(int), 1);
+   func((void *)&m_isAttached, sizeof(BOOL), 1);
+
+   func((void *)&m_rotAxes, sizeof(ePhysAxes), 1);
+   func((void *)&m_restAxes, sizeof(ePhysAxes), 1);
+
+   func((void *)&m_climbingObj, sizeof(ObjID), 1);
+   func((void *)&m_ropeSegment, sizeof(int), 1);
+   func((void *)&m_ropePct, sizeof(mxs_real), 1);
+   func((void *)&m_mantlingState, sizeof(int), 1);
+   func((void *)&m_mantlingTargVec, sizeof(mxs_vector), 1);
+
+   func((void *)&m_referenceFrameObj, sizeof(ObjID), 1);
+
+   func((void *)&m_lastSquishTime, sizeof(long), 1);
+
+   // Write positions for each submodel
+   func(m_pPosition, sizeof(cPhysPos), m_nSubModels);
+
+   // Write overall model position & cog offset
+   func((void *)&m_pos, sizeof(cPhysPos), 1);
+   func((void *)&m_cog, sizeof(mxs_vector), 1);
+
+   for (i=0; i<m_nSubModels; i++)
+      func((void *)&m_Offset[i], sizeof(mxs_vector), 1);
+
+   if (IsPressurePlate())
+   {
+      int state = GetPPlateState();
+
+      func((void *)&state, sizeof(int), 1);
+
+      if ((state == kPPS_Activating) ||
+          (state == kPPS_Deactivating))
+      {
+         mxs_vector trans_limit;
+         int        trans_limit_size;
+
+         GetTransLimits(&trans_limit, &trans_limit_size, 1);
+
+         func((void *)&trans_limit, sizeof(mxs_vector), 1);
+      }
+   }
+
+   // Write dynamics and control info, if applicable
+   if (IsMoveable())
+   {
+      if (m_pDynamicsData.Size())
+      {
+         int size = m_pDynamicsData.Size();
+
+         flag = 0x0002;
+         func(&flag, sizeof(int), 1);
+         func((void *)&m_DynamicsData, sizeof(cPhysDynData), 1);
+         func(&size, sizeof(int), 1);
+         for (i=0; i<size; i++)
+            func((void *)&m_pDynamicsData[i], sizeof(cPhysDynData), 1);
+      }
+      else
+      {
+         flag = 0x0001;
+         func(&flag, sizeof(int), 1);
+         func((void *)&m_DynamicsData, sizeof(cPhysDynData), 1);
+      }
+   }
+   else
+   {
+      flag = 0x0000;
+      func(&flag, sizeof(int), 1);
+   }
+
+   if (IsControllable())
+   {
+      if (m_pControlData.Size())
+      {
+         int size = m_pControlData.Size();
+
+         flag = 0x0002;
+         func(&flag, sizeof(int), 1);
+         func((void *)&m_ControlData, sizeof(cPhysCtrlData), 1);
+         func(&size, sizeof(int), 1);
+         for (i=0; i<size; i++)
+            func((void *)&m_pControlData[i], sizeof(cPhysCtrlData), 1);
+      }
+      else
+      {
+         flag = 0x0001;
+         func(&flag, sizeof(int), 1);
+         func((void *)&m_ControlData, sizeof(cPhysCtrlData), 1);
+      }
+   }
+   else
+   {
+      flag = 0x0000;
+      func(&flag, sizeof(int), 1);
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetLocationVec(tPhysSubModId subModId, const mxs_vector & locVec)
+{
+   Assert_(!_isnan(locVec.x) && !_isnan(locVec.y) && !_isnan(locVec.z));
+   AssertSubModIdInRange(subModId);
+   m_pPosition[subModId].m_position.loc.vec = locVec;
+   m_pPosition[subModId].m_targetposition.loc.vec = locVec;
+   m_pPosition[subModId].m_endposition.loc.vec = locVec;
+   UpdateChangedLocation(&(m_pPosition[subModId].m_position.loc));
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetCurrentLocationVec(tPhysSubModId subModId, const mxs_vector & locVec)
+{
+   Assert_(!_isnan(locVec.x) && !_isnan(locVec.y) && !_isnan(locVec.z));
+   AssertSubModIdInRange(subModId);
+   m_pPosition[subModId].m_position.loc.vec = locVec;
+   UpdateChangedLocation(&(m_pPosition[subModId].m_position.loc));
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetLocationVec(const mxs_vector & locVec, BOOL update)
+{
+   Assert_(!_isnan(locVec.x) && !_isnan(locVec.y) && !_isnan(locVec.z));
+   m_pos.m_position.loc.vec = locVec;
+   m_pos.m_targetposition.loc.vec = locVec;
+   m_pos.m_endposition.loc.vec = locVec;
+   UpdateChangedLocation(&m_pos.m_position.loc);
+
+   if (update)
+      ObjTranslate(GetObjID(), &locVec);
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetCurrentLocationVec(const mxs_vector & locVec, BOOL update)
+{
+   Assert_(!_isnan(locVec.x) && !_isnan(locVec.y) && !_isnan(locVec.z));
+   m_pos.m_position.loc.vec = locVec;
+   UpdateChangedLocation(&m_pos.m_position.loc);
+
+   if (update)
+      ObjTranslate(GetObjID(), &locVec);
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetRotation(const mxs_angvec & rot, BOOL update)
+{
+   m_pos.m_position.fac = m_pos.m_targetposition.fac = m_pos.m_endposition.fac = rot;
+
+   if (update)
+     ObjRotate(GetObjID(), &rot);
+}
+
+///////////////////////////////////////
+
+const mxs_vector cPhysModel::GetCOG() const
+{
+   mxs_vector cog;
+   mxs_matrix orien;
+
+   mx_ang2mat(&orien, &m_pos.m_position.fac);
+   mx_mat_mul_vec(&cog, &orien, &m_cog);
+   mx_addeq_vec(&cog, &m_pos.m_position.loc.vec);
+
+   return cog;
+}
+
+///////////////////////////////////////
+
+static AttachConstrainLock = FALSE;
+
+void cPhysModel::AddConstraint(ObjID cause, const mxs_vector &dir, mxs_real mag)
+{
+   if (mag == 0)
+      return;
+
+   for (int i=0; i<m_VelConstraintList.Size(); i++)
+   {
+      if (EqualVectors(m_VelConstraintList[i].dir, dir))
+         return;
+   }
+
+   tVelocityConstraint vel_const;
+
+   vel_const.cause = cause;
+   vel_const.dir = dir;
+   vel_const.mag = mag;
+
+   LGALLOC_PUSH_CREDIT();
+   m_VelConstraintList.Append(vel_const);
+   LGALLOC_POP_CREDIT();
+
+   // And constrain any attachments
+   if (AttachConstrainLock == TRUE)
+      return;
+
+   if (IsAttached())
+   {
+      ILinkQuery *query = g_pPhysAttachRelation->Query(ObjID(), LINKOBJ_WILDCARD);
+
+      if (!query->Done())
+      {
+         sLink link;
+         query->Link(&link);
+
+         cPhysModel *pModelDest = g_PhysModels.GetActive(link.dest);
+         if (pModelDest != NULL)
+         {
+            AttachConstrainLock = TRUE;
+            pModelDest->AddConstraint(cause, dir, mag);
+            AttachConstrainLock = FALSE;
+         }
+      }
+      SafeRelease(query);
+   }
+}
+
+////////////////////////////////////////
+
+void cPhysModel::AddConstraint(ObjID cause, const mxs_vector &norm)
+{
+   for (int i=0; i<m_ConstraintList.Size(); i++)
+   {
+      if (EqualVectors(m_ConstraintList[i].dir, norm))
+         return;
+   }
+
+   tConstraint constraint;
+
+   constraint.cause = cause;
+   constraint.dir = norm;
+
+   LGALLOC_PUSH_CREDIT();
+   m_ConstraintList.Append(constraint);
+   LGALLOC_POP_CREDIT();
+
+   // And constrain any attachments
+   if (AttachConstrainLock == TRUE)
+      return;
+
+   if (IsAttached())
+   {
+      ILinkQuery *query = g_pPhysAttachRelation->Query(ObjID(), LINKOBJ_WILDCARD);
+
+      if (!query->Done())
+      {
+         sLink link;
+         query->Link(&link);
+
+         cPhysModel *pModelDest = g_PhysModels.GetActive(link.dest);
+         if (pModelDest != NULL)
+         {
+            AttachConstrainLock = TRUE;
+            pModelDest->AddConstraint(cause, norm);
+            AttachConstrainLock = FALSE;
+         }
+      }
+      SafeRelease(query);
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::AddConstraint(ObjID cause, tPhysSubModId i, const mxs_vector &norm)
+{
+   BOOL in_model = FALSE;
+   BOOL in_submodel = FALSE;
+   int  j;
+
+   for (j=0; j<m_ConstraintList.Size(); j++)
+   {
+      if (EqualVectors(m_ConstraintList[j].dir, norm))
+      {
+         in_model = TRUE;
+         break;
+      }
+   }
+
+   for (j=0; j<m_SubModConstraintList[i].Size(); j++)
+   {
+      if (EqualVectors(m_SubModConstraintList[i][j].dir, norm))
+      {
+         in_submodel = TRUE;
+         break;
+      }
+   }
+
+   if (in_model && in_submodel)
+      return;
+
+   tConstraint constraint;
+
+   constraint.cause = cause;
+   constraint.dir = norm;
+
+   LGALLOC_PUSH_CREDIT();
+   m_ConstraintList.Append(constraint);
+   m_SubModConstraintList[i].Append(constraint);
+   LGALLOC_POP_CREDIT();
+
+   // And constrain any attachments
+   if (AttachConstrainLock == TRUE)
+      return;
+
+   if (IsAttached())
+   {
+      ILinkQuery *query = g_pPhysAttachRelation->Query(ObjID(), LINKOBJ_WILDCARD);
+
+      if (!query->Done())
+      {
+         sLink link;
+         query->Link(&link);
+
+         cPhysModel *pModelDest = g_PhysModels.GetActive(link.dest);
+         if (pModelDest != NULL)
+         {
+            AttachConstrainLock = TRUE;
+            pModelDest->AddConstraint(cause, norm);
+            AttachConstrainLock = FALSE;
+         }
+      }
+      SafeRelease(query);
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::ApplyConstraints(mxs_vector *vec)
+{
+   mxs_vector mid;
+   mxs_vector start;
+
+   Assert_(gInsideMT);
+
+   if (IsAttached())
+      return;
+
+   mx_copy_vec(&start, vec);
+
+   for (int i=0; i<m_VelConstraintList.Size(); i++)
+   {
+      mxs_real   dp;
+      mxs_vector dir;
+      mxs_vector constraint;
+
+      mx_copy_vec(&dir, &m_VelConstraintList[i].dir);
+
+      mx_scale_vec(&constraint, &dir, m_VelConstraintList[i].mag);
+
+      dp = mx_dot_vec(vec, &m_VelConstraintList[i].dir);
+
+      if (dp < m_VelConstraintList[i].mag)
+      {
+         PhysRemNormComp(vec, dir);
+         mx_scaleeq_vec(&dir, -1.0);
+         PhysRemNormComp(vec, dir);
+         mx_addeq_vec(vec, &constraint);
+      }
+   }
+
+   mx_copy_vec(&mid, vec);
+
+   if (m_ConstraintList.Size() > 0)
+      PhysConstrain(vec, m_ConstraintList, m_ConstraintList.Size());
+
+   if (IsPlayer())
+   {
+      for (i=0; i<m_VelConstraintList.Size(); i++)
+      {
+         if (m_VelConstraintList[i].mag > 0)
+         {
+            mxs_vector constraint;
+            mx_scale_vec(&constraint, &m_VelConstraintList[i].dir, m_VelConstraintList[i].mag);
+
+            if (mx_dot_vec(vec, &constraint) <= 0)
+            {
+               cPhysModel *pSquishModel = g_PhysModels.Get(m_VelConstraintList[i].cause);
+
+               mxs_real mass = pSquishModel->GetDynamics()->GetMass();
+               mxs_real vel  = mx_mag_vec(&pSquishModel->GetDynamics()->GetVelocity());
+
+               Squish((mass * vel) / 100);
+               pSquishModel->SetSquishingState(TRUE);
+
+               // Don't move, but retain momentum
+               pSquishModel->SetTargetLocation(pSquishModel->GetLocationVec());
+               pSquishModel->SetEndLocationVec(pSquishModel->GetLocationVec());
+               SetEndLocationVec(GetLocationVec());
+            }
+         }
+      }
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::ApplyConstraints(tPhysSubModId i, mxs_vector *vec)
+{
+   if (m_SubModConstraintList[i].Size() > 0)
+      PhysConstrain(vec, m_SubModConstraintList[i], m_SubModConstraintList[i].Size());
+}
+
+///////////////////////////////////////
+
+void cPhysModel::GetConstraints(mxs_vector vec_list[], int *num_vecs)
+{
+   int i;
+
+   for (i=0; (i<m_ConstraintList.Size()) && (i<*num_vecs); i++)
+      mx_copy_vec(&vec_list[i], &m_ConstraintList[i].dir);
+
+   *num_vecs = i;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::ApplyForces(tPhysSubModId subModId, sPhysForce *flist, int nforces, mxs_real dt,
+                             mxs_vector &start_loc, mxs_vector *end_loc, mxs_vector *force,
+                             mxs_real *ctime, BOOL terrain_check, BOOL object_check)
+{
+   mx_copy_vec(end_loc, (mxs_vector *)&GetEndLocationVec(subModId));
+   mx_zero_vec(force);
+   *ctime = 0.0;
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if (m_ControlData.GetType() != kPCT_NoControl)
+      return TRUE;
+
+   for (int i=0; i<m_pControlData.Size(); i++)
+   {
+      if (m_pControlData[i].GetType() != kPCT_NoControl)
+         return TRUE;
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsVelocityControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if (m_ControlData.GetType() & kPCT_VelControl)
+      return TRUE;
+
+   for (int i=0; i<m_pControlData.Size(); i++)
+   {
+      if (m_pControlData[i].GetType() & kPCT_VelControl)
+         return TRUE;
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsAxisVelocityControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if ((m_ControlData.GetType() & kPCT_VelControl) && m_ControlData.AxisControlled())
+      return TRUE;
+
+   for (int i=0; i<m_pControlData.Size(); i++)
+   {
+      if ((m_pControlData[i].GetType() & kPCT_VelControl) && m_pControlData[i].AxisControlled())
+         return TRUE;
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsRotationalVelocityControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if (m_ControlData.GetType() & kPCT_RotVelControl)
+      return TRUE;
+
+   if (!IsPlayer())
+   {
+      for (int i=0; i<m_pControlData.Size(); i++)
+      {
+         if (m_pControlData[i].GetType() & kPCT_RotVelControl)
+            return TRUE;
+      }
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsLocationControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if (m_ControlData.GetType() & kPCT_LocControl)
+      return TRUE;
+
+   for (int i=0; i<m_pControlData.Size(); i++)
+   {
+      if (m_pControlData[i].GetType() & kPCT_LocControl)
+         return TRUE;
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsRotationControlled()
+{
+   if (!IsControllable())
+      return FALSE;
+
+   if (m_ControlData.GetType() & kPCT_RotControl)
+      return TRUE;
+
+   for (int i=0; i<m_pControlData.Size(); i++)
+   {
+      if (m_pControlData[i].GetType() & kPCT_RotControl)
+         return TRUE;
+   }
+
+   return FALSE;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetSleep(BOOL state)
+{
+   if (IsCreature() && !IsRope() && CreatureSelfPropelled(GetObjID()) && (state == FALSE))
+      return;
+
+   if (IsWeapon(0) && (state == FALSE))
+      return;
+
+#ifdef NEW_NETWORK_ENABLED
+   // Tell the other players that this object is or isn't moving now
+   // We put this call here, because the networking code doesn't want to
+   // ignore the special cases below...
+   if (state != IsSleeping())
+   {
+      AutoAppIPtr(NetManager);
+      if (pNetManager->Networking()) {
+         AutoAppIPtr(ObjectNetworking);
+         // If the object isn't hosted here, then we aren't in charge of
+         // telling the rest of the world about its state changes.  Also,
+         // AI's base their network sleepiness on their Efficiency mode.
+         if (pObjectNetworking->ObjHostedHere(GetObjID())
+             && !ObjIsAI(GetObjID()))
+         {
+            AutoAppIPtr(NetManager);
+            PhysNetSetSleep(GetObjID(), state);
+         }
+      }
+   }
+#endif
+
+   if (IsPressurePlate() && (GetPPlateState() != kPPS_Inactive) && (state == TRUE))
+      return;
+
+   if (ObjectPassThru() && (state == TRUE))
+      return;
+
+   if (state != IsSleeping())
+   {
+      SetFlagState(kPMF_Sleeping, state);
+
+      if (state)
+      {
+         // We don't want to make non physical if we're in contact with another
+         // object, because it could move after we've become non-physical and
+         // then we'd just be floating, which isn't so good.
+         if (RemovesOnSleep() && !InObjectContact())
+         {
+            PhysDeregisterModel(GetObjID());
+            return;
+         }
+
+         // Blow away firer link if we had one
+         SetProjectileFirer(GetObjID(), OBJ_NULL);
+
+         g_PhysModels.StopMoving(this);
+         PhysMessageFellAsleep(GetObjID());
+
+         SetCollisionChecked(FALSE);
+         SetSquishingState(FALSE);
+
+         m_DynamicsData.SetFrozen(FALSE);
+         m_DynamicsData.SetCurrentTime(0);
+
+         m_DynamicsData.ZeroCollisionCount();
+         m_DynamicsData.ZeroAcceleration();
+
+         for (int i=0; i<m_pDynamicsData.Size(); i++)
+         {
+            m_pDynamicsData[i].ZeroCollisionCount();
+            m_pDynamicsData[i].ZeroAcceleration();
+         }
+      }
+      else
+      {
+         WakeUpContacts(this);
+
+         SetRest(FALSE);
+         g_PhysModels.StartMoving(this);
+         PhysMessageWokeUp(GetObjID());
+      }
+   }
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::IsTranslating() const
+{
+   BOOL moving = FALSE;
+
+   if (IsMoveable())
+   {
+      if (!IsZeroVector(GetDynamics()->GetVelocity()))
+         moving = TRUE;
+
+      if (!IsZeroVector(GetDynamics()->GetRotationalVelocity()) &&
+          !IsZeroVector(m_cog))
+         moving = TRUE;
+
+      for (int i=0; i<NumSubModels(); i++)
+      {
+         if (!IsZeroVector(GetDynamics(i)->GetVelocity()))
+            moving = TRUE;
+
+         if (!IsZeroVector(GetDynamics(i)->GetRotationalVelocity()) &&
+             !IsZeroVector(m_cog))
+            moving = TRUE;
+      }
+   }
+
+   return moving;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::CreateTerrainContact(tPhysSubModId subModId, const cFacePoly *poly, ObjID objID)
+{
+   cFaceContactList *pFaceContactList;
+   cFaceContact     *pFaceContact;
+
+   if (!GetFaceContacts(subModId, &pFaceContactList) ||
+       !pFaceContactList->Find(poly, &pFaceContact))
+   {
+      m_nFaceContacts++;
+      g_PhysContactLinks.CreateTerrainLink(m_objID, subModId, poly, objID);
+
+      PhysMessageContactCreate(this, subModId, kContactFace, OBJ_NULL, -1);
+   }
+}
+
+void cPhysModel::CreateTerrainContact(tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end)
+{
+   cEdgeContactList *pEdgeContactList;
+   cEdgeContact     *pEdgeContact;
+
+   if (!GetEdgeContacts(subModId, &pEdgeContactList) ||
+       !pEdgeContactList->Find(start, end, &pEdgeContact))
+   {
+      m_nEdgeContacts++;
+      g_PhysContactLinks.CreateTerrainLink(m_objID, subModId, start, end);
+
+      PhysMessageContactCreate(this, subModId, kContactEdge, OBJ_NULL, -1);
+   }
+}
+
+void cPhysModel::CreateTerrainContact(tPhysSubModId subModId, const mxs_vector &point)
+{
+   cVertexContactList *pVertexContactList;
+   cVertexContact     *pVertexContact;
+
+   if (!GetVertexContacts(subModId, &pVertexContactList) ||
+       !pVertexContactList->Find(point, &pVertexContact))
+   {
+      m_nVertexContacts++;
+      g_PhysContactLinks.CreateTerrainLink(m_objID, subModId, point);
+
+      PhysMessageContactCreate(this, subModId, kContactVertex, OBJ_NULL, -1);
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::DestroyTerrainContact(tPhysSubModId subModId, const cFacePoly *poly)
+{
+   m_nFaceContacts--;
+   g_PhysContactLinks.DestroyTerrainLink(m_objID, subModId, poly);
+
+   PhysMessageContactDestroy(this, subModId, kContactFace, OBJ_NULL, -1);
+}
+
+void cPhysModel::DestroyTerrainContact(tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end)
+{
+   m_nEdgeContacts--;
+   g_PhysContactLinks.DestroyTerrainLink(m_objID, subModId, start, end);
+
+   PhysMessageContactDestroy(this, subModId, kContactEdge, OBJ_NULL, -1);
+}
+
+void cPhysModel::DestroyTerrainContact(tPhysSubModId subModId, const mxs_vector &point)
+{
+   m_nVertexContacts--;
+   g_PhysContactLinks.DestroyTerrainLink(m_objID, subModId, point);
+
+   PhysMessageContactDestroy(this, subModId, kContactVertex, OBJ_NULL, -1);
+}
+
+///////////////////////////////////////
+
+void cPhysModel::DestroyAllTerrainContacts(tPhysSubModId subModId)
+{
+   cFaceContactList   *pFaceContactList;
+   cEdgeContactList   *pEdgeContactList;
+   cVertexContactList *pVertexContactList;
+
+   if (GetFaceContacts(subModId, &pFaceContactList))
+   {
+      cFaceContact *pFaceContact = pFaceContactList->GetFirst();
+
+      while (pFaceContact != NULL)
+      {
+         DestroyTerrainContact(subModId, pFaceContact->GetPoly());
+
+         if (!GetFaceContacts(subModId, &pFaceContactList))
+            break;
+         pFaceContact = pFaceContactList->GetFirst();
+      }
+   }
+
+   if (GetEdgeContacts(subModId, &pEdgeContactList))
+   {
+      cEdgeContact *pEdgeContact = pEdgeContactList->GetFirst();
+
+      while (pEdgeContact != NULL)
+      {
+         DestroyTerrainContact(subModId, pEdgeContact->GetStart(), pEdgeContact->GetEnd());
+
+         if (!GetEdgeContacts(subModId, &pEdgeContactList))
+            break;
+         pEdgeContact = pEdgeContactList->GetFirst();
+      }
+   }
+
+   if (GetVertexContacts(subModId, &pVertexContactList))
+   {
+      cVertexContact *pVertexContact = pVertexContactList->GetFirst();
+
+      while (pVertexContact != NULL)
+      {
+         DestroyTerrainContact(subModId, pVertexContact->GetPoint());
+
+         if (!GetVertexContacts(subModId, &pVertexContactList))
+            break;
+         pVertexContact = pVertexContactList->GetFirst();
+      }
+   }
+}
+///////////////////////////////////////
+
+BOOL cPhysModel::GetFaceContacts(tPhysSubModId subModId, cFaceContactList **ppFaceContactList) const
+{
+   if (m_nFaceContacts > 0)
+      return g_PhysContactLinks.GetTerrainLinks(m_objID, subModId, ppFaceContactList);
+
+   return FALSE;
+}
+
+BOOL cPhysModel::GetEdgeContacts(tPhysSubModId subModId, cEdgeContactList **ppEdgeContactList) const
+{
+   if (m_nEdgeContacts > 0)
+      return g_PhysContactLinks.GetTerrainLinks(m_objID, subModId, ppEdgeContactList);
+
+   return FALSE;
+}
+
+BOOL cPhysModel::GetVertexContacts(tPhysSubModId subModId, cVertexContactList **ppVertexContactList) const
+{
+   if (m_nVertexContacts > 0)
+      return g_PhysContactLinks.GetTerrainLinks(m_objID, subModId, ppVertexContactList);
+
+   return FALSE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void cPhysModel::UpdateEndLocation(mxs_real dt)
+{
+   if (IsSquishing())
+   {
+      mx_copy_vec(&m_pos.m_endposition.loc.vec, &m_pos.m_position.loc.vec);
+      return;
+   }
+
+   // Update location
+   mx_copy_vec(&m_pos.m_endposition.loc.vec, &m_pos.m_targetposition.loc.vec);
+
+   // Update rotation
+   mx_mk_angvec(&m_pos.m_endposition.fac, m_pos.m_targetposition.fac.tx,
+                                          m_pos.m_targetposition.fac.ty,
+                                          m_pos.m_targetposition.fac.tz);
+
+   if (!EqualVectors(m_pos.m_position.loc.vec, m_pos.m_endposition.loc.vec) ||
+       (m_pos.m_position.fac.tx != m_pos.m_endposition.fac.tx) ||
+       (m_pos.m_position.fac.ty != m_pos.m_endposition.fac.ty) ||
+       (m_pos.m_position.fac.tz != m_pos.m_endposition.fac.tz))
+   {
+      SetUpdateRefs(TRUE);
+   }
+
+   // Update hints
+   m_pos.m_endposition.loc.cell = CELL_INVALID;
+   m_pos.m_endposition.loc.hint = m_pos.m_position.loc.hint;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::UpdateEndLocation(tPhysSubModId i, mxs_real dt)
+{
+   mxs_vector movement_offset;
+   mxs_vector velocity;
+   mxs_vector offset;
+
+   if (IsPlayer())
+      PlayerMotionGetOffset(i, &offset);
+   else
+      mx_zero_vec(&offset);
+
+   if ((GetSpringTension(i) > 0 || !IsZeroVector(offset)) && (i < m_pDynamicsData.Size()))
+   {
+      // Find end location based on velocity
+      mx_copy_vec(&velocity, &m_pDynamicsData[i].GetVelocity());
+      mx_scale_vec(&movement_offset, &velocity, dt);
+   }
+   else
+      mx_sub_vec(&movement_offset, &m_pPosition[i].m_targetposition.loc.vec, &m_pPosition[i].m_position.loc.vec);
+
+   // Update location
+   mx_add_vec(&m_pPosition[i].m_endposition.loc.vec, &m_pPosition[i].m_position.loc.vec, &movement_offset);
+
+   // Update rotation
+   mx_mk_angvec(&m_pPosition[i].m_endposition.fac, m_pPosition[i].m_targetposition.fac.tx,
+                                                   m_pPosition[i].m_targetposition.fac.ty,
+                                                   m_pPosition[i].m_targetposition.fac.tz);
+   // Update hints
+   m_pPosition[i].m_endposition.loc.cell = CELL_INVALID;
+   m_pPosition[i].m_endposition.loc.hint = m_pPosition[i].m_position.loc.hint;
+
+   if (!EqualVectors(m_pPosition[i].m_endposition.loc.vec, m_pPosition[i].m_position.loc.vec))// && IsRope())
+   {
+      SetUpdateRefs(TRUE);
+   }
+}
+
+///////////////////////////////////////
+
+const Location & cPhysModel::GetEndLocation(tPhysSubModId subModId) const
+{
+   if (subModId == -1)
+      return m_pos.m_endposition.loc;
+   else
+      return m_pPosition[subModId].m_endposition.loc;
+}
+
+///////////////////////////////////////
+
+const mxs_vector & cPhysModel::GetEndLocationVec(tPhysSubModId subModId) const
+{
+   if (subModId == -1)
+      return m_pos.m_endposition.loc.vec;
+   else
+      return m_pPosition[subModId].m_endposition.loc.vec;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetEndLocationVec(tPhysSubModId subModId, const mxs_vector &end_loc)
+{
+   if (subModId == -1)
+   {
+      mx_copy_vec((mxs_vector *) &m_pos.m_endposition.loc.vec, &end_loc);
+      m_pos.m_endposition.loc.hint = m_pos.m_position.loc.hint;
+      m_pos.m_endposition.loc.cell = -1;
+   }
+   else
+      mx_copy_vec((mxs_vector *)  &m_pPosition[subModId].m_endposition.loc.vec, &end_loc);
+}
+
+///////////////////////////////////////
+
+const mxs_angvec & cPhysModel::GetEndRotationVec(tPhysSubModId subModId) const
+{
+   if (subModId == -1)
+      return m_pos.m_endposition.fac;
+   else
+      return m_pPosition[subModId].m_endposition.fac;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetEndRotationVec(tPhysSubModId subModId, const mxs_angvec &end_ang)
+{
+   if (subModId == -1)
+      m_pos.m_endposition.fac = end_ang;
+   else
+      m_pPosition[subModId].m_endposition.fac = end_ang;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#define sq(x) ((x)*(x))
+
+void cPhysModel::PreventPlayerFall()
+{
+   Assert_(IsPlayer());
+
+   cFaceContactList *pFaceContactList;
+
+   // get the "correct" speed for constraining our motion
+   // get player mode
+   ePlayerMode cur_mode=GetPlayerMode();
+   float speed=GetTransSpeedScale()*SLOW_MOVE_SPEED;
+   float special_muls[2]={0.90,0.60};     // was 0.95
+   float height_check=9.0;   // was 8.0
+
+#ifndef SHIP
+   config_get_float("player_fall_walk",&special_muls[0]);
+   config_get_float("player_fall_crouch",&special_muls[1]);
+   config_get_float("player_fall_height",&height_check);
+#endif
+   if (cur_mode==kPM_Crouch)
+      speed*=special_muls[1];
+   else
+      speed*=special_muls[0];
+
+   if (GetFaceContacts(PLAYER_FOOT, &pFaceContactList) &&
+       (mx_mag2_vec(&GetVelocity()) < sq(speed)))
+   {
+      Location start, end, hit;
+      Location targ_start, targ_end;
+
+      // find our forward location
+      MakeHintedLocationFromVector(&start, &GetLocationVec(PLAYER_FOOT),
+                                   &GetLocation(PLAYER_FOOT));
+      MakeHintedLocationFromVector(&targ_start, &GetTargetLocation(PLAYER_FOOT),
+                                   &GetLocation(PLAYER_FOOT));
+
+      MakeLocationFromVector(&end, &start.vec);
+      end.vec.z -= 0.1;
+
+      MakeLocationFromVector(&targ_end, &targ_start.vec);
+      targ_end.vec.z -= height_check;
+
+      // would like to hit water, and stop there, i guess?
+
+      // Raycast down to see what kind of fall we're talking about
+      if (PortalRaycast(&targ_start, &targ_end, &hit, 0))
+      {
+#ifndef SHIP
+         if (config_is_defined("player_fall_loud"))
+            mprintf("Saved Me\n");
+#endif
+
+         m_pos.m_targetposition.loc.vec = m_pos.m_position.loc.vec;
+         m_pos.m_endposition.loc.vec = m_pos.m_position.loc.vec;
+
+         for (int i=0; i<NumSubModels(); i++)
+         {
+            m_pPosition[i].m_targetposition.loc.vec = m_pPosition[i].m_position.loc.vec;
+            m_pPosition[i].m_endposition.loc.vec = m_pPosition[i].m_position.loc.vec;
+         }
+      }
+   }
+}
+
+DECLARE_TIMER(UM_UpdateTarget, Average);
+DECLARE_TIMER(UM_UpdateRope, Average);
+DECLARE_TIMER(UM_UpdateEnd, Average);
+DECLARE_TIMER(UM_UpdateTargetSub, Average);
+DECLARE_TIMER(UM_UpdateSpringSub, Average);
+DECLARE_TIMER(UM_UpdateEndSub, Average);
+DECLARE_TIMER(UM_PreventFall, Average);
+DECLARE_TIMER(UM_UpdateRefs, Average);
+
+void cPhysModel::UpdateModel(mxs_real dt)
+{
+
+   TIMER_Start(UM_UpdateTarget);
+   UpdateTargetLocation(dt);
+   TIMER_MarkStop(UM_UpdateTarget);
+
+   TIMER_Start(UM_UpdateRope);
+   UpdateRopeClimbing(dt);
+   TIMER_MarkStop(UM_UpdateRope);
+
+   TIMER_Start(UM_UpdateEnd);
+   UpdateEndLocation(dt);
+   TIMER_MarkStop(UM_UpdateEnd);
+
+   for (int i=0; i<NumSubModels(); i++)
+   {
+      TIMER_Start(UM_UpdateTargetSub);
+      UpdateTargetLocation(i, dt);
+      TIMER_MarkStop(UM_UpdateTargetSub);
+
+      TIMER_Start(UM_UpdateSpringSub);
+      UpdateSpringMechanics(i, dt);
+      TIMER_MarkStop(UM_UpdateSpringSub);
+
+      TIMER_Start(UM_UpdateEndSub);
+      UpdateEndLocation(i, dt);
+      TIMER_MarkStop(UM_UpdateEndSub);
+   }
+
+   TIMER_Start(UM_UpdateRefs);
+   if (UpdateRefsPending())
+   {
+      SetUpdateRefs(FALSE);
+      PhysUpdateRefs(this);
+   }
+   TIMER_MarkStop(UM_UpdateRefs);
+
+   TIMER_Start(UM_PreventFall);
+   // If we're trying to prevent the player from falling, do it again
+   if (IsPlayer())
+      PreventPlayerFall();
+   TIMER_MarkStop(UM_PreventFall);
+
+   if (NumAttachments() > 0)
+   {
+      cAutoLinkQuery query(g_pPhysAttachRelation, LINKOBJ_WILDCARD, GetObjID());
+
+      for (;!query->Done(); query->Next())
+      {
+         cPhysModel *pAttachModel = g_PhysModels.Get(query.GetSource());
+         pAttachModel->UpdateModel(dt);
+      }
+   }  
+
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetTargetLocation(const mxs_vector &loc)
+{
+   int i;
+
+   mx_copy_vec(&m_pos.m_targetposition.loc.vec, &loc);
+
+   UpdateEndLocation(.1);
+
+   for (i=0; i<NumSubModels(); i++)
+   {
+      UpdateTargetLocation(i, .1);
+      UpdateSpringMechanics(i, .1);
+      UpdateEndLocation(i, .1);
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::UpdateTargetLocation(mxs_real dt)
+{
+   cPhysDynData *pDyn = GetDynamics();
+   mxs_matrix facing, rotation, end_facing;
+   mxs_vector velocity, rot_vec;
+   mxs_real   rot_mag;
+
+   if (IsAttached())
+   {
+      LinkID linkID = g_pPhysAttachRelation->GetSingleLink(GetObjID(), LINKOBJ_WILDCARD);
+      sLink link;
+
+      if (linkID)
+      {
+         g_pPhysAttachRelation->Get(linkID, &link);
+         sPhysAttachData *pAttachData = (sPhysAttachData *)g_pPhysAttachRelation->GetData(linkID);
+
+         cPhysModel *pAttachModel = g_PhysModels.GetActive(link.dest);
+
+         if (pAttachModel)
+         {
+            mx_add_vec(&m_pos.m_targetposition.loc.vec, &pAttachModel->GetTargetLocation(), &pAttachData->offset);
+
+            return;
+         }
+      }
+   }
+
+   // Setup
+   mx_copy_vec(&velocity, &pDyn->GetVelocity());
+   mx_copy_vec(&rot_vec, &pDyn->GetRotationalVelocity());
+
+   mx_ang2mat(&facing, &m_pos.m_position.fac);
+
+   if (mx_mag2_vec(&rot_vec) > 0.000001)
+   {
+      rot_mag = mx_normeq_vec(&rot_vec) * dt;
+
+      mx_mk_rot_vec_mat(&rotation, &rot_vec, mx_rad2ang(rot_mag));
+      mx_mul_mat(&end_facing, &rotation, &facing);
+
+      mx_mat2ang(&m_pos.m_targetposition.fac, &end_facing);
+
+#if 0
+      if (IsPlayer())
+      {
+         mprintf("ang = %d\n", mx_rad2ang(rot_mag));
+         mprintf("rot_vec = %g %g %g\n", rot_vec.x, rot_vec.y, rot_vec.z);
+         mprintf("facing    = %d %d %d\n", m_pos.m_position.fac.tx, m_pos.m_position.fac.ty, m_pos.m_position.fac.tz);
+         mprintf("endfacing = %d %d %d\n", m_pos.m_targetposition.fac.tx, m_pos.m_targetposition.fac.ty, m_pos.m_targetposition.fac.tz);
+      }
+#endif
+   }
+
+#if 0
+   // Apply constraints
+   ApplyConstraints(&velocity);
+
+   pDyn->SetVelocity(velocity);
+#endif
+
+   // Update translation and rotation
+   mx_scale_add_vec((mxs_vector *) &m_pos.m_targetposition.loc.vec,
+                    (mxs_vector *) &m_pos.m_position.loc.vec,
+                                   &velocity, dt);
+
+   // Adjust location for rotation not around center point
+   if (!IsPlayer() && !IsZeroVector(m_cog) && (rot_mag > 0.0001))
+   {
+      mxs_matrix rotation;
+      mxs_matrix obj_for;
+      mxs_matrix both_rot;
+      mxs_angvec rot_ang;
+      mxs_vector rotvel_offset;
+      mxs_vector cog_offset;
+      mxs_vector rot_offset;
+      mxs_vector add_offset;
+
+      // How much rotated this frame
+      mx_scale_vec(&rotvel_offset, &rot_vec, rot_mag);
+      mx_mk_angvec(&rot_ang, mx_rad2ang(rotvel_offset.x),
+                             mx_rad2ang(rotvel_offset.y),
+                             mx_rad2ang(rotvel_offset.z));
+
+
+      // Set up matrices
+      mx_ang2mat(&rotation, &rot_ang);
+      mx_ang2mat(&obj_for, &m_pos.m_position.fac);
+
+      mx_mul_mat(&both_rot, &rotation, &obj_for);
+
+      // Find starting offset this frame
+      mx_mat_mul_vec(&cog_offset, &obj_for, &m_cog);
+
+      // Find ending offset this frame
+      mx_mat_mul_vec(&rot_offset, &both_rot, &m_cog);
+
+      // Find the delta
+      mx_sub_vec(&add_offset, &rot_offset, &cog_offset);
+
+      mx_addeq_vec(&m_pos.m_targetposition.loc.vec, &add_offset);
+   }
+
+   if (IsAttached())
+   {
+      LinkID linkID = g_pPhysAttachRelation->GetSingleLink(GetObjID(), LINKOBJ_WILDCARD);
+      sLink link;
+
+      if (linkID)
+      {
+         g_pPhysAttachRelation->Get(linkID, &link);
+         sPhysAttachData *pAttachData = (sPhysAttachData *)g_pPhysAttachRelation->GetData(linkID);
+
+         cPhysModel *pAttachModel = g_PhysModels.GetActive(link.dest);
+
+         if (pAttachModel)
+         {
+            mxs_vector targ;
+            mx_add_vec(&targ, &pAttachModel->GetTargetLocation(), &pAttachData->offset);
+
+            mx_subeq_vec(&targ, &m_pos.m_targetposition.loc.vec);
+
+            mprintf("targ: %g %g %g\n", targ.x, targ.y, targ.z);
+
+            Assert_(fabs(targ.x) < 5.0);
+
+         }
+      }
+   }
+
+}
+
+////////////////////////////////////////
+
+void cPhysModel::ComputeRopeSegPct()
+{
+   cPhysModel *pRopeModel;
+
+   int node_1 = GetRopeSegment();
+   int node_2 = node_1 - 1;
+
+   pRopeModel = g_PhysModels.Get(GetClimbingObj());
+
+   if (pRopeModel == NULL)
+   {
+      Warning(("cPhysModel::ComputeRopeSegPct: no physics model for obj %d?\n", GetClimbingObj()));
+      return;
+   }
+
+   mxs_vector segment;
+   mxs_vector end_to_obj;
+
+   // @TODO: make sure the rope has been updated
+
+   mx_sub_vec(&segment, &pRopeModel->GetLocationVec(node_2), &pRopeModel->GetLocationVec(node_1));
+
+   // went past node_1?
+   mx_sub_vec(&end_to_obj, &GetLocationVec(), &pRopeModel->GetLocationVec(node_1));
+   if (mx_dot_vec(&end_to_obj, &segment) < 0)
+   {
+      if (node_1 < (pRopeModel->NumSubModels() - 1))
+      {
+         SetRopeSegment(node_1 + 1);
+         SetRopeSegmentPct(1.0);
+
+         #ifndef SHIP
+         if (config_is_defined("RopeSpew"))
+            mprintf(" Obj %d moved from node %d to %d\n", GetObjID(), node_1, node_1 + 1);
+         #endif
+      }
+      else
+         BreakClimb(GetObjID(), FALSE, FALSE);
+      return;
+   }
+
+   // went past node_2?
+   mx_sub_vec(&end_to_obj, &GetLocationVec(), &pRopeModel->GetLocationVec(node_2));
+   if (mx_dot_vec(&end_to_obj, &segment) > 0)
+   {
+      if (node_2 > 0)
+      {
+         SetRopeSegment(node_2);
+         SetRopeSegmentPct(0.0);
+
+         #ifndef SHIP
+         if (config_is_defined("RopeSpew"))
+            mprintf(" Obj %d moved from node %d to %d\n", GetObjID(), node_1, node_2);
+         #endif
+      }
+      return;
+   }
+
+   // within the segment
+   mxs_vector on_segment;
+   mxs_vector seg_norm;
+   mxs_vector to_obj;
+   mxs_real   seg_len;
+
+   seg_len = mx_norm_vec(&seg_norm, &segment);
+
+   mx_sub_vec(&to_obj, &GetLocationVec(), &pRopeModel->GetLocationVec(node_1));
+   mx_scale_vec(&on_segment, &seg_norm, mx_dot_vec(&seg_norm, &to_obj));
+
+   SetRopeSegmentPct(mx_mag_vec(&on_segment) / seg_len);
+
+   #ifndef SHIP
+   if (config_is_defined("RopeSpew"))
+      mprintf(" Obj %d is %g along segment %d\n", GetObjID(), GetRopeSegmentPct(), node_1);
+   #endif
+}
+
+////////////////////////////////////////
+
+void cPhysModel::UpdateRopeClimbing(mxs_real dt)
+{
+   if (!IsRopeClimbing())
+      return;
+
+   ObjID rope = GetClimbingObj();
+   cPhysModel *pRopeModel = g_PhysModels.Get(rope);
+
+   Assert_(pRopeModel);
+
+   int node = GetRopeSegment();
+
+   mxs_matrix orien;
+
+   // Adjust rotation to match segment
+   mxs_vector seg_norm;
+   mxs_matrix new_orien;
+   mxs_angvec new_rot;
+
+   mx_sub_vec(&seg_norm, &pRopeModel->GetLocationVec(node - 1), &pRopeModel->GetLocationVec(node));
+   mx_normeq_vec(&seg_norm);
+   mx_ang2mat(&orien, &m_pos.m_targetposition.fac);
+
+   mx_cross_vec(&new_orien.vec[1], &seg_norm, &orien.vec[0]);
+   mx_cross_vec(&new_orien.vec[0], &new_orien.vec[1], &seg_norm);
+   mx_cross_vec(&new_orien.vec[2], &new_orien.vec[0], &new_orien.vec[1]);
+
+   mx_mat2ang(&new_rot, &new_orien);
+
+   m_pos.m_targetposition.fac = new_rot;
+
+   // Compute target location
+   mxs_vector seg;
+   mxs_vector loc;
+   mxs_vector mov;
+
+   mx_sub_vec(&seg, &pRopeModel->GetLocationVec(node - 1), &pRopeModel->GetLocationVec(node));
+   mx_scaleeq_vec(&seg, GetRopeSegmentPct());
+
+   mx_add_vec(&loc, &pRopeModel->GetLocationVec(node), &seg);
+
+   mx_scale_addeq_vec(&loc, &new_orien.vec[0], -1.0);
+   mx_scale_addeq_vec(&loc, &new_orien.vec[1], -0.1);
+
+   mx_sub_vec(&mov, &m_pos.m_targetposition.loc.vec, &m_pos.m_position.loc.vec);
+   mx_addeq_vec(&loc, &mov);
+
+   mxs_vector new_delta;
+   mx_sub_vec(&new_delta, &loc, &m_pos.m_position.loc.vec);
+   if (PhysObjValidPos(GetObjID(), &new_delta))
+      m_pos.m_targetposition.loc.vec = loc;
+   else
+   {
+      m_pos.m_targetposition.loc.vec = m_pos.m_position.loc.vec;
+      m_pos.m_targetposition.fac = m_pos.m_position.fac;
+   }
+}
+
+////////////////////////////////////////
+
+void cPhysModel::Squish(mxs_real magnitude)
+{
+   long time = GetSimTime();
+
+   if ((m_lastSquishTime < 0) || (time > (m_lastSquishTime + kSquishPeriod)))
+   {
+      m_lastSquishTime = time;
+
+      #ifndef SHIP
+      if (config_is_defined("SquishSpew"))
+         mprintf("Obj %d is squished for %g\n", GetObjID(), magnitude);
+      #endif
+
+      AutoAppIPtr_(ObjectSystem, pObjSys);
+      AutoAppIPtr_(StimSensors, pStimSens);
+      AutoAppIPtr_(Stimulator, pStim);
+
+      StimID stim = pObjSys->GetObjectNamed("BashStim");
+      StimSensorID sensid = pStimSens->LookupSensor(GetObjID(), stim);
+
+      if (sensid != SENSORID_NULL)
+      {
+         sStimEventData evdat = { stim, magnitude, 0, sensid, 0, GetSimTime() };
+         sStimEvent event(&evdat);
+
+         pStim->StimulateSensor(sensid, &event);
+      }
+   }
+}
+
+////////////////////////////////////////
+
+void cPhysModel::UpdateTargetLocation(tPhysSubModId i, mxs_real dt)
+{
+   mxs_matrix obj_rotation;
+   mxs_vector submod_offset;
+   mxs_vector submod_targ;
+
+   // Offset the submodel target position from the position target
+   if (IsPlayer())
+   {
+      mxs_angvec upright;
+      mxs_vector temp_offset, mo_offset;
+
+      mx_mk_angvec(&upright, 0, 0, m_pos.m_position.fac.tz);
+      mx_ang2mat(&obj_rotation, &upright);
+
+      PlayerMotionGetOffset(i, &mo_offset);
+      mx_add_vec(&temp_offset, &m_Offset[i], &mo_offset);
+      mx_mat_mul_vec(&submod_offset, &obj_rotation, &temp_offset);
+   }
+   else
+   {
+      if (IsRope())
+      {
+         sPhysRopeProp *pRopeProp;
+
+         if (!g_pPhysRopeProp->Get(GetObjID(), &pRopeProp))
+         {
+            Warning(("cPhysModel::UpdateTargetLocation: no rope property on obj %d\n", GetObjID()));
+            return;
+         }
+
+         mx_scale_vec(&submod_offset, &kGravityDir, (mxs_real)(i) * (pRopeProp->length / 8.0));
+
+         if (i > 0)
+         {
+            mxs_vector prev_pos;
+
+            mx_sub_vec(&prev_pos, &GetLocationVec(i-1), &GetLocationVec(0));
+            mx_scaleeq_vec(&prev_pos, 0.6);
+            prev_pos.z = 0;
+            mx_addeq_vec(&submod_offset, &prev_pos);
+         }
+
+         if (i < (NumSubModels() - 1))
+         {
+            mxs_vector next_pos;
+
+            mx_sub_vec(&next_pos, &GetLocationVec(i+1), &GetLocationVec(0));
+            mx_scaleeq_vec(&next_pos, 0.2);
+            next_pos.z = 0;
+
+            mx_addeq_vec(&submod_offset, &next_pos);
+         }
+      }
+      else
+      {
+         mx_ang2mat(&obj_rotation, &m_pos.m_position.fac);
+         mx_mat_mul_vec(&submod_offset, &obj_rotation, &m_Offset[i]);
+      }
+   }
+
+   mx_add_vec(&submod_targ, &m_pos.m_targetposition.loc.vec, &submod_offset);
+   mx_copy_vec(&m_pPosition[i].m_targetposition.loc.vec, &submod_targ);
+
+#if 0
+   if (IsCreature())
+   {
+      mxs_vector model_offset;
+      mxs_vector difference;
+      mx_sub_vec(&model_offset, &m_pos.m_targetposition.loc.vec, &m_pos.m_position.loc.vec);
+      mx_sub_vec(&submod_offset, &m_pPosition[i].m_targetposition.loc.vec, &m_pPosition[i].m_position.loc.vec);
+      mx_sub_vec(&difference, &model_offset, &submod_offset);
+
+      Assert_(mx_mag_vec(&difference) < 0.01);
+   }
+#endif
+
+   // Rotation
+   mxs_vector rot_vec;
+
+   mx_copy_vec(&rot_vec, &GetDynamics(i)->GetRotationalVelocity());
+   m_pPosition[i].m_targetposition.fac.tx += mx_rad2ang(rot_vec.x * dt);
+   m_pPosition[i].m_targetposition.fac.ty += mx_rad2ang(rot_vec.y * dt);
+   m_pPosition[i].m_targetposition.fac.tz += mx_rad2ang(rot_vec.z * dt);
+
+#if 0
+
+   mxs_matrix facing;
+   mxs_matrix rotation;
+   mxs_matrix end_facing;
+   mxs_real   rot_mag;
+
+   mx_copy_vec(&rot_vec, &GetDynamics(i)->GetRotationalVelocity());
+
+   if (!IsZeroVector(rot_vec))
+   {
+      mx_ang2mat(&facing, &m_pPosition[i].m_position.fac);
+
+      rot_mag = mx_normeq_vec(&rot_vec) * dt;
+
+      mx_mk_rot_vec_mat(&rotation, &rot_vec, mx_rad2ang(rot_mag));
+      mx_mul_mat(&end_facing, &rotation, &facing);
+
+      mx_mat2ang(&m_pPosition[i].m_targetposition.fac, &end_facing);
+   }
+#endif
+}
+
+////////////////////////////////////////
+
+void cPhysModel::UpdateSpringMechanics(tPhysSubModId i, mxs_real dt)
+{
+   mxs_vector movement_offset;
+   mxs_vector velocity;
+
+   if (i >= m_pDynamicsData.Size())
+      return;
+
+   if ((GetSpringTension(i) > 0) && ((GetDynamics()->GetCurrentTime() == 0.0) || IsRope()))
+   {
+      float damping_factor = 1.0;
+      float tension_factor = 1.0;
+
+      if (dt > 0.05)
+      {
+         dt = 0.05;
+         tension_factor = 0.6;
+         damping_factor = 0.6;
+      }
+
+      if (dt < 0.001)
+         dt = 0.001;
+
+#if 0
+      if (IsRope())
+      {
+         mprintf("[%d]\n", i);
+         mprintf("pre-tension = %g\n", tension);
+         mprintf("pre-damping = %g\n", damping);
+      }
+#endif
+
+      float tension;
+      float damping;
+
+      if (IsRope())
+      {
+         tension = GetSpringTension(i) * dt * 700 * tension_factor;
+         damping = 0.8;
+      }
+      else
+      {
+         tension = GetSpringTension(i) / dt;
+         damping = GetSpringDamping(i) + ((1.0 - GetSpringDamping(i)) * dt);
+      }
+
+#if 0
+      if (IsRope())
+      {
+         mprintf("post-tension = %g\n", _tension);
+         mprintf("post-damping = %g\n", _damping);
+
+         if (i == 7)
+         {
+            char buff[256];
+
+            sprintf(buff, "dt = %2.4f\n", dt);
+            mprintf("%s", buff);
+         }
+         mprintf("\n");
+      }
+#endif
+
+      mx_sub_vec(&movement_offset, &m_pPosition[i].m_targetposition.loc.vec, &m_pPosition[i].m_position.loc.vec);
+
+      mx_scale_vec(&velocity, &movement_offset, tension);
+
+      velocity.z *= 0.5;
+	  
+      mx_scale_addeq_vec(&velocity, &m_pDynamicsData[i].GetVelocity(), damping);
+
+	  
+#if 0
+      if (IsMantling())
+      {
+         mprintf("movement_offset_scale_2 = %g\n", mx_mag2_vec(&movement_offset));
+         mprintf("pre-vel  = %g %g %g\n", m_pDynamicsData[i].GetVelocity().x, m_pDynamicsData[i].GetVelocity().y, m_pDynamicsData[i].GetVelocity().z);
+         mprintf("velocity = %g %g %g\n", velocity.x, velocity.y, velocity.z);
+         mprintf("velocity_mag_2 = %g\n", mx_mag2_vec(&velocity));
+         mprintf("dt = %d\n", (int)(dt * 100000));
+         mprintf("\n");
+      }
+#endif
+
+      ApplyConstraints(i, &velocity);
+
+      //do the capping AFTER constraints, really.
+      if (IsPlayer())  //if player, do our spring capping.
+      {		  
+         float maxmag = kSpringCapMag; //default value	  		 
+         if (-1.0 * velocity.z > maxmag)		  			  
+            maxmag = -1.0 * velocity.z; //so if I'm falling down I don't					                
+                                        //do a Wile E. Coyote bit.  Sigh.  I wish we knew the
+		                                  //root cause of the problem with doors and ladders that
+	                                     //this is *cough* hacking *cough* to fix.  AMSD      		  
+         if (mx_mag_vec(&velocity) > maxmag)	  		  
+         {		 			
+            ConfigSpew("SpringCapSpew",("Using spring cap\n"));	     			  
+            mx_scaleeq_vec(&velocity,maxmag/(mx_mag_vec(&velocity)));	  		  
+         }		 	  
+      }
+
+
+      m_pDynamicsData[i].SetVelocity(velocity);
+   }
+   else
+   {
+      // Back-compute velocity
+      mx_copy_vec(&velocity, &GetVelocity());
+#if 0
+      mx_sub_vec(&movement_offset, &m_pPosition[i].m_targetposition.loc.vec, &m_pPosition[i].m_position.loc.vec);
+
+      mx_scale_vec(&velocity, &movement_offset, 1 / dt);
+
+      if (IsPlayer() && ((i == 1) || (i == 2)))
+         Assert_(velocity.x == GetVelocity().x);
+
+      ApplyConstraints(&velocity);
+#endif
+
+      m_pDynamicsData[i].SetVelocity(velocity);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void cPhysModel::UpdateMedium()
+{
+   if (IsPlayer())
+   {
+      int submod_media_trans[3] = {PLAYER_FOOT, PLAYER_BODY, PLAYER_HEAD};
+      int new_portal_medium[3];
+      int new_portal_cell[3];
+      eMediaState new_medium;
+      int new_cell;
+
+      Location new_loc;
+
+      for (int i=0; i<3; i++)
+      {
+         MakeHintedLocationFromVector(&new_loc,
+                                      &GetEndLocationVec(submod_media_trans[i]),
+                                      &GetLocation(submod_media_trans[i]));
+
+         // @HACK: offset the player eyes by eye amount
+         if (submod_media_trans[i] == PLAYER_HEAD)
+            new_loc.vec.z += 0.8;
+
+         if (CellFromLoc(&new_loc) != CELL_INVALID)
+         {
+            new_portal_cell[i] = new_loc.cell;
+            new_portal_medium[i] = WR_CELL(new_loc.cell)->medium;
+         }
+         else
+         {
+            new_portal_cell[i] = CELL_INVALID;
+            new_portal_medium[i] = NO_MEDIUM;
+         }
+      }
+
+      if (new_portal_medium[0] == MEDIA_WATER)
+      {
+         if (new_portal_medium[1] == MEDIA_WATER)
+         {
+            if (new_portal_medium[2] == MEDIA_WATER)
+            {
+               new_cell = new_portal_cell[2];
+               new_medium = kMS_Liquid_Submerged;
+            }
+            else
+            {
+               new_cell = new_portal_cell[1];
+               new_medium = kMS_Liquid_Wading;
+            }
+         }
+         else
+         {
+            new_cell = new_portal_cell[0];
+            new_medium = kMS_Liquid_Standing;
+         }
+      }
+      else
+      {
+         new_cell = new_portal_cell[0];
+         new_medium = kMS_Air;
+      }
+
+      if (m_medium != new_medium)
+      {
+         ObjMediaTrans(GetObjID(), new_cell, (eMediaState)m_medium, new_medium);
+         m_medium = new_medium;
+      }
+   }
+   else
+   {
+      eMediaState new_medium;
+      int new_portal_medium;
+
+      Location new_loc;
+      MakeHintedLocationFromVector(&new_loc, &GetEndLocationVec(), &GetLocation(0));
+
+      if (CellFromLoc(&new_loc) != CELL_INVALID)
+         new_portal_medium = WR_CELL(new_loc.cell)->medium;
+      else
+         new_portal_medium = NO_MEDIUM;
+
+      switch (new_portal_medium)
+      {
+         case MEDIA_WATER: new_medium = kMS_Liquid_Submerged; break;
+         case MEDIA_AIR:   new_medium = kMS_Air; break;
+         case MEDIA_SOLID: new_medium = kMS_Invalid; break;
+
+         case NO_MEDIUM: return;
+      }
+
+      if (m_medium != new_medium)
+      {
+         ObjMediaTrans(GetObjID(), new_loc.cell, (eMediaState)m_medium, new_medium);
+         m_medium = new_medium;
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+mxs_real cPhysModel::GetPPlateActivationWeight() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlateActivationWeight: no pressure plate property on %d\n", GetObjID()));
+      return 0.0;
+   }
+
+   return pPPlateProp->activation_weight;
+}
+
+////////////////////////////////////////
+
+mxs_real cPhysModel::GetPPlateTravel() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlateTravel: no pressure plate property on %d\n", GetObjID()));
+      return 0.0;
+   }
+
+   return pPPlateProp->travel;
+}
+
+///////////////////////////////////////
+
+mxs_real cPhysModel::GetPPlateSpeed() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlateSpeed: no pressure plate property on %d\n", GetObjID()));
+      return 0.0;
+   }
+
+   return pPPlateProp->speed;
+}
+
+///////////////////////////////////////
+
+mxs_real cPhysModel::GetPPlatePause() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlatePause: no pressure plate property on %d\n", GetObjID()));
+      return 0.0;
+   }
+
+   return pPPlateProp->pause;
+}
+
+///////////////////////////////////////
+
+int cPhysModel::GetPPlateState() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlateState: no pressure plate property on %d\n", GetObjID()));
+      return kPPS_Inactive;
+   }
+
+   return pPPlateProp->state;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetPPlateState(int state)
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("SetPPlateState: no pressure plate property on %d\n", GetObjID()));
+      return;
+   }
+
+   pPPlateProp->state = state;
+   g_pPhysPPlateProp->Set(GetObjID(), pPPlateProp);
+}
+
+///////////////////////////////////////
+
+mxs_real cPhysModel::GetPPlateCurPause() const
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("GetPPlateCurPause: no pressure plate property on %d\n", GetObjID()));
+      return 0.0;
+   }
+
+   return pPPlateProp->cur_pause;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::SetPPlateCurPause(mxs_real cur_pause)
+{
+   sPhysPPlateProp *pPPlateProp;
+
+   if (!g_pPhysPPlateProp->Get(GetObjID(), &pPPlateProp))
+   {
+      Warning(("SetPPlateCurPause: no pressure plate property on %d\n", GetObjID()));
+      return;
+   }
+
+   pPPlateProp->cur_pause = cur_pause;
+   g_pPhysPPlateProp->Set(GetObjID(), pPPlateProp);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+BOOL cPhysModel::IsRopeClimbing() const
+{
+   cPhysModel *pModel;
+
+   if ((pModel = g_PhysModels.Get(m_climbingObj)) == NULL)
+      return FALSE;
+
+   return pModel->IsRope();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void cPhysModel::Activate(void)
+{
+   if (m_flags & kPMF_Inactive)
+   {
+      g_PhysModels.ActivateToMoving(this);
+      m_flags &= ~kPMF_Inactive;
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::Deactivate(void)
+{
+   if (!(m_flags & kPMF_Inactive))
+   {
+      g_PhysModels.Deactivate(this);
+      m_flags |= kPMF_Inactive;
+   }
+}
+
+///////////////////////////////////////
+
+void cPhysModel::AddTransLimit(const mxs_vector &loc, LimitCallback callback)
+{
+   sTransLimit *limit = new sTransLimit;
+
+   mx_sub_vec(&limit->norm, &m_pos.m_position.loc.vec, &loc);
+
+   if (mx_mag2_vec(&limit->norm) < 0.0001)
+   {
+      delete limit;
+      return;
+   }
+
+   mx_normeq_vec(&limit->norm);
+   limit->plane_const = mx_dot_vec(&limit->norm, &loc);
+
+   limit->callback = callback;
+
+   LGALLOC_PUSH_CREDIT();
+   m_TransLimitList.Append(limit);
+   LGALLOC_POP_CREDIT();
+}
+
+///////////////////////////////////////
+
+void cPhysModel::GetTransLimits(mxs_vector *limit_list, int *limit_list_size, int max_list_size) const
+{
+   for (int i=0; i<max_list_size && i<m_TransLimitList.Size(); i++)
+   {
+      // Project our current location onto the plane
+      mxs_real plane_dist = mx_dot_vec(&GetLocationVec(), &m_TransLimitList[i]->norm) -
+                            m_TransLimitList[i]->plane_const;
+
+      mx_scale_add_vec(&limit_list[i], &GetLocationVec(), &m_TransLimitList[i]->norm, -plane_dist);
+   }
+
+   *limit_list_size = i;
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::CheckTransLimits(const mxs_vector &start, const mxs_vector &end, mxs_vector *limit)
+{
+   int i;
+   BOOL hard_limit = FALSE;
+   BOOL limited = FALSE;
+   mxs_vector norm;
+   mxs_real   plane_const;
+   mxs_real   end_dist;
+
+
+   for (i=0; i<m_TransLimitList.Size(); i++)
+   {
+      mx_copy_vec(&norm, &m_TransLimitList[i]->norm);
+      plane_const = m_TransLimitList[i]->plane_const;
+
+      #ifdef DBG_ON
+      if (mx_dot_vec(&start, &norm) - plane_const < 0)
+         Warning(("CheckTransLimits: start point on far side of limit for obj %d?\n", GetObjID()));
+      #endif
+
+      end_dist = mx_dot_vec(&end, &norm) - plane_const;
+      if (end_dist < 0)
+      {
+         mxs_vector end_loc;
+
+         limited = TRUE;
+
+         mx_copy_vec(&end_loc, &end);
+
+         if (m_TransLimitList[i]->callback(GetObjID()))
+         {
+            hard_limit = TRUE;
+
+            // project onto plane
+            mx_scale_add_vec(limit, &end_loc, &norm, -end_dist);
+         }
+      }
+   }
+
+   if (hard_limit)
+   {
+      mxs_vector zero;
+
+      mx_zero_vec(&zero);
+      GetDynamics()->SetVelocity(zero);
+   }
+
+   return limited;
+}
+
+///////////////////////////////////////
+
+void cPhysModel::AddAngleLimit(int axis, int angle, LimitCallback callback)
+{
+   sAngleLimit *limit = new sAngleLimit;
+
+   switch (axis)
+   {
+      case 0: limit->axis = 2; break;
+      case 1: limit->axis = 2; break;
+      case 2: limit->axis = 0; break;
+   }
+
+   mxs_matrix obj_rotation;
+   mxs_matrix axis_rotation;
+   mxs_matrix end_rotation;
+
+   mx_ang2mat(&obj_rotation, &GetRotation());
+   mx_mk_rot_vec_mat(&axis_rotation, &obj_rotation.vec[axis], angle * MX_ANG_PI / 180);
+
+   mx_mul_mat(&end_rotation, &axis_rotation, &obj_rotation);
+
+   mx_cross_vec(&limit->plane_norm, &end_rotation.vec[limit->axis], &end_rotation.vec[axis]);
+
+   limit->callback = callback;
+
+   LGALLOC_PUSH_CREDIT();
+   m_AngLimitList.Append(limit);
+   LGALLOC_POP_CREDIT();
+}
+
+///////////////////////////////////////
+
+BOOL cPhysModel::CheckAngleLimits(mxs_angvec start, mxs_angvec end, mxs_angvec *limit)
+{
+   mxs_matrix start_mat, end_mat;
+   mxs_real   start_dp, end_dp;
+   BOOL       hard_limit = FALSE;
+   BOOL       limited = FALSE;
+   int i;
+
+   *limit = end;
+
+   mx_ang2mat(&start_mat, &start);
+   mx_ang2mat(&end_mat, &end);
+
+   for (i=0; i<m_AngLimitList.Size(); i++)
+   {
+      start_dp = mx_dot_vec(&start_mat.vec[m_AngLimitList[i]->axis], &m_AngLimitList[i]->plane_norm);
+      end_dp = mx_dot_vec(&end_mat.vec[m_AngLimitList[i]->axis], &m_AngLimitList[i]->plane_norm);
+
+      if (((start_dp * end_dp) < 0) || (end_dp == 0.0 && start_dp != 0.0))
+      {
+         limited = TRUE;
+
+         if (m_AngLimitList[i]->callback)
+            hard_limit |= m_AngLimitList[i]->callback(GetObjID());
+      }
+   }
+
+   if (limited)
+   {
+      if (IsPlayer())
+         *limit = start;
+      else
+         *limit = m_pos.m_position.fac;
+   }
+
+   if (hard_limit)
+   {
+      mxs_vector zero;
+
+      mx_zero_vec(&zero);
+      GetDynamics()->SetRotationalVelocity(zero);
+   }
+
+   return limited;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef SHIP
+
+long cPhysModel::InternalSize() const
+{
+   int i;
+   long size = 0;
+
+   size += m_springInfo.Size() * sizeof(tSpringInfo);
+
+   size += m_ConstraintList.Size() * sizeof(tConstraint);
+   for (i=0; i<m_SubModConstraintList.Size(); i++)
+      size += m_SubModConstraintList[i].Size() * sizeof(tConstraint);
+   size += m_VelConstraintList.Size() * sizeof(tVelocityConstraint);
+
+   size += m_nSubModels * sizeof(ePhysModelType);
+
+   size += m_nSubModels * sizeof(cPhysPos);
+   size += m_Offset.Size() * sizeof(mxs_vector);
+
+   size += m_AngLimitList.Size() * (sizeof(sAngleLimit *) + sizeof(sAngleLimit));
+   size += m_TransLimitList.Size() * (sizeof(sAngleLimit *) + sizeof(sTransLimit));
+
+   size += 8 + m_pDynamicsData.Size() * sizeof(cPhysDynData);
+   size += 8 + m_pControlData.Size() * sizeof(cPhysCtrlData);
+
+   return size;
+}
+
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/objmedia.h,v 1.3 2000/01/29 13:32:36 adurant Exp $
+//
+// Object media header
+//
+#pragma once
+
+#ifndef __OBJMEDIA_H
+#define __OBJMEDIA_H
+
+#include <objtype.h>
+
+///////////////////////////////////////
+
+enum eMediaState
+{
+   kMS_Invalid          = 0x0000,
+   kMS_Air              = 0x0001,
+   kMS_Liquid_Standing  = 0x0002,
+   kMS_Liquid_Wading    = 0x0004,
+   kMS_Liquid_Submerged = 0x0008,
+};
+
+////////////////////////////////////////
+
+EXTERN void ObjMediaTrans(ObjID objID, int cellID, eMediaState old_medium, eMediaState new_medium);
+
+EXTERN int ObjMediumToPortalMedium(eMediaState obj_medium);
+EXTERN eMediaState PortalMediumToObjMedium(int portal_medium);
+
+////////////////////////////////////////
+
+#endif
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/phclimb.h,v 1.5 2000/01/29 13:32:37 adurant Exp $
+//
+// Physics Climbing API
+//
+#pragma once
+
+#ifndef __PHCLIMB_H
+#define __PHCLIMB_H
+
+#include <matrixs.h>
+#include <objtype.h>
+
+#ifdef __cplusplus
+class cPhysModel;
+#else
+typedef void cPhysModel;
+#endif
+
+EXTERN BOOL PhysObjIsClimbing(ObjID objID);
+EXTERN BOOL PhysObjIsMantling(ObjID objID);
+
+EXTERN void BreakClimb(ObjID objID, BOOL jumping, BOOL jump_thru);
+EXTERN BOOL CheckClimb(ObjID objID);
+
+EXTERN void BreakMantle(ObjID objID);
+EXTERN BOOL CheckMantle(ObjID objID);
+
+EXTERN void UpdateMantling(cPhysModel *pModel, mxs_real dt);
+
+EXTERN void GetClimbingDir(ObjID objID, mxs_vector *dir);
+
+
+#endif
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/phclsn.h,v 1.18 2000/01/29 13:32:38 adurant Exp $
+//
+// Physics collisions
+//
+#pragma once
+
+#ifndef __PHCLSN_H
+#define __PHCLSN_H
+
+#include <objtype.h>
+
+#include <phystyp2.h>
+#include <phmod.h>
+#include <phsubmod.h>
+#include <phterr.h>
+
+typedef struct sSphrContactData sSphrContactData;
+
+class cPhysSphereModel;
+class cPhysOBBModel;
+
+///////////////////////////////////////////////////////////////////////////////
+
+//
+// Result of a collision
+//
+enum ePhysClsnResultEnum
+{
+   kPCR_Nothing,
+   kPCR_Bounce,
+   kPCR_Die1,
+   kPCR_Die2,
+   kPCR_DieBoth,
+   kPCR_NonPhys1,
+   kPCR_NonPhys2,
+   kPCR_NonPhysBoth,
+   kPCR_Stop,
+   kPCR_NewControl,
+};
+
+//#pragma pack(4)
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum ePhysClsnType
+{
+   kPC_StationaryObject = 0x0001,
+   kPC_MoveableObject   = 0x0002,
+   kPC_OBBObject        = 0x0004,
+   kPC_SphereHatObject  = 0x0008,
+
+   kPC_Object           = kPC_StationaryObject | kPC_MoveableObject | kPC_OBBObject | kPC_SphereHatObject,
+
+   kPC_TerrainFace      = 0x0010,
+   kPC_TerrainEdge      = 0x0020,
+   kPC_TerrainVertex    = 0x0040,
+
+   kPC_Terrain          = kPC_TerrainFace | kPC_TerrainEdge | kPC_TerrainVertex,
+
+   kPC_Invalid          = 0xffffffffL
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+class cPhysClsn;
+
+typedef cDList<cPhysClsn, 0>     cPhysClsnsBase;
+typedef cDListNode<cPhysClsn, 0> cPhysClsnNodeBase;
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// STRUCT: sPhysClsnTerr
+//
+// describes terrain for a collision
+//
+
+struct sPhysClsnTerr
+{
+   cPhysTerrPolyList m_polyList;
+   mxs_vector        m_normal;                    // computed normal of polys
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// STRUCT: sPhysClsn
+//
+// Instance of a collision, implemented as a struct so we can (eventually)
+// pass it to C
+//
+
+struct sPhysClsn
+{
+   ePhysClsnType   type;
+   ePhysClsnResult result;
+   mxs_real        t0;
+   mxs_real        dt;
+   mxs_vector      clsn_pt;
+   sPhysSubModInst instance;
+   void *          pData;           // either a pointer to another sub-model instance or collision terrain struct
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+class cPhysClsn : public sPhysClsn, public cPhysClsnNodeBase
+{
+public:
+   ////////////////////////////////////
+   //
+   // Constructors/Destructor
+   //
+
+   // Make a copy of the clsn
+   cPhysClsn(cPhysClsn *pClsn);
+
+   // A sphere-sphere collision
+   cPhysClsn(ePhysClsnType type, mxs_real t0, mxs_real dt, 
+             const cPhysSphereModel * pSphereModel1, tPhysSubModId subModId1, const mxs_vector & locVec1,
+             const cPhysSphereModel * pSphereModel2, tPhysSubModId subModId2, const mxs_vector & locVec2);
+
+   // A sphere-obb collision
+   cPhysClsn(ePhysClsnType type, mxs_real t0, mxs_real dt,
+             const cPhysSphereModel * pSphereModel, tPhysSubModId subModId1, const mxs_vector & locVec1,
+             const cPhysOBBModel * pOBBModel, int side, const mxs_vector & locVec2);
+
+   // A sphere object-terrain collision
+   cPhysClsn(ePhysClsnType type, mxs_real t0, mxs_real dt, const mxs_vector & clsn_pt,
+             const cPhysModel * pModel, tPhysSubModId subModId, const mxs_vector & locVec,
+             sSphrContactData aContactData[], int contactID);
+
+   // A point object-terrain collision
+   cPhysClsn(ePhysClsnType type, mxs_real t0, mxs_real dt, const mxs_vector & clsn_pt, 
+             const cPhysModel * pModel, tPhysSubModId subModId, const mxs_vector & locVec,
+             int cell_id, int poly_id);
+
+   ~cPhysClsn();
+
+   ////////////////////////////////////
+   //
+   // Access functions
+   //
+   ePhysClsnType           GetType() const;
+   mxs_real                GetTime() const;
+   mxs_real                GetT0() const;
+   mxs_real                GetDT() const;
+
+   const mxs_vector &      GetLoc() const;
+   const mxs_vector &      GetLoc2() const;
+
+   void                    SetResult(ePhysClsnResult result);
+   ePhysClsnResult         GetResult() const;
+
+   const sPhysSubModInst & GetInstance() const;
+   ObjID                   GetObjID() const;
+   tPhysSubModId           GetSubModId() const;
+   cPhysModel *            GetModel() const;
+   int                     GetTexture() const; 
+
+   const sPhysSubModInst & GetInstance2() const;
+   ObjID                   GetObjID2() const;
+   tPhysSubModId           GetSubModId2() const;
+   cPhysModel *            GetModel2() const;
+
+   cPhysTerrPoly *         GetTerrainPoly(int index = 0) const;
+   int                     GetCellID(int index = 0) const;
+   int                     GetPolyID(int index = 0) const;
+   const mxs_vector        GetNormal(int index = -1) const;
+
+   // Note that collision points for non-terrain collisions are NOT EXACT
+   const mxs_vector &      GetClsnPt() const;
+
+#ifdef DBG_ON
+   void MonoPrint() const;
+#endif
+
+private:
+   #define AssertObjectCollision() Assert_(type & kPC_Object)
+   void CreateTerrainInfo(ePhysClsnType type,
+                          sSphrContactData * pContactData,
+                          cPhysTerrPolyList * pList);
+   void GenerateClsnPt();
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysClsns
+//
+// List of collisions
+//
+
+class cPhysClsns : public cPhysClsnsBase
+{
+public:
+   void New(const cPhysModel * pModel,
+            tPhysSubModId subModId,
+            mxs_real time,
+            const Location & hitLoc,
+            const mxs_vector * pNormals);
+   void Insert(cPhysClsn * pClsn);
+   void Sort();
+private:
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Non-member inline functions
+//
+
+inline void InitSubModelInstance(sPhysSubModInst * pInstance, tPhysSubModId subModId, const cPhysModel * pModel,
+                                  const mxs_vector & locVec)
+{
+   // This isn't a member function, because this is a structure we want to expose to c functions
+   pInstance->objID    = pModel->GetObjID();
+   pInstance->subModId = subModId;
+   pInstance->pModel   = (cPhysModel *) pModel;
+   pInstance->locVec   = locVec;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysClsn, inline functions
+//
+
+inline ePhysClsnType cPhysClsn::GetType() const
+{
+   return type;
+}
+
+///////////////////////////////////////
+
+inline mxs_real cPhysClsn::GetTime() const
+{
+   return t0 + dt;
+}
+
+///////////////////////////////////////
+
+inline mxs_real cPhysClsn::GetT0() const
+{
+   return t0;
+}
+
+///////////////////////////////////////
+
+inline mxs_real cPhysClsn::GetDT() const
+{
+   return dt;
+}
+
+///////////////////////////////////////
+
+inline const mxs_vector & cPhysClsn::GetLoc() const
+{
+   return instance.locVec;
+}
+
+///////////////////////////////////////
+
+inline const mxs_vector & cPhysClsn::GetLoc2() const
+{
+   Assert_(type & kPC_Object);
+   return ((sPhysSubModInst *) pData)->locVec;
+}
+
+///////////////////////////////////////
+
+inline ePhysClsnResult cPhysClsn::GetResult() const
+{
+   return result;
+}
+
+///////////////////////////////////////
+
+inline void cPhysClsn::SetResult(ePhysClsnResult _result)
+{
+   result = _result;
+}
+
+///////////////////////////////////////
+
+inline const sPhysSubModInst & cPhysClsn::GetInstance() const
+{
+   return instance;
+}
+
+///////////////////////////////////////
+
+inline ObjID cPhysClsn::GetObjID() const
+{
+   return instance.objID;
+}
+
+////////////////////////////////////////
+
+inline tPhysSubModId cPhysClsn::GetSubModId() const
+{
+   return instance.subModId;
+}
+
+///////////////////////////////////////
+
+inline cPhysModel *cPhysClsn::GetModel() const
+{
+   return instance.pModel;
+}
+
+///////////////////////////////////////
+
+inline const sPhysSubModInst & cPhysClsn::GetInstance2() const
+{
+   AssertObjectCollision();
+   return *(sPhysSubModInst *) pData;
+}
+
+///////////////////////////////////////
+
+inline ObjID cPhysClsn::GetObjID2() const
+{
+   AssertObjectCollision();
+   return ((sPhysSubModInst *) pData)->objID;
+}
+
+///////////////////////////////////////
+
+inline tPhysSubModId cPhysClsn::GetSubModId2() const
+{
+   AssertObjectCollision();
+   return ((sPhysSubModInst *) pData)->subModId;
+}
+
+///////////////////////////////////////
+
+inline cPhysModel *cPhysClsn::GetModel2() const
+{
+   AssertObjectCollision();
+   return ((sPhysSubModInst *) pData)->pModel;
+}
+
+////////////////////////////////////////
+
+inline const mxs_vector &cPhysClsn::GetClsnPt() const
+{
+   return clsn_pt;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#pragma pack()
+
+#endif /* !__PHCLSN_H */
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/phconst.h,v 1.29 2000/02/23 23:57:54 adurant Exp $
+//
+// Collected physics constants
+//
+#pragma once
+
+
+#ifndef __PHCONST_H
+#define __PHCONST_H
+
+///////////////////////////////////////////////////////////////////////////////
+
+//
+// Minimum relative velocity below which we stick to a terrain surface
+//
+const mxs_real kBreakTerrainContactVel = 5.0;
+
+//
+// Minimum relative velocity below which we stick to an object
+//
+const mxs_real kBreakObjectContactVel = 5.0;
+
+//
+// Minimum relative velocity above which we destroy all contacts 
+//
+const mxs_real kBreakAllObjectContactVel = 1000.0;
+
+//
+// Distance at which we judge terrain contact to be broken
+//
+const mxs_real kBreakTerrainContactDist = 0.1;
+
+//
+// Distance at which we judge object contact to be broken
+//
+const mxs_real kBreakObjectContactDist = 0.2;
+
+//
+// Distance to backup from a collision (squared)
+//
+const mxs_real kCollisionBackup2 = 0.01;
+
+//
+// Max proportion of distance travelled to backup
+//
+const mxs_real kCollisionBackupMax = 0.5;
+
+//
+// Max number of collisions we allow/frame/model
+//
+const int kMaxFrameCollisions = 32;
+
+//
+// Pump some energy into object vs. object collisions...
+//
+const mxs_real kObjectCollisionEnergy = 0.0;
+
+//
+// Gravity
+//
+EXTERN mxs_vector kGravityDir;
+EXTERN mxs_real   kGravityAmt;
+
+//
+// Default terrain elasticity
+//
+const mxs_real kTerrainBounce = 0.1;
+
+//
+// Min velocity magnitude a sliding object can have before it 
+// stops (squared). 
+//
+const mxs_real kMinVelocityMag = 2;
+
+//
+// Amount of friction when sliding (0 is ice, 10 is lots-o-friction). 
+//
+extern mxs_real kFrictionFactor;
+
+//
+// Maximum length of physics frame
+//
+extern int kMaxFrameLen;
+
+//
+// Period of being squished
+//
+const long kSquishPeriod = 500;
+
+//
+// Maximum velocity at which player head will spring, unless falling.
+//  
+
+EXTERN mxs_real kSpringCapMag;
+
+///////////////////////////////////////////////////////////////////////////////
+
+#endif /* !__PHCONST_H */
+
+
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/t2repos/thief2/src/physics/phcontct.h,v 1.17 2000/02/22 20:01:09 toml Exp $
+//
+// Physics contact links
+//
+// Terrain links:
+//    Current implementation is a hash table mapping ObjIDs to another
+//    mapping from subModIds to the actual terrain polygon IDs.
+//    The first mapping is implemented with a hash table, the second
+//    with a dynamic array. Each element in this array is a list of
+//    polygon IDs.
+//
+// Object links:
+//    implemented the same way, we keep two records to make it bidirectional
+//
+#pragma once
+
+#ifndef __PHCONTCT_H
+#define __PHCONTCT_H
+
+#include <objtype.h>
+#include <hashpp.h>
+#include <matrix.h>
+
+#include <phsubmod.h>
+#include <phterr.h>
+#include <phystyp2.h>
+#include <dbmem.h>
+
+#pragma pack(4)
+
+class cPhysModel;
+class cPhysOBBModel;
+class cPhysSphereModel;
+
+static const long kFaceContactCode   = 1;
+static const long kEdgeContactCode   = 2;
+static const long kVertexContactCode = 3;
+static const long kObjectContactCode = 4;
+static const long kDoneContactCode   = 5;
+
+///////////////////////////////////////////////////////////////////////////////
+
+class cFacePoly;
+class cFaceContact;
+
+typedef cDList<cFaceContact, 0>     cFaceContactListBase;
+typedef cDListNode<cFaceContact, 0> cFaceContactNode;
+
+class cFacePoly
+{
+public:
+   cFacePoly();
+   cFacePoly(const cFacePoly *poly);
+   ~cFacePoly();
+
+   mxs_vector normal;
+   mxs_real   d;
+
+   cDynArray<cFacePoly *> edgePlaneList;
+};
+
+////////////////////////////////////////
+
+class cFaceContact : public cFaceContactNode
+{
+public:
+   cFaceContact(const cFacePoly *poly, ObjID objID);
+   cFaceContact(int cellID, int polyID);
+   cFaceContact(cPhysOBBModel *pModel, int side, BOOL endLoc = FALSE);
+   cFaceContact(cPhysSphereModel *pModel, mxs_real radius, BOOL endLoc = FALSE);
+   ~cFaceContact() { delete m_pPoly; }; 
+
+   const mxs_vector &GetNormal() const;
+   const mxs_real   &GetPlaneConst() const;
+
+   const cFacePoly  *GetPoly() const;
+
+   ObjID GetObjID() const;
+
+private:
+
+   cFacePoly *m_pPoly;
+
+   ObjID m_objID;
+};
+
+inline cFaceContact::cFaceContact(const cFacePoly *poly, ObjID objID)
+{
+   m_pPoly = new cFacePoly(poly);
+   m_objID = objID;
+}
+
+inline const mxs_vector &cFaceContact::GetNormal() const
+{
+   return m_pPoly->normal;
+}
+
+inline const mxs_real &cFaceContact::GetPlaneConst() const
+{
+   return m_pPoly->d;
+}
+
+inline const cFacePoly *cFaceContact::GetPoly() const
+{
+   return m_pPoly;
+}
+
+inline ObjID cFaceContact::GetObjID() const
+{
+   return m_objID;
+}
+
+////////////////////////////////////////
+
+class cFaceContactList : public cFaceContactListBase
+{
+public:
+   BOOL Find(const cFacePoly *poly, cFaceContact **ppFaceContact);
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+class cEdgeContact;
+
+typedef cDList<cEdgeContact, 0>     cEdgeContactListBase;
+typedef cDListNode<cEdgeContact, 0> cEdgeContactNode;
+
+////////////////////////////////////////
+
+class cEdgeContact : public cEdgeContactNode
+{
+public:
+   cEdgeContact(const mxs_vector &start, const mxs_vector &end);
+
+   const mxs_vector &GetStart() const;
+   const mxs_vector &GetEnd() const;
+
+   const mxs_vector &GetVector() const;
+   
+   mxs_vector  GetNormal(const mxs_vector &pt) const;
+   mxs_real    GetDist(const mxs_vector &pt) const;
+
+private:
+   mxs_vector m_Start;
+   mxs_vector m_End;
+   mxs_vector m_Vector;
+};
+
+inline cEdgeContact::cEdgeContact(const mxs_vector &start, const mxs_vector &end)
+{
+   mx_copy_vec(&m_Start, (mxs_vector *) &start);
+   mx_copy_vec(&m_End, (mxs_vector *)  &end);
+   mx_sub_vec(&m_Vector, (mxs_vector *) &end, (mxs_vector *) &start);
+}
+
+inline const mxs_vector & cEdgeContact::GetStart() const
+{
+   return m_Start;
+}
+
+inline const mxs_vector & cEdgeContact::GetEnd() const
+{
+   return m_End;
+}
+
+inline const mxs_vector & cEdgeContact::GetVector() const
+{
+   return m_Vector;
+}
+
+////////////////////////////////////////
+
+class cEdgeContactList : public cEdgeContactListBase
+{
+public:
+   BOOL Find(const mxs_vector &start, const mxs_vector &end, cEdgeContact **ppEdgeContact);
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+class cVertexContact;
+
+typedef cDList<cVertexContact, 0>     cVertexContactListBase;
+typedef cDListNode<cVertexContact, 0> cVertexContactNode;
+
+////////////////////////////////////////
+
+class cVertexContact : public cVertexContactNode
+{
+public:
+   cVertexContact(const mxs_vector &point);
+
+   const mxs_vector &GetPoint() const;
+   const mxs_vector  GetNormal(const mxs_vector &pt) const;
+
+private:
+   mxs_vector m_Point;
+};
+
+inline cVertexContact::cVertexContact(const mxs_vector &point)
+{
+   mx_copy_vec(&m_Point, (mxs_vector *) &point);
+}
+
+inline const mxs_vector &cVertexContact::GetPoint() const
+{
+   return m_Point;
+}
+
+////////////////////////////////////////
+
+class cVertexContactList : public cVertexContactListBase
+{
+public:
+   BOOL Find(const mxs_vector &point, cVertexContact **ppVertexContact);
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysObjContactLinks
+//
+// Class to manage all links for a particular object
+//
+
+class cPhysObjContactLinks
+{
+public:
+   cPhysObjContactLinks(void);
+   ~cPhysObjContactLinks(void);
+
+   // read and write links to disk
+   void Write(PhysReadWrite func, ObjID objID) const;
+
+   void CreateTerrainLink(tPhysSubModId subModId, const cFacePoly *poly, ObjID objID);
+   void CreateTerrainLink(tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end);
+   void CreateTerrainLink(tPhysSubModId subModId, const mxs_vector &point);
+
+   BOOL DestroyTerrainLink(tPhysSubModId subModId, const cFacePoly *poly);
+   BOOL DestroyTerrainLink(tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end);
+   BOOL DestroyTerrainLink(tPhysSubModId subModId, const mxs_vector &point);
+ 
+   BOOL GetTerrainLink(tPhysSubModId subModId, const cFacePoly *poly, cFaceContact **ppFaceContact) const;
+   BOOL GetTerrainLink(tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end, cEdgeContact **ppEdgeContact) const;
+   BOOL GetTerrainLink(tPhysSubModId subModId, const mxs_vector &point, cVertexContact **ppVertexContact) const;
+
+   BOOL GetTerrainLinkList(tPhysSubModId subModId, cFaceContactList **ppFaceContactList) const;
+   BOOL GetTerrainLinkList(tPhysSubModId subModId, cEdgeContactList **ppEdgeContactList) const;
+   BOOL GetTerrainLinkList(tPhysSubModId subModId, cVertexContactList **ppVertexContactList) const;
+
+   void CreateObjectLink(tPhysSubModId subModId, ObjID objID2, tPhysSubModId subModId2, cPhysModel *pModel);
+   BOOL DestroyObjectLink(tPhysSubModId subModId, ObjID objID2, tPhysSubModId subModId2);
+   void DestroyObjectLinks();
+   BOOL GetObjectLink(tPhysSubModId subModId, ObjID objID2,
+                      tPhysSubModId subModId2, cPhysSubModelInst **ppSubModel) const;
+   BOOL GetObjectLinks(tPhysSubModId subModId, cPhysSubModelInst **ppSubModel) const;
+
+private:
+   cDynArray<cFaceContactList *>    m_FaceContactList;
+   cDynArray<cEdgeContactList *>    m_EdgeContactList;
+   cDynArray<cVertexContactList *>  m_VertexContactList;
+
+   cPhysSubModelListArray m_subModelListArray;
+
+   // @TBD: Needed?
+   int                    m_linkCount;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysContactLinks
+//
+// Class to manage all links for all objects
+//
+
+class cPhysContactLinks
+{
+public:
+
+   // read and write links to disk
+   void Write(PhysReadWrite func) const;
+   void Read(PhysReadWrite func);
+
+   void Reset();
+
+   void WriteDone(PhysReadWrite func) const;
+
+   // create, destroy, query terrain link
+   void CreateTerrainLink(ObjID objID, tPhysSubModId subModId, const cFacePoly *poly, ObjID contactObj);
+   void CreateTerrainLink(ObjID objID, tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end);
+   void CreateTerrainLink(ObjID objID, tPhysSubModId subModId, const mxs_vector &point);
+
+   void DestroyTerrainLink(ObjID objID, tPhysSubModId subModId, const cFacePoly *poly);
+   void DestroyTerrainLink(ObjID objID, tPhysSubModId subModId, const mxs_vector &start, const mxs_vector &end);
+   void DestroyTerrainLink(ObjID objID, tPhysSubModId subModId, const mxs_vector &point);
+
+   void DestroyTerrainLinks(ObjID objID);
+
+   BOOL GetTerrainLinks(ObjID objID, tPhysSubModId subModId, cFaceContactList **ppFaceContactList) const;
+   BOOL GetTerrainLinks(ObjID objID, tPhysSubModId subModId, cEdgeContactList **ppEdgeContactList) const;
+   BOOL GetTerrainLinks(ObjID objID, tPhysSubModId subModId, cVertexContactList **ppVertexContactList) const;
+
+   // create, destroy, query object link
+   void CreateObjectLink(ObjID objID1, tPhysSubModId subModId1, cPhysModel * pModel,
+                          ObjID objID2, tPhysSubModId subModId2, cPhysModel * pModel2);
+   void DestroyObjectLink(ObjID objID1, tPhysSubModId subModId1, ObjID objID2,
+                           tPhysSubModId subModId2);
+   void DestroyObjectLinks(ObjID objID);
+   BOOL GetObjectLinks(ObjID objID, tPhysSubModId subModId, cPhysSubModelInst ** ppSubModel) const;
+
+private:
+   void CreateOneWayObjectLink(ObjID objID, tPhysSubModId subModId, ObjID objID2,
+                                tPhysSubModId subModId2, cPhysModel * pModel2);
+   void DestroyOneWayObjectLink(ObjID objID1, tPhysSubModId subModId1, ObjID objID2,
+                                 tPhysSubModId subModId2);
+
+   // hash table maps objIDs to an object contact class
+   typedef cHashTableFunctions<ObjID> DefaultHashFunctions;
+   typedef cHashTable<ObjID, cPhysObjContactLinks *, DefaultHashFunctions> cContactLinkHash;
+
+   cContactLinkHash m_contactLinkHash;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// API for object/object contact
+//
+// modifies the models as well as making the link
+//
+
+extern void CreateObjectContact(ObjID objID1, tPhysSubModId subModId1, cPhysModel * pModel1,
+                                 ObjID objID2, tPhysSubModId subModId2, cPhysModel * pModel2);
+
+///////////////////////////////////////
+
+extern void DestroyObjectContact(ObjID objID1, tPhysSubModId subModId1, cPhysModel * pModel1,
+                                  ObjID objID2, tPhysSubModId subModId2, cPhysModel * pModel2);
+
+///////////////////////////////////////
+
+extern BOOL GetObjectContacts(ObjID objID1, tPhysSubModId subModId1, cPhysModel * pModel,
+                               cPhysSubModelInst ** ppSubModel);
+
+///////////////////////////////////////
+
+extern void DestroyAllObjectContacts(ObjID objID, tPhysSubModId subModId, cPhysModel * pModel);
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Globals
+//
+
+extern cPhysContactLinks g_PhysContactLinks;
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// CLASS: cPhysObjContactLinks, inline functions
+//
+
+inline cPhysObjContactLinks::cPhysObjContactLinks(void)
+ : m_linkCount(0)
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#pragma pack()
+
+#include <undbmem.h>
+
+#endif /* !__PHCONTCT_H */
+
+
+
+
+
+
+
+
+
+
+
+

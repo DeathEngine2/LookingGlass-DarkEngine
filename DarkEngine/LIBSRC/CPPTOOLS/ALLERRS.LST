@@ -1,0 +1,5 @@
+All errors (12-21-97, 14:47:14):
+
+Errors in hashset.err (12-21-97, 14:47):
+
+x:\prj\tech\libsrc\cpptools\hashset.cpp(333) : error C2579: 'RemoveByHandle(struct tHashSetHandle &)' : parameter list not sufficiently different from 'RemoveByHandle(struct tHashSetHandle)'

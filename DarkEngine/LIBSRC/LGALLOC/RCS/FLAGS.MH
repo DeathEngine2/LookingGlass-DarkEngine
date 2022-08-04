@@ -1,0 +1,32 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 1998.04.01.12.45.26;  author KEVIN;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@# $Header$
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+
+ALL_FLAGS = $(DEBUG_HEAP)
+@

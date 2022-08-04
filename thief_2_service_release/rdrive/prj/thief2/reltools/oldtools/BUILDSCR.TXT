@@ -1,0 +1,7 @@
+Here lies buildscr.bat, not to be confused with n:\bin\buildscr.bat.
+This one has whacky mappings that may have made sense to the Script Builder Guy.
+Nevertheless, there is a new one that is more in line with the n:\bin version.
+The only change in this new one (in reltools) is that p:\v42\include\sys is tacked
+onto the path, and 'shock' is removed from the path.
+
+

@@ -1,0 +1,2887 @@
+head	 1.25;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.25
+date	 2000.03.24.00.39.26;  author rsmith;  state Exp;
+branches ;
+next	 1.24;
+
+1.24
+date	 2000.03.09.21.35.54;  author rsmith;  state Exp;
+branches ;
+next	 1.23;
+
+1.23
+date	 2000.03.08.18.00.39;  author rsmith;  state Exp;
+branches ;
+next	 1.22;
+
+1.22
+date	 2000.03.08.03.57.32;  author rsmith;  state Exp;
+branches ;
+next	 1.21;
+
+1.21
+date	 2000.03.06.19.55.14;  author rsmith;  state Exp;
+branches ;
+next	 1.20;
+
+1.20
+date	 2000.03.05.17.37.12;  author rsmith;  state Exp;
+branches ;
+next	 1.19;
+
+1.19
+date	 2000.03.05.16.46.24;  author ccarollo;  state Exp;
+branches ;
+next	 1.18;
+
+1.18
+date	 2000.03.05.14.35.26;  author rsmith;  state Exp;
+branches ;
+next	 1.17;
+
+1.17
+date	 2000.03.04.18.45.06;  author rsmith;  state Exp;
+branches ;
+next	 1.16;
+
+1.16
+date	 2000.03.03.09.47.08;  author rsmith;  state Exp;
+branches ;
+next	 1.15;
+
+1.15
+date	 2000.03.02.10.54.47;  author rsmith;  state Exp;
+branches ;
+next	 1.14;
+
+1.14
+date	 2000.03.01.22.28.27;  author adurant;  state Exp;
+branches ;
+next	 1.13;
+
+1.13
+date	 2000.03.01.07.37.49;  author rsmith;  state Exp;
+branches ;
+next	 1.12;
+
+1.12
+date	 2000.02.29.19.48.47;  author ccarollo;  state Exp;
+branches ;
+next	 1.11;
+
+1.11
+date	 2000.02.29.07.55.52;  author rsmith;  state Exp;
+branches ;
+next	 1.10;
+
+1.10
+date	 2000.02.28.17.13.44;  author ccarollo;  state Exp;
+branches ;
+next	 1.9;
+
+1.9
+date	 2000.02.28.06.04.55;  author rsmith;  state Exp;
+branches ;
+next	 1.8;
+
+1.8
+date	 2000.02.26.21.07.40;  author rsmith;  state Exp;
+branches ;
+next	 1.7;
+
+1.7
+date	 2000.02.26.06.04.21;  author rsmith;  state Exp;
+branches ;
+next	 1.6;
+
+1.6
+date	 2000.02.25.16.47.48;  author ccarollo;  state Exp;
+branches ;
+next	 1.5;
+
+1.5
+date	 2000.02.21.06.11.29;  author rsmith;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 2000.01.28.02.35.00;  author rsmith;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.01.28.01.23.03;  author rsmith;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 2000.01.25.06.34.17;  author rsmith;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 2000.01.24.02.02.59;  author rsmith;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Scripts for Thief 2 - Mission 16 - Endgame
+@
+
+
+1.25
+log
+@changed kRollingExtra from "AcidMixture" to 
+"CombatBotBoiler
+" so once again (now that a different bug has been
+fixed) you have to kill combat bots and put
+their boilers in the rolling machine to build the
+quote list.
+@
+text
+@///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.24 1970/01/01 00:00:00 rsmith Exp $
+//
+
+#include "animlgte.h"
+#include "victory.scr"
+//#include "m16vic.h"  - since this won't be coorperative right now...
+
+// ... transcript of m16vic.h
+#define M16_GOAL_LEARN 0
+#define M16_GOAL_MANUFACTURE 1
+#define M16_GOAL_CONNECT 2
+#define M16_GOAL_ADJUST_NORM 3
+#define M16_GOAL_ADJUST_HARD 4
+#define M16_GOAL_ADJUST_EXP 5
+#define M16_GOAL_BESNEAKY 6
+#define M16_GOAL_EXIT 7
+
+
+
+//////////////////////
+//////////////////////
+//  SCRIPT FILE:  Miss16.SCR
+//////////////////////
+//////////////////////
+
+//  To be used Mission 16 of Thief 2 - Endgame/Factory
+
+//////////////////////
+//////////////////////
+
+// Script:	SoundPreload
+// Placed on LoudspeakerRelay object in world.
+
+#ifdef NOT_IN_USE
+BEGIN_SCRIPT (SoundPreload, RootScript)
+
+MESSAGES:
+OnSim()
+{
+   if (message.starting)
+   {
+		// long intro schema
+      Sound.PreLoad("kar1601A");
+		// ramble schemas
+      Sound.PreLoad("kar1602A");
+      Sound.PreLoad("kar1602B");
+      Sound.PreLoad("kar1602C");
+      Sound.PreLoad("kar1602D");
+      Sound.PreLoad("kar1602E");
+      Sound.PreLoad("kar1602F");
+      Sound.PreLoad("kar1602G");
+      Sound.PreLoad("kar1602H");
+      Sound.PreLoad("kar1602I");
+      Sound.PreLoad("kar1602J");
+      Sound.PreLoad("kar1602K");
+      Sound.PreLoad("kar1602L");
+      Sound.PreLoad("kar1602M");
+      Sound.PreLoad("kar1602N");
+      Sound.PreLoad("kar1602O");
+      Sound.PreLoad("kar1602P");
+      Sound.PreLoad("kar1602Q");
+      Sound.PreLoad("kar1602R");
+      Sound.PreLoad("kar1602S");
+      Sound.PreLoad("kar1602T");
+		// attack schemas
+      Sound.PreLoad("kar1603A");
+      Sound.PreLoad("kar1603B");
+      Sound.PreLoad("kar1603C");
+      Sound.PreLoad("kar1603D");
+      Sound.PreLoad("kar1603E");
+      Sound.PreLoad("kar1603F");
+      Sound.PreLoad("kar1603G");
+      Sound.PreLoad("kar1603H");
+      Sound.PreLoad("kar1603I");
+      Sound.PreLoad("kar1603J");
+      Sound.PreLoad("kar1603K");
+   }
+}
+
+END_SCRIPT (SoundPreload)
+#endif NOT_IN_USE
+
+
+// Script: Karras
+
+// When Karras gets a TurnOn/TurnOff msg from his Alert3Response, he broadcasts it 
+// out along any outgoing ControlDevice links.
+
+BEGIN_SCRIPT (Karras, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if ( (MessageIs("TurnOn")) || (MessageIs("TurnOff")) )
+	{
+		Link.BroadcastOnAllLinks(self,message.message,"ControlDevice",NULL);
+	}
+	DefaultOnMessage();
+}
+
+END_SCRIPT (Karras)
+
+
+
+// Script:  HealingWaterFont
+
+// almost identical to same in thief 1, miss 11 (RTC)
+
+// When frobbed: heals the player, shuts off its own light, and de-charges - cannot be
+// used to heal the player for a while.
+// A certain amount of time later, it recharges, turns its light back on, and
+// is able to heal the player again.
+
+BEGIN_SCRIPT(HealingWaterFont, RootScript)
+
+
+METHODS:
+
+// heals the player and triggers the related de-charge side effects
+METHOD void Heal(object Target)
+{
+	Damage.Damage(Target,self,GetHealAmount(),object("RestoreStim"));
+	SetData("Charged",FALSE);
+//	turn off light
+	PostMessage(self,"TurnOff");
+	// shut off the particle stream fountain effects
+	if (Link.AnyExist("~ParticleAttachement",self))
+	{
+		Link.BroadcastOnAllLinks(self,"TurnOff","~ParticleAttachement");
+	}
+
+	SetOneShotTimer("Recharged",GetRechargeTime());
+}
+
+METHOD int GetHealAmount()
+{
+	// should be expressed as negative damage (eg "-4" heals 4 points)
+	return -4;
+}
+
+METHOD float GetRechargeTime()
+{
+	// in seconds
+	return 180.0;
+}
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+		SetData("Charged",TRUE);
+	DefaultOnSim();
+}
+
+OnFrobWorldEnd()
+{
+	if ((boolean)GetData("Charged"))
+		Heal(message.Frobber);
+
+	DefaultOnFrobWorldEnd();
+}
+
+OnTimer()
+{
+	if (message.name == "Recharged")
+	{
+		SetData("Charged",TRUE);
+		// turn on light
+		PostMessage(self,"TurnOn");
+		// turn on the particle stream fountain effect
+		if (Link.AnyExist("~ParticleAttachement",self))
+		{
+			Link.BroadcastOnAllLinks(self,"TurnOn","~ParticleAttachement");
+		}
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT(HealingWaterFont)
+
+
+
+// Script:	AntennaManager
+
+// This script goes on a Marker object named "AntennaManager".
+// The object is ~ControlDevice linked to the 8 antenna switches in the mission.
+//  - ie - the 8 antenna switches are ControlDevice linked to it.
+// When it gets either a "TurnOn" or a "TurnOff" message (presumably from one of the
+// antenna switches), it scans through all the ~ControlDevice linked objects (ie - all
+// the antenna switches) and counts how many are in the state that corresponds to "B" -
+// the state the player is supposed to flip them to (they all start at "A").
+// If the number that are in state "B" is >= X, then the "flip the antenna" objective
+// is checked off, otherwise it is marked incomplete.
+// X = the value of the mission quest variable that corresponds to
+// the current difficulty level:
+//   Normal =	num_antenna_norm
+//   Hard =		num_antenna_hard
+//	  Expert =	num_antenna_exp
+
+BEGIN_SCRIPT (AntennaManager, RootScript)
+
+METHODS:
+
+// Searches through all the ~ControlDevice linked objects and checks to see how many are
+// in the state that corresponds to 'B'.
+int CountFlippedAntennas()
+{
+	int X=0;
+
+	if (Link.AnyExist("~ControlDevice",self))
+	{
+		linkset Switches=Link.GetAll("~ControlDevice",self);
+		while(Switches.AnyLinksLeft())
+		{
+			if (StateIsB(Switches.Link().To()))
+			{
+				X++;
+			}
+
+			Switches.NextLink();
+		}
+	}
+	else
+	{
+		Debug.MPrint (" *** WARNING: object ",self," has no incoming ControlDevice links!");
+	}
+
+	return X;
+
+}  // method: CountFlippedAntennas
+
+
+
+// For the passed in object o, presumed to be an antenna switch, returns whether or not o
+// is in the state that corresponds to position "B"
+boolean StateIsB (object o)
+{
+	if (  (Property.Get(o,"StTweqJoints","AnimS")) == (0x00)  )
+	{
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
+
+
+
+// Returns the value of the appropriate mission quest variable, based on difficulty.
+int GetNumRequiredFlips()
+{
+	int num;
+
+	int difficulty = Quest.Get("difficulty");
+
+	// EXPERT
+	if (difficulty == 2)
+	{
+		num = Quest.Get("num_antenna_exp");
+	}
+	// HARD
+	else if (difficulty == 1)
+	{
+		num = Quest.Get("num_antenna_hard");
+	}
+	// NORMAL
+	else // if (difficulty == 0)  - best to return something
+	{
+		num = Quest.Get("num_antenna_norm");
+	}
+
+	return num;
+}
+
+
+MESSAGES:
+
+OnMessage()
+{
+	if ( (MessageIs("TurnOn")) || (MessageIs("TurnOff")) )
+	{
+		int X = CountFlippedAntennas();
+
+		if (X >= GetNumRequiredFlips() )
+		{
+			// mark objective complete
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_NORM),kGoalComplete,kQuestDataMission);
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_HARD),kGoalComplete,kQuestDataMission);
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_EXP),kGoalComplete,kQuestDataMission);
+
+		}
+		else
+		{
+			// mark objective incomplete
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_NORM),kGoalIncomplete,kQuestDataMission);
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_HARD),kGoalIncomplete,kQuestDataMission);
+			Quest.Set("goal_state_"+string(M16_GOAL_ADJUST_EXP),kGoalIncomplete,kQuestDataMission);
+		}
+
+		// trigger associated VOs
+		PostMessage(Object.Named("AntVORelay"),"TurnOn");
+
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (AntennaManager)
+
+
+
+// Script: Socket
+
+// Checks off the correct objective when it is unlocked (ie - when the Guiding Beacon
+// has been slotted into it).
+// @@TODO: Is there a trigtrap way to implement this?
+
+BEGIN_SCRIPT(Socket, RootScript)
+
+MESSAGES:
+OnNowUnlocked()
+{
+	Quest.Set("goal_state_"+string(M16_GOAL_CONNECT),kGoalComplete,kQuestDataMission);
+	DefaultOnNowUnlocked();
+}
+
+END_SCRIPT(Socket)
+
+
+
+// Script:	GuidingBeacon
+
+// Triggers VO when picked up.  The GuidingBeacon is made in-game from
+// out of the heirarchy, so we can't easily just do this w/ trig trap.
+
+BEGIN_SCRIPT (GuidingBeacon, RootScript)
+
+MESSAGES:
+OnFrobWorldEnd()
+{
+	if (Object.Exists(Object.Named("GuidBeacVO")))
+		PostMessage(Object.Named("GuidBeacVO"),"TurnOn");
+
+	DefaultOnFrobWorldEnd();
+}
+
+END_SCRIPT (GuidingBeacon)
+
+
+
+// Script:	TrapDelayer
+
+// Metatrap that holds "TurnOn"s and "TurnOff"s
+// for a time defined by the ScriptTiming property or 5 seconds if
+// not set.
+// Deals only reasonably gracefully w/ multiple msgs arriving
+// before its timer expires, but the behvaior should be fine for
+// this specific mission.
+
+BEGIN_SCRIPT (TrapDelayer, RootScript)
+
+METHODS:
+// return value in ScriptTiming property or
+// default to 5 (seconds) otherwise
+float GetDelay()
+{
+	float delay = 5.0;
+
+   if (Property.Possessed(self, "ScriptTiming"))
+   {
+      delay = Property.Get(self, "ScriptTiming");
+   }
+		
+	return delay;
+}
+
+
+MESSAGES:
+OnMessage()
+{
+	if ( (MessageIs("TurnOn")) || (MessageIs("TurnOff")) )
+	{
+		SetOneShotTimer("Delay",GetDelay(),message.message);
+	}
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	if (message.name == "Delay")
+	{
+		Link.BroadcastOnAllLinks(self,message.data,"ControlDevice",NULL);
+	}
+
+	DefaultOnTimer();
+}
+END_SCRIPT (TrapDelayer)
+
+
+
+// Script:	HomingInProgress
+
+//  Goes on the HomingInProgress device.
+
+BEGIN_SCRIPT (HomingInProgress, RootScript)
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+		SetData("Stage",1);
+	DefaultOnSim();
+}
+
+
+OnMessage()
+{
+	if (MessageIs("Transmogrify"))
+	{
+		if (	((object)message.from == Object.Named("Machine1")) && 
+				(GetData("Stage") == 1) )
+		{
+			Property.Set(self,"ModelName","homing2");
+			SetData("Stage",2);
+		}
+		if (	((object)message.from == Object.Named("Machine2")) && 
+				(GetData("Stage") == 2) )
+		{
+			Property.Set(self,"ModelName","homing3");
+			SetData("Stage",3);
+		}
+		if (	((object)message.from == Object.Named("Machine3")) && 
+				(GetData("Stage") == 3) )
+		{
+			Property.Set(self,"ModelName","homing4");
+			SetData("Stage",4);
+		}
+		if (	((object)message.from == Object.Named("Machine4")) && 
+				(GetData("Stage") == 4) )
+		{
+			SetData("Stage",5);
+			// teleport this object away and replace it with the GuidingBeacon
+			vector P = Object.Position(Object.Named("GuidingBeacon"));
+			vector F = Object.Facing(Object.Named("GuidingBeacon"));
+			Object.Teleport(self, vector(0,0,0), vector(0,0,0), Object.Named("GuidingBeacon"));
+			// @@TODO: insert wait 5 seconds here
+			Object.Teleport(Object.Named("GuidingBeacon"), vector(0,0,0), vector(0,0,0), 
+						Link.GetOne("ControlDevice",Object.Named("Machine4")).To());
+
+			// now check off the objective
+			Quest.Set("goal_state_"+string(M16_GOAL_MANUFACTURE),kGoalComplete,kQuestDataMission);
+
+		}
+
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (HomingInProgress)
+
+
+
+
+// Script: Machine
+
+// Other machine scripts inherit from this and overload methods.
+// Or so I claim (I'm not currently using this like that).
+
+// @@NOTE: NOT BEING USED!  (See TransmogrifyMachine, below)
+
+BEGIN_SCRIPT(Machine,Physics)
+
+METHODS:
+void Transmogrify (object o)
+{
+	PostMessage(o,"Transmogrify");
+}
+
+
+void LetObjectPassThrough (object o)
+{
+	// teleport the object to a ControlDevice linked object
+	Object.Teleport(o, vector(0,0,0), vector(0,0,0), 
+		Link.GetOne("ControlDevice",self).To());
+}
+
+
+MESSAGES:
+OnBeginScript()
+{
+	Physics.SubscribeMsg(self, kCollisionMsg);
+	DefaultOnBeginScript();
+}
+OnEndScript()
+{
+	Physics.UnsubscribeMsg(self, kCollisionMsg);
+	DefaultOnEndScript();
+}
+OnPhysCollision()
+{
+
+	object WhatHitMe = message.collObj;
+	SetData("WhatHitMe",WhatHitMe);
+	bool   fakeout = FALSE;
+
+	if (!Object.Exists(WhatHitMe))
+		fakeout = TRUE;
+
+	//make sure at least one of us is actually moving and 
+	// this isn't some wierd spoof collision...
+	vector hitmevel(0,0,0);
+	if (Physics.HasPhysics(WhatHitMe))
+		Physics.GetVelocity(WhatHitMe,hitmevel);
+	if (hitmevel == vector(0,0,0))
+		fakeout = TRUE;
+
+	if (!fakeout)
+	{
+		// now delay a little to make it look like the machine is working on the object
+		SetOneShotTimer("Delay",5.0);
+	}
+
+	DefaultOnPhysCollision();
+}
+
+OnTimer()
+{
+	if (message.name == "Delay")
+	{
+		//@@TODO: big potential for inconsistency w/ this variable - storing it for 5 seconds...
+		object WhatHitMe = (object)GetData("WhatHitMe");
+		LetObjectPassThrough(WhatHitMe);
+		Transmogrify(WhatHitMe);
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT(Machine)
+
+
+
+// Script:	BotStationManager
+
+// This script goes on a Marker object and manages a "BotStation" - a place where
+// sleeping robots lurk behind unfrobbable doors in small enclosed rooms, waiting to 
+// rush off to thwart the player in response to being informed by a camera.
+// The BotStation script controls the actions of the door, messages the robots at
+// the correct times, and generally coordinates the experience.
+
+// The behavior is triggered by a "TurnOn" message.
+
+BEGIN_SCRIPT (BotStationManager, AI)
+
+METHODS:
+
+// returns an object that is ScriptParams linked to self
+// and inherits from the passed in object
+object GetSPLinked(object ToMatch)
+{
+	if (Link.AnyExist("ScriptParams",self))
+	{
+		linkset L=Link.GetAll("ScriptParams",self);
+		while(L.AnyLinksLeft())
+		{
+			if (Object.InheritsFrom(L.Link().To(), ToMatch))
+			{
+				return L.Link().To();
+			}
+
+			L.NextLink();
+		}
+	}
+
+	Debug.MPrint(" *** Warning: ",self," cannot find ScriptParams linked to obj that inherits from ",Object.GetName(ToMatch));
+	return (object)NULL;
+}
+
+// sends passed in msg to all ScriptParams linked objects that
+// inherit from passed in object
+void BroadcastToThoseWhoInherit(string msg, object ToMatch)
+{
+	if (Link.AnyExist("ScriptParams",self))
+	{
+		linkset L=Link.GetAll("ScriptParams",self);
+		while(L.AnyLinksLeft())
+		{
+			if (Object.InheritsFrom(L.Link().To(), ToMatch))
+			{
+				PostMessage(L.Link().To(),msg);
+			}
+
+			L.NextLink();
+		}
+	}
+}
+
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		// open the door
+		object TheDoor = GetSPLinked (Object.Named("Door"));
+		PostMessage(TheDoor,"TurnOn");
+
+		// alert the bots
+		BroadcastToThoseWhoInherit("TurnOn",Object.Named("Robot"));
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (BotStationManager)
+
+
+
+
+
+// Script:	BotStationBot
+
+// This script goes on an AI (assumed to be a combat robot) that starts the mission
+// in ASLEEP state as part of a Bot Station (see script BotStationManager, above).
+// When the AI receives a "TurnOn", it goes to Normal state and
+// runs somewhere.  This is either the ControlDevice-linked marker object if one
+// exists or to the player object otherwise.  Furthermore, it clamps itself at alert 3
+// for the time specified by Script::Timing or 1 minute if not set.
+
+// @@NOTE: bad assumption for multiplayer
+
+BEGIN_SCRIPT (BotStationBot, AI)
+
+METHODS:
+
+object GetLinkedDest()
+{
+	if (Link.AnyExist("ControlDevice",self))
+		return Link.GetOne("ControlDevice",self).To();
+	else return (object)NULL;
+}
+
+float GetAlertTime()
+{
+	if ((int)Property.Get(self,"ScriptTiming") <= (int)0)
+		return 60.0;
+	else
+		return (float)Property.Get(self,"ScriptTiming");
+}
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		// wake up if not dead
+		if ( (Property.Possessed(self,"AI_Mode")) && ((int)Property.Get(self,"AI_Mode") != (int)kAIM_Dead) )
+			Property.Set(self,"AI_Mode",kAIM_Normal);
+
+		// clamp at alert 3
+		Property.Set(self,"AI_AlertCap","Min level",3);
+		SetOneShotTimer("DeclampAlert",GetAlertTime());
+
+		// run somewhere
+		object dest = GetLinkedDest();
+		if (dest == (object)NULL)
+			dest = Object.Named("Player");
+
+		GotoObjLoc(dest, kFast);
+	}
+
+	DefaultOnMessage();
+}
+
+// some special commands once the robot gets to where its supposed to go
+// iff there is data on the ScriptParams link
+OnObjActResult()
+{
+	string linkdata = Link.GetOne("~ScriptParams",self).GetData();
+
+	if (linkdata == "")
+	{
+//		Debug.MPrint(" I got here.  No data.");
+	}
+	else
+	{
+		object dest = GetLinkedDest();
+		if (dest == (object)NULL)
+			dest = Object.Named("Player");
+
+		if (SuccessfulGoto((object)dest))
+		{
+			if (linkdata == "patrol")
+			{
+				Property.Set(self,"AI_Patrol",TRUE);
+			}
+		}
+	}
+
+	DefaultOnObjActResult();
+}
+
+
+OnTimer()
+{
+	if (message.name == "DeclampAlert")
+	{
+		Property.Set(self,"AI_AlertCap","Min level",0);
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT (BotStationBot)
+
+
+// Script:	OnOffFlame
+
+// Synchronizes appearance and dissapearance of flame object
+// with application of fire stim radius propegator on the object.
+
+// TurnOn - flame can be seen, causes damage
+// TurnOff - flame cannot be seen, doesn't cause damamge
+
+BEGIN_SCRIPT (OnOffFlame, RootScript)
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		Property.Set(self,"HasRefs",TRUE);
+		while (!Object.HasMetaProperty(self, Object.Named("LowPeriodHeatSource")))
+			Object.AddMetaProperty(self, Object.Named("LowPeriodHeatSource"));
+	}
+	else if (MessageIs("TurnOff"))
+	{
+		Property.Set(self,"HasRefs",FALSE);
+		while (Object.HasMetaProperty(self, Object.Named("LowPeriodHeatSource")))
+			Object.RemoveMetaProperty(self, Object.Named("LowPeriodHeatSource"));
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (OnOffFlame)
+
+
+// constants used by LoudspeakerRelay
+#define kSchemaNone     "None"
+#define kSchemaAttack   "Attack"
+#define kSchemaRamble   "Ramble"
+#define kSchemaIntro    "Intro"
+#define kSchemaOther    "Other"
+// Script: LoudspeakerRelay
+
+// Permits only 1 schema to play at a time on the loudspeakers.
+// Allows "attack" schemas to pre-empt other kinds of schemas.  No other
+// pre-emption is allowed.
+
+BEGIN_SCRIPT(LoudspeakerRelay, RootScript)
+
+METHODS:
+
+// returns a string based on seeing which object the passed-in object
+// is linked to (see constants, above):
+//  KarrasAttack object = kSchemaAttack string
+//  KarrasRamble object = kSchemaRamble string
+//  KarrasIntro object  = kSchemaIntro string
+//  none of the above   = kSchemaOther string
+string ClassifySchema(object schema)
+{
+   if (Link.AnyExist("ScriptParams",Object.Named("KarrasAttack"),schema))
+      return kSchemaAttack;
+   else if (Link.AnyExist("ScriptParams",Object.Named("KarrasRamble"),schema))
+      return kSchemaRamble;
+   else if (Link.AnyExist("ScriptParams",Object.Named("KarrasIntro"),schema))
+      return kSchemaIntro;
+   else
+      return kSchemaOther;
+}
+
+MESSAGES:
+
+OnSim()
+{
+   if (message.starting)
+   {
+      SetData("CurrentSchema",kSchemaNone);
+   }
+   DefaultOnSim();
+}
+
+OnMessage()
+{
+   if (MessageIs("PlaySchema"))
+   {
+      object schema = (object)message.data;
+      string schema_type = ClassifySchema(schema);
+      
+      if (!Object.Exists(schema))
+      {
+         Debug.MPrint(" *** WARNING: Requested schema obj ",schema," does not exist!");
+         return;
+      }
+      
+      // check for collisions
+      if ((string)GetData("CurrentSchema") != kSchemaNone)
+      {
+         if ( (schema_type == kSchemaAttack) && ((string)GetData("CurrentSchema") != kSchemaAttack) )
+         {
+            // halt the old schemas on all the speakers
+            linkset SpeakerList = Link.GetAll("ControlDevice", self);
+            while (SpeakerList.AnyLinksLeft())
+            {
+               // Re-route the SchemaDone to the speaker object, because we don't want to hear about it.
+               Sound.HaltSchema(SpeakerList.Link().To());  //, "", SpeakerList.Link().To());
+               SpeakerList.NextLink();
+            }
+         }
+         else
+         {
+            // disallow preemption
+            return;
+         }
+      }
+
+      // @@NOTE: I have to cast to a const char *, because the multiparm can't 
+      //  cast directly from a cStr
+      SetData("CurrentSchema", (const char *)schema_type);
+
+      // Clear our play-count
+      SetData("SchemaCount", 0);
+
+      // Play the schema over all objects connected by ControlDevice links 
+      linkset SpeakerList = Link.GetAll("ControlDevice", self);		
+      while (SpeakerList.AnyLinksLeft())
+      {
+         // play the schema on the loudspeaker obj, send the callback msg to me
+         if (Sound.PlaySchema(self, schema, SpeakerList.Link().To()))
+            SetData("SchemaCount", (integer)GetData("SchemaCount") + 1);
+
+         SpeakerList.NextLink();
+      }
+   }
+
+   DefaultOnMessage();
+}
+
+OnSchemaDone()
+{
+   integer SchemaCount = (integer)GetData("SchemaCount") - 1;
+   SetData("SchemaCount", SchemaCount);
+
+   if (SchemaCount == 0)
+   {
+      SetData("CurrentSchema", kSchemaNone);
+
+      // Check if the schema is chained
+      object SchemaObj = Object.Named(message.name);
+      if (Link.AnyExist("ScriptParams", SchemaObj))
+         PostMessage(self, "PlaySchema", Link.GetOne("ScriptParams", SchemaObj).To());
+   }
+
+   DefaultOnSchemaDone();
+}
+
+END_SCRIPT(LoudspeakerRelay)
+
+
+
+// Script: BroadcastSchemaListNoRep
+
+// Randomly selects a schema from its ScriptParam links and plays it from each object connected
+// via ControlDevice links.  Will not repeat a schema until all have been played.
+
+// TurnOn - selects a schema and plays it
+
+BEGIN_SCRIPT (BroadcastSchemaListNoRep, RootScript)
+
+MESSAGES:
+
+OnSim()
+{
+   if (message.starting && Property.Possessed(self, "ScriptTiming"))
+   {
+      int delay = Property.Get(self, "ScriptTiming");
+      SetData("SchemaDelay", delay);
+
+      delay = (int)((float)delay * (float)Data.RandInt(80, 120) / 100.0);
+      SetOneShotTimer(self, "FireSchema", delay);
+   }
+
+   DefaultOnSim();
+}
+
+OnTimer()
+{
+   if (message.name == "FireSchema")
+   {
+      int delay = GetData("SchemaDelay");
+
+      if (delay != 0)
+      {
+         delay = (int)((float)delay * (float)Data.RandInt(80, 120) / 100.0);
+         SetOneShotTimer(self, "FireSchema", delay);
+
+         PostMessage(self, "TurnOn");
+			// you'd think putting a TrapRelay script on the same object would do this automatically,
+			// but guess what, it doesn't seem to.
+			Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      }
+   }
+
+   DefaultOnTimer();
+}
+
+OnMessage()
+{
+   if (MessageIs("TurnOn"))
+   {
+      if (Link.AnyExist("ScriptParams", self))
+      {
+         int nValid = 0;
+
+         // count the number of links to select from
+         linkset SchemaList = Link.GetAll("ScriptParams", self);
+         while (SchemaList.AnyLinksLeft())
+         {
+            if ((int)SchemaList.Link().GetData() != 1)
+               nValid++;
+
+            SchemaList.NextLink();
+         }
+
+         // If no valid links remaining, reset them all, and recompute the number of
+         // links to pick randomly from
+         if (nValid == 0)
+         {
+            linkset ResetList = Link.GetAll("ScriptParams", self);
+            while (ResetList.AnyLinksLeft())
+            {
+               nValid++;
+               ResetList.Link().SetData(0);
+               ResetList.NextLink();
+            }
+         }
+
+         // Randomly pick which to play
+         int toPlay = Data.RandInt(1, nValid) - 1;
+
+         // Advance to that link, and get the schema
+         linkset PlayList = Link.GetAll("ScriptParams", self);
+
+         while (PlayList.AnyLinksLeft())
+         {
+            if (PlayList.Link().GetData() == 0)
+            {
+               if (toPlay == 0)
+                  break;
+               else
+                  toPlay--;
+            }
+
+            PlayList.NextLink();
+         }
+
+         if (Object.Exists(Object.Named("LoudspeakerRelay")))
+         {
+				// get the LoudspeakerRelay object
+            object LoudspeakerRelay = Object.Named("LoudspeakerRelay");
+				// tell it to play the schema we've selected
+            PostMessage(LoudspeakerRelay,"PlaySchema",PlayList.Link().To());
+         }
+         else
+            Debug.MPrint(" *** WARNING: object named LoudspeakerRelay does not exist.");
+
+         // Adjust its link data
+         PlayList.Link().SetData(1);
+      }
+   }
+
+   DefaultOnMessage();
+}
+
+END_SCRIPT(BroadcastSchemaListNoRep)
+
+
+
+
+// Script:  TrapAddMetaProp
+
+// On "TurnOn": Iterates over all outgoing ControlDevice links and
+// adds a Metaprop to the linked objects.  Metaprop to add should
+// be ScriptParams linked to the trap.
+
+BEGIN_SCRIPT (TrapAddMetaProp, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		if (Link.AnyExist("ScriptParams",self))
+		{
+			object MP=Link.GetOne("ScriptParams",self).To();
+			if (Object.Exists(MP))
+			{
+				if (Link.AnyExist("ControlDevice",self))
+				{
+					linkset CDs=Link.GetAll("ControlDevice",self);
+					while(CDs.AnyLinksLeft())
+					{
+						Object.AddMetaProperty (CDs.Link().To(),MP);
+
+						CDs.NextLink();
+					}  // while
+				}  // if - ControlDevice
+			}  // if - ObjectExists
+		}   // if - ScriptParams
+	}  // if - TurnOn
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (TrapAddMetaProp)
+
+
+
+// Script:	RenewableResource
+
+// This script is on a Marker object.  The marker is ScriptParams-linked to a
+// power-up archetype in the hierarchy.  The data on the ScriptParams link describes 
+// how destitute the player has to be in this resource in order for this script to 
+// produce a new instance of this resource in the world at its own location.  The
+// script tracks whether there is already such an object at its location and will
+// not produce a new one if so.
+
+// This script hasn't been finished, tested, checked-in, or 
+// added to the mission yet. 2/28/00 - RLS
+
+BEGIN_SCRIPT (RenewableResource, RootScript)
+
+METHODS:
+// return something on the end of a ScriptParams link
+// or (object)0 if none
+object GetResource()
+{
+	if (Link.AnyExist("ScriptParams",self))
+		return Link.GetOne("ScriptParams",self).To();
+	else
+		return (object)0;
+}
+
+// return value in ScriptTiming property or
+// default to 180.0 (3 minutes) otherwise
+float GetPeriod()
+{
+	float period = 180.0;
+
+   if (Property.Possessed(self, "ScriptTiming"))
+   {
+      period = Property.Get(self, "ScriptTiming");
+   }
+		
+	return period;
+}
+
+// create a new instance of my resource, add the
+// "TrigWorldFrob" script to it, 
+// put it at my location, and
+// forge a CD-link from it to me
+void SpawnResource()
+{
+	object new_obj;
+
+	if ((object)GetResource() == (object)0)
+	{
+		Debug.MPrint(" ** WARNING: RenewableResource ",self," has no ScriptParams links.");
+		return;
+	}
+
+	new_obj = Object.BeginCreate(GetResource());
+	Object.EndCreate(new_obj);
+
+	if (!Property.Possessed(new_obj,"Scripts"))
+	{
+		Property.Add(new_obj,"Scripts");
+		Property.Set(new_obj,"Scripts","Script 0","TrigWorldFrob");
+		Property.Set(new_obj,"Scripts","Script 1","");
+		Property.Set(new_obj,"Scripts","Script 2","");
+		Property.Set(new_obj,"Scripts","Script 3","");
+	}
+	else
+	{
+		// find the first blank spot and add my script to it
+		if (Property.Get(new_obj,"Scripts","Script 0") == "")
+			Property.Set(new_obj,"Scripts","Script 0","TrigWorldFrob");
+		else if (Property.Get(new_obj,"Scripts","Script 1") == "")
+			Property.Set(new_obj,"Scripts","Script 1","TrigWorldFrob");
+		else if (Property.Get(new_obj,"Scripts","Script 2") == "")
+			Property.Set(new_obj,"Scripts","Script 2","TrigWorldFrob");
+		else if (Property.Get(new_obj,"Scripts","Script 3") == "")
+			Property.Set(new_obj,"Scripts","Script 3","TrigWorldFrob");
+	}
+
+	Object.Teleport(new_obj,vector(0,0,0),vector(0,0,0),self);
+
+	// if obj is a projectile, remove its physics
+	if (Object.InheritsFrom(new_obj,Object.Named("Projectile")))
+	{
+		if (Property.Possessed(new_obj,"PhysInitVel"))
+		{
+			Property.Remove(new_obj,"PhysInitVel");
+		}
+		if (Property.Possessed(new_obj,"PhysType"))
+		{
+			Property.Remove(new_obj,"PhysType");
+		}
+	}
+
+	// if obj is a grenade, remove its physics
+	if (Object.InheritsFrom(new_obj,Object.Named("Grenadz")))
+	{
+		if (Property.Possessed(new_obj,"PhysType"))
+		{
+			Property.Remove(new_obj,"PhysType");
+		}
+	}
+
+
+	Link.Create("ControlDevice",new_obj,self);
+}
+
+// scan through all outgoing Contains links from
+// the player, check to see if any inherit from my 
+// resource, keep a sum of the stack counts of those
+// that do.  return (sum < the data
+// on the ScriptParams link from me to the resource archetype)
+boolean PlayerNeedsResource()
+{
+	int sum=0,x;
+	object inv_item;
+
+	if ((object)GetResource() == (object)0)
+		return FALSE;
+
+	//@@NOTE: bad multiplayer assumption
+	linkset Inv=Link.GetAll("Contains",Object.Named("Player"));
+	while(Inv.AnyLinksLeft())
+	{
+		inv_item = Inv.Link().To();
+		if (	(Object.InheritsFrom(inv_item,GetResource())) ||
+				(Object.InheritsFrom(inv_item,CrystalToArrow(GetResource()))) )
+
+		{
+			if (Property.Possessed(inv_item,"StackCount"))
+				x = (int)Property.Get(inv_item,"StackCount");
+			else
+				x=1;
+
+			sum += x;
+		}
+		Inv.NextLink();
+	}
+
+//	Debug.MPrint(" Player has ",sum," of resource.");
+//	Debug.MPrint(" Respawning if less than ",Link.GetOne("ScriptParams",self).GetData());
+
+	return (sum < (int)Link.GetOne("ScriptParams",self).GetData());
+}
+
+object CrystalToArrow(object crystal)
+{
+	if (Object.InheritsFrom(crystal,Object.Named("WaterCrystal")))
+		return Object.Named("water");
+	else if (Object.InheritsFrom(crystal,Object.Named("FireCrystal")))
+		return Object.Named("firearr");
+	else if (Object.InheritsFrom(crystal,Object.Named("AirCrystal")))
+		return Object.Named("GasArrow");
+	else if (Object.InheritsFrom(crystal,Object.Named("EarthCrystal")))
+		return Object.Named("EarthArrow");
+
+	else return (object)0;
+}
+
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetOneShotTimer("Ping",GetPeriod());
+		SpawnResource();  // assumes there is no resource instance there at sim start
+	}
+	DefaultOnSim();
+}
+
+OnTimer()
+{
+	if (message.name == "Ping")
+	{
+		// check for outgoing ~CD link,   if my it exists, my resource is still
+		// here, so nevermind
+		if (Link.AnyExist("~ControlDevice",self))
+		{
+//			Debug.MPrint(self," still has a resource, not spawning.");
+		}
+		else if (PlayerNeedsResource())
+		{
+			SpawnResource();
+		}
+
+		SetOneShotTimer("Ping",GetPeriod());
+	}
+	DefaultOnTimer();
+}
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		// my resource has been picked up.  snap the CD link from it to me
+		if (Link.AnyExist("ControlDevice",message.from,self))
+			Link.Destroy(Link.GetOne("ControlDevice",message.from,self));
+	}
+	DefaultOnMessage();
+}
+
+END_SCRIPT (RenewableResource)
+
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: TransmogrifyMachine
+//
+// Base script for machine that converts one type of item or items into another.
+// Specific conversion behavior is specified on derived scripts.
+//
+
+BEGIN_SCRIPT (TransmogrifyMachine, RootScript)
+
+METHODS:
+
+void PlaceAtOutput(integer slot, object obj)
+{
+   if ((integer)obj == OBJ_NULL)
+      return;
+
+	// if obj is a flashbomb, remove its physics
+	if (Object.InheritsFrom(obj,Object.Named("Flashbomb")))
+	{
+		if (Property.Possessed(obj,"PhysType"))
+		{
+			Property.Remove(obj,"PhysType");
+		}
+	}
+
+   vector facing;
+   vector position;
+
+   facing.x = position.x = 0;
+   facing.y = position.y = 0;
+   facing.z = position.z = 0;
+
+   object outputPoint = OBJ_NULL;
+
+   linkset OutputSet = Link.GetAll("ScriptParams", self);
+   while (OutputSet.AnyLinksLeft())
+   {
+      if (OutputSet.Link().GetData() == slot)
+      {
+         outputPoint = OutputSet.Link().To();
+         break;
+      }
+
+      OutputSet.NextLink();
+   }
+
+   if ((integer)outputPoint == OBJ_NULL)
+      return;
+
+   Object.Teleport(obj, position, facing, outputPoint);
+
+   vector velocity;
+   velocity.x = velocity.y = 0;
+   velocity.z = 0.1;
+   Physics.SetVelocity(obj, velocity);
+}
+
+// These methods should be overridden by deriving scripts
+virtual void Transmogrify()
+{
+}
+
+virtual void HandleInput(integer slot, object obj)
+{
+}
+
+virtual void HandleRemoval(integer slot, object obj)
+{
+}
+
+MESSAGES:
+
+OnMessage()
+{
+   if (MessageIs("TurnOn"))
+      Transmogrify();
+
+   if (MessageIs("Enter"))
+      HandleInput(message.data2, message.data);
+   if (MessageIs("Exit"))
+      HandleRemoval(message.data2, message.data);
+      
+   DefaultOnMessage();
+}
+
+END_SCRIPT(TransmogrifyMachine)
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: MachineSlot
+//
+// Script for detecting entrance of an object, and notification of the
+// Transmogrify machine
+//
+
+BEGIN_SCRIPT(MachineSlot, Physics)
+
+MESSAGES:
+
+OnBeginScript()
+{
+   Physics.SubscribeMsg(self, kContactMsg);
+   DefaultOnBeginScript();
+}
+OnEndScript()
+{
+   Physics.UnsubscribeMsg(self, kContactMsg);
+   DefaultOnEndScript();
+}
+
+OnPhysContactCreate()
+{
+   // Filter on submodel 0, so we don't get multiple messages for each 
+   // submodel of a contacting model
+   if (message.contactSubmod == 0)
+   {
+      link toMachine = Link.GetOne("ScriptParams", self);
+      PostMessage(toMachine.To(), "Enter", message.contactObj, (integer)toMachine.GetData());
+   }
+
+   DefaultOnPhysContactCreate();
+}
+
+OnPhysContactDestroy()
+{
+   if (message.contactSubmod == 0)
+   {
+      link toMachine = Link.GetOne("ScriptParams", self);
+      PostMessage(toMachine.To(), "Exit", message.contactObj, (integer)toMachine.GetData());
+   }
+
+   DefaultOnPhysContactDestroy();
+}
+
+END_SCRIPT (MachineSlot)
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Constants  - strings used as parameter to Object.Named()
+
+#define kBellowPlot   "HIPStage0"
+
+#define kRollingPlot  "HIPStage1"
+#define kRollingPlot2 "PlateO'Metal"
+
+#define kSealingPlot  "HIPStage2"
+#define kSealingPlot2 "RegRound"
+
+#define kFusingPlot   "HIPStage3"
+
+#define kFinalPlot    "HomingIntact"
+
+////////////////////////////////////////
+
+#define kBellowExtra1   "FluxSpheroid"
+#define kBellowExtra2   "BantamNode"
+#define kBellowResult   "CameraGrenade"
+
+#define kRollingExtra1  "FlareMixture"
+#define kRollingExtra2  "PlateO'Metal"
+#define kRollingExtra3  "CombatBotBoiler"
+#define kRollingResult1 "Flare"
+#define kRollingResult2 "QuoteList"
+
+#define kSealingExtra1  "MineBulb"
+#define kSealingExtra2  "PlateO'Metal"
+#define kSealingExtra3  "BantamNode"
+#define kSealingResult1 "Mine"
+#define kSealingResult2 "ExplosiveCharge"
+
+#define kLinkingExtra1  "InvGauge"
+#define kLinkingExtra2  "BantamNode"
+#define kLinkingResult  "RegRound"
+
+#define kFusingExtra1   "AcidMixture"
+#define kFusingExtra2   "WireSpool"
+#define kFusingExtra3   "PlateO'Metal"
+#define kFusingExtra4   "FluxSpheroid"
+#define kFusingResult1  "FluxSpheroid"
+#define kFusingResult2  "Flashbomb"
+
+#define kAmalgExtra1    "IronChassis"
+#define kAmalgExtra2    "QuickLimeMixture"
+#define kAmalgExtra3    "AcidMixture"
+#define kAmalgExtra4    "FlareMixture"
+#define kAmalgResult1   "MineBulb"
+#define kAmalgResult2   "FlareMixture"
+#define kAmalgResult3   "FlashMine"
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: BellowingMachine
+//
+
+BEGIN_SCRIPT (BellowingMachine, TransmogrifyMachine)
+
+METHODS:
+
+void HandleInput(integer slot, object obj)
+{
+   object newObj = OBJ_NULL;
+
+   if (Object.InheritsFrom(obj, Object.Named(kBellowPlot)))
+   {
+      newObj = Object.Create(Object.Named(kRollingPlot));
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kBellowExtra1)))
+   {
+      SetData("Extra1Count", (integer)GetData("Extra1Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kBellowExtra2)))
+   {
+      SetData("Extra2Count", (integer)GetData("Extra2Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+      newObj = obj;
+
+   if (((integer)newObj == OBJ_NULL) &&
+       ((integer)GetData("Extra1Count") > 0) &&
+       ((integer)GetData("Extra2Count") > 0))
+   {
+      newObj = Object.Create(Object.Named(kBellowResult));
+
+      SetData("Extra1Count", (integer)GetData("Extra1Count") - 1);
+      SetData("Extra2Count", (integer)GetData("Extra2Count") - 1);
+   }
+
+   PlaceAtOutput(1, newObj);
+}
+
+END_SCRIPT (BellowingMachine)
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: RollingMachine
+//
+
+BEGIN_SCRIPT (RollingMachine, TransmogrifyMachine)
+
+METHODS:
+
+void Transmogrify()
+{
+   object obj1 = GetData("InputObj1");
+   object obj2 = GetData("InputObj2");
+   object newObj = OBJ_NULL;
+
+   if (Object.InheritsFrom(obj1, Object.Named(kRollingPlot)) &&
+       Object.InheritsFrom(obj2, Object.Named(kRollingPlot2)))
+   {
+      newObj = Object.Create(Object.Named(kSealingPlot));
+   }
+   else
+   if (Object.InheritsFrom(obj1, Object.Named(kRollingExtra1)) && 
+       Object.InheritsFrom(obj2, Object.Named(kRollingExtra2)))
+   {
+      newObj = Object.Create(Object.Named(kRollingResult1));
+   }
+   else
+   if (Object.InheritsFrom(obj1, Object.Named(kRollingExtra3)) && 
+       Object.InheritsFrom(obj2, Object.Named(kRollingExtra2)))
+   {
+      SetData("Extra3Count", (integer)GetData("Extra3Count") + 1);
+
+      int N=5;
+      if ((integer)GetData("Extra3Count") >= N) 
+      {
+         newObj = Object.Create(Object.Named(kRollingResult2));
+         SetData("Extra3Count", (integer)GetData("Extra3Count") - N);
+      }
+   }
+   else
+      newObj = obj1;
+
+   if (newObj != obj1)
+   {
+      Object.Destroy(obj1);
+      Object.Destroy(obj2);
+   }
+
+   PlaceAtOutput(1, newObj);
+}
+
+void HandleInput(integer slot, object obj)
+{
+   switch (slot)
+   {
+      case 1:
+      {
+         if (GetData("InputObj1") == OBJ_NULL)
+            SetData("InputObj1", obj);
+         break;
+      }
+
+      case 2:
+      {
+         if (GetData("InputObj2") == OBJ_NULL)
+            SetData("InputObj2", obj);
+         break;
+      }
+   }
+}
+
+void HandleRemoval(integer slot, object obj)
+{
+   switch (slot)
+   {
+      case 1:
+      {
+         if (GetData("InputObj1") == obj)
+            SetData("InputObj1", OBJ_NULL);
+         break;
+      }
+
+      case 2:
+      {
+         if (GetData("InputObj2") == obj)
+            SetData("InputObj2", OBJ_NULL);
+         break;
+      }
+   }
+}
+
+END_SCRIPT (RollingMachine)
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: SealingMachine
+//
+
+BEGIN_SCRIPT (SealingMachine, TransmogrifyMachine)
+
+METHODS:
+
+void Transmogrify()
+{
+   object obj1 = GetData("InputObj1");
+   object obj2 = GetData("InputObj2");
+   object newObj = OBJ_NULL;
+   object newObj2 = OBJ_NULL;
+
+   if (	(Object.InheritsFrom(obj1, Object.Named(kSealingPlot)) &&
+         Object.InheritsFrom(obj2, Object.Named(kSealingPlot2)))
+        ||
+        (Object.InheritsFrom(obj2, Object.Named(kSealingPlot)) &&
+         Object.InheritsFrom(obj1, Object.Named(kSealingPlot2))) )
+   {    
+      newObj = Object.Create(Object.Named(kFusingPlot));
+   }
+   else
+   if (	(Object.InheritsFrom(obj1, Object.Named(kSealingExtra1)) && 
+         Object.InheritsFrom(obj2, Object.Named(kSealingExtra2)))
+        ||
+        (Object.InheritsFrom(obj2, Object.Named(kSealingExtra1)) && 
+         Object.InheritsFrom(obj1, Object.Named(kSealingExtra2))) )
+   {    
+      newObj = Object.Create(Object.Named(kSealingResult1));
+   }
+   else
+   if (	(Object.InheritsFrom(obj1, Object.Named(kSealingExtra1)) && 
+         Object.InheritsFrom(obj2, Object.Named(kSealingExtra3))) )
+   {
+      newObj = Object.Create(Object.Named(kSealingResult2));
+      // tell secret its been scored
+      PostMessage(Object.Named("ManufactureSecret3"),"TurnOn");
+   }
+   else
+   {
+      newObj = obj1;
+      newObj2 = obj2;
+   }
+
+   if (newObj != obj1)
+   {
+      Object.Destroy(obj1);
+      Object.Destroy(obj2);
+   }
+
+   PlaceAtOutput(1, newObj);
+   PlaceAtOutput(2, newObj2);
+}
+
+void HandleInput(integer slot, object obj)
+{
+   switch (slot)
+   {
+      case 1:
+      {
+         if (GetData("InputObj1") == OBJ_NULL)
+            SetData("InputObj1", obj);
+         break;
+      }
+
+      case 2:
+      {
+         if (GetData("InputObj2") == OBJ_NULL)
+            SetData("InputObj2", obj);
+         break;
+      }
+   }
+}
+
+void HandleRemoval(integer slot, object obj)
+{
+   switch (slot)
+   {
+      case 1:
+      {
+         if (GetData("InputObj1") == obj)
+            SetData("InputObj1", OBJ_NULL);
+         break;
+      }
+
+      case 2:
+      {
+         if (GetData("InputObj2") == obj)
+            SetData("InputObj2", OBJ_NULL);
+         break;
+      }
+   }
+}
+ 
+END_SCRIPT (SealingMachine)
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: LinkingMachine
+//
+
+BEGIN_SCRIPT (LinkingMachine, TransmogrifyMachine)
+
+METHODS:
+
+void Transmogrify()
+{
+   if (((integer)GetData("Extra1Count") > 0) &&
+       ((integer)GetData("Extra2Count") > 0))
+   {
+      SetData("Extra1Count", (integer)GetData("Extra1Count") - 1);
+      SetData("Extra2Count", (integer)GetData("Extra2Count") - 1);
+
+      object newObj = Object.Create(Object.Named(kLinkingResult));
+      PlaceAtOutput(1, newObj);
+   }
+}
+
+void HandleInput(integer slot, object obj)
+{
+   if (Object.InheritsFrom(obj, Object.Named(kLinkingExtra1)))
+   {
+      SetData("Extra1Count", (integer)GetData("Extra1Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kLinkingExtra2)))
+   {
+      SetData("Extra2Count", (integer)GetData("Extra2Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+      PlaceAtOutput(1, obj);
+}
+
+END_SCRIPT (LinkingMachine)
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: FusingMachine
+//
+
+BEGIN_SCRIPT (FusingMachine, TransmogrifyMachine)
+
+METHODS:
+
+void Transmogrify()
+{
+   object obj = GetData("InputObj");
+   object newObj = OBJ_NULL;
+
+   if (Object.InheritsFrom(obj, Object.Named(kFusingPlot)))
+   {
+      Object.Destroy(obj);
+		// mark the objective complete
+		Quest.Set("goal_state_"+string(M16_GOAL_MANUFACTURE),kGoalComplete,kQuestDataMission);
+      newObj = Object.Create(Object.Named(kFinalPlot));
+   }
+
+   // See if we should make a powerup
+   if (((integer)newObj == OBJ_NULL) && 
+       ((integer)GetData("Extra1Count") > 0) &&
+       ((integer)GetData("Extra2Count") > 0))
+   {
+      newObj = Object.Create(Object.Named(kFusingResult1));
+
+      SetData("Extra1Count", (integer)GetData("Extra1Count") - 1);
+      SetData("Extra2Count", (integer)GetData("Extra2Count") - 1);
+   }
+	else
+   if (((integer)newObj == OBJ_NULL) && 
+       ((integer)GetData("Extra3Count") > 0) &&
+       ((integer)GetData("Extra4Count") > 0))
+   {
+      newObj = Object.Create(Object.Named(kFusingResult2));
+
+		// tell secret its been scored
+		PostMessage(Object.Named("ManufactureSecret2"),"TurnOn");
+
+      SetData("Extra3Count", (integer)GetData("Extra3Count") - 1);
+      SetData("Extra4Count", (integer)GetData("Extra4Count") - 1);
+   }
+
+
+   // Place any output object at our output location
+   PlaceAtOutput(1, newObj);
+}
+
+void HandleInput(integer slot, object obj)
+{
+   if (Object.InheritsFrom(obj, Object.Named(kFusingPlot)))
+   {
+      if (GetData("InputObj") == OBJ_NULL)
+         SetData("InputObj", obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kFusingExtra1)))
+   {
+      SetData("Extra1Count", (integer)GetData("Extra1Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kFusingExtra2)))
+   {
+      SetData("Extra2Count", (integer)GetData("Extra2Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kFusingExtra3)))
+   {
+      SetData("Extra3Count", (integer)GetData("Extra3Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kFusingExtra4)))
+   {
+      SetData("Extra4Count", (integer)GetData("Extra4Count") + 1);
+      Object.Destroy(obj);
+   }
+   else
+      PlaceAtOutput(2, obj);
+}
+
+END_SCRIPT (FusingMachine)
+   
+///////////////////////////////////////////////////////////////////////////////
+//
+//  Script: AmalgMachine
+//
+
+BEGIN_SCRIPT (AmalgMachine, TransmogrifyMachine)
+
+METHODS:
+
+void Transmogrify()
+{
+   if (((integer)GetData("Extra1Count") > 0) &&
+       ((integer)GetData("Extra2Count") > 0))
+   {
+      object newObj = Object.Create(Object.Named(kAmalgResult1));
+      PlaceAtOutput(1, newObj);
+
+      SetData("Extra1Count", (integer)GetData("Extra1Count") - 1);
+      SetData("Extra2Count", (integer)GetData("Extra2Count") - 1);
+   }
+   else
+   if (((integer)GetData("Extra2Count") > 0) &&
+       ((integer)GetData("Extra3Count") > 0))
+   {
+      object newObj = Object.Create(Object.Named(kAmalgResult2));
+      PlaceAtOutput(1, newObj);
+
+      SetData("Extra2Count", (integer)GetData("Extra2Count") - 1);
+      SetData("Extra3Count", (integer)GetData("Extra3Count") - 1);
+   }
+   else
+   if (((integer)GetData("Extra1Count") > 0) &&
+       ((integer)GetData("Extra4Count") > 0))
+   {
+		// tell secret its been scored
+		PostMessage(Object.Named("ManufactureSecret1"),"TurnOn");
+
+      object newObj = Object.Create(Object.Named(kAmalgResult3));
+      PlaceAtOutput(1, newObj);
+
+      SetData("Extra1Count", (integer)GetData("Extra1Count") - 1);
+      SetData("Extra4Count", (integer)GetData("Extra4Count") - 1);
+   }
+}
+
+void HandleInput(integer slot, object obj)
+{
+   if (Object.InheritsFrom(obj, Object.Named(kAmalgExtra1)))
+   {
+      Object.Destroy(obj);
+      SetData("Extra1Count", (integer)GetData("Extra1Count") + 1);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kAmalgExtra2)))
+   {
+      Object.Destroy(obj);
+      SetData("Extra2Count", (integer)GetData("Extra2Count") + 1);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kAmalgExtra3)))
+   {
+      Object.Destroy(obj);
+      SetData("Extra3Count", (integer)GetData("Extra3Count") + 1);
+   }
+   else
+   if (Object.InheritsFrom(obj, Object.Named(kAmalgExtra4)))
+   {
+      Object.Destroy(obj);
+      SetData("Extra4Count", (integer)GetData("Extra4Count") + 1);
+   }
+	else
+      PlaceAtOutput(1, obj);
+}
+
+END_SCRIPT (AmalgMachine)
+@
+
+
+1.24
+log
+@changed the rollingmachine to be interested in boring, inert
+acid mixture instead of interesting, voltile combatbotboilers.
+which are secretly ais, and crashed the game when destroyed.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.23 1970/01/01 00:00:00 rsmith Exp $
+d1404 1
+a1404 1
+#define kRollingExtra3  "AcidMixture"
+@
+
+
+1.23
+log
+@since LoudspeakerRelay is now found by name instead of at the end
+of a controldevice link, the code now checks for the existence of
+the object instead of an outgoing controldevice link.  tested, works,
+code reviewed by alex.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.22 1970/01/01 00:00:00 rsmith Exp $
+d1404 1
+a1404 1
+#define kRollingExtra3  "CombatBotBoiler"
+@
+
+
+1.22
+log
+@Modified to trigger VOs
+added TrapDelayer, which delays onset of TurnOn/TurnOffs
+to time VOs better
+added GuidingBeacon, to trigger VO
+modified AntennaManager to trigger VO
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/RCS/miss16.scr 1.21 1970/01/01 00:00:00 rsmith Exp $
+d976 1
+a976 1
+         if (Link.AnyExist("ControlDevice", self))
+d978 1
+a978 1
+	    // get the LoudspeakerRelay object
+d980 1
+a980 1
+	    // tell it to play the schema we've selected
+d984 1
+a984 1
+            Debug.MPrint(" *** WARNING: ",self," not CD-linked to a LoudspeakerRelay");
+@
+
+
+1.21
+log
+@changed the BotStationBot script to only change mode to normal if
+the mode is not already Dead
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.20 1970/01/01 00:00:00 rsmith Exp $
+d304 3
+d335 1
+d337 2
+d340 65
+d917 3
+d979 1
+a979 1
+            object LoudspeakerRelay = Link.GetOne("ControlDevice", self).To();
+d1513 1
+a1513 1
+      int N=4;
+@
+
+
+1.20
+log
+@made the halt-schema of LoudspeakerRelay not redirect callback
+msgs to the other objects.  we still get OnSchemaDones for these
+objects, so we're not sure why this works, but it seems to work
+on the test data.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.19 1970/01/01 00:00:00 ccarollo Exp $
+d404 2
+d593 3
+a595 2
+		// wake up
+		Property.Set(self,"AI_Mode",3);
+@
+
+
+1.19
+log
+@Added chaining, and ref-counting of schema playing, so we know when the
+schema has ended
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/RCS/miss16.scr 1.18 2000/03/05 14:35:26 rsmith Exp $
+d747 1
+a747 1
+            linkset SpeakerList = Link.GetAll("ControlDevice", self);		
+d751 1
+a751 1
+               Sound.HaltSchema(SpeakerList.Link().To(), "", SpeakerList.Link().To());
+d1098 2
+a1099 2
+	Debug.MPrint(" Player has ",sum," of resource.");
+	Debug.MPrint(" Respawning if less than ",Link.GetOne("ScriptParams",self).GetData());
+d1138 1
+a1138 1
+			Debug.MPrint(self," still has a resource, not spawning.");
+@
+
+
+1.18
+log
+@first version of LoudspeakerRelay which has logic about pre-empting
+schemas types w/ other schema types.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.17 1970/01/01 00:00:00 rsmith Exp $
+d707 8
+a714 8
+	if (Link.AnyExist("ScriptParams",Object.Named("KarrasAttack"),schema))
+		return kSchemaAttack;
+	else if (Link.AnyExist("ScriptParams",Object.Named("KarrasRamble"),schema))
+		return kSchemaRamble;
+	else if (Link.AnyExist("ScriptParams",Object.Named("KarrasIntro"),schema))
+		return kSchemaIntro;
+	else
+		return kSchemaOther;
+d721 5
+a725 5
+	if (message.starting)
+	{
+		SetData("CurrentSchema",kSchemaNone);
+	}
+	DefaultOnSim();
+d730 31
+a760 3
+	if (MessageIs("PlaySchema"))
+	{
+		object schema=(object)message.data;
+d762 3
+a764 5
+		if (!Object.Exists(schema))
+		{
+			Debug.MPrint(" *** WARNING: Requested schema obj ",schema," does not exist!");
+			return;
+		}
+d766 2
+a767 1
+		Debug.MPrint(" Schema ",message.data," requested. Current schema = ",GetData("CurrentSchema"));
+d769 7
+a775 24
+		// check for collisions
+		if (GetData("CurrentSchema") != kSchemaNone)
+		{
+			Debug.MPrint(" A different schema is playing.  I'll preempt it if I can.");
+			if ( (ClassifySchema(schema) == kSchemaAttack) && (GetData("CurrentSchema") != kSchemaAttack) )
+			{
+				// halt the old schemas on all the speakers
+				Debug.MPrint(" Pre-empting current schema...");
+				{
+					linkset SpeakerList = Link.GetAll("ControlDevice", self);		
+					while (SpeakerList.AnyLinksLeft())
+					{
+						Sound.HaltSchema(SpeakerList.Link().To());
+						SpeakerList.NextLink();
+					}
+				}
+			}
+			else
+			{
+				// disallow preemption
+				Debug.MPrint(" New schema is of type ",(ClassifySchema(schema))," and current one is of type ",(GetData("CurrentSchema")),". Pre-emption not allowed." );
+				return;
+			}
+		}
+d777 3
+a779 11
+		//@@NOTE: I have to do this horrible thing because the compiler can't convert from string variable to
+		// multiparm, it only takes string constants
+		string schema_type = ClassifySchema(schema);
+		if (schema_type == kSchemaAttack)
+			SetData("CurrentSchema",kSchemaAttack);
+		else if (schema_type == kSchemaRamble)
+			SetData("CurrentSchema",kSchemaRamble);
+		else if (schema_type == kSchemaIntro)
+			SetData("CurrentSchema",kSchemaIntro);
+		else if (schema_type == kSchemaOther)
+			SetData("CurrentSchema",kSchemaOther);
+d781 1
+a781 12
+		Debug.MPrint(" Schema is of type ",ClassifySchema(schema)," and CurrentSchema = ", GetData("CurrentSchema"));
+
+		// Play the schema over all objects connected by ControlDevice links 
+		linkset SpeakerList = Link.GetAll("ControlDevice", self);		
+		while (SpeakerList.AnyLinksLeft())
+		{
+			// play the schema on the loudspeaker obj, send the callback msg to me
+			Sound.PlaySchema(self, schema, SpeakerList.Link().To());
+			SpeakerList.NextLink();
+		}
+	}
+	DefaultOnMessage();
+d786 14
+a799 3
+	Debug.MPrint(" Got SchemaDone from ",message.targetObject);
+	SetData("CurrentSchema",kSchemaNone);
+	DefaultOnSchemaDone();
+d901 4
+a904 4
+				// get the LoudspeakerRelay object
+				object LoudspeakerRelay = Link.GetOne("ControlDevice", self).To();
+				// tell it to play the schema we've selected
+				PostMessage(LoudspeakerRelay,"PlaySchema",PlayList.Link().To());
+d1436 6
+a1441 6
+		int N=4;
+	   if ((integer)GetData("Extra3Count") >= N) 
+		{
+	      newObj = Object.Create(Object.Named(kRollingResult2));
+	      SetData("Extra3Count", (integer)GetData("Extra3Count") - N);
+		}
+d1514 5
+a1518 5
+			 Object.InheritsFrom(obj2, Object.Named(kSealingPlot2)))
+			 ||
+			(Object.InheritsFrom(obj2, Object.Named(kSealingPlot)) &&
+			 Object.InheritsFrom(obj1, Object.Named(kSealingPlot2)))		)
+   {
+d1523 5
+a1527 5
+			 Object.InheritsFrom(obj2, Object.Named(kSealingExtra2)))
+			 ||
+			(Object.InheritsFrom(obj2, Object.Named(kSealingExtra1)) && 
+			 Object.InheritsFrom(obj1, Object.Named(kSealingExtra2)))	)
+   {
+d1532 1
+a1532 1
+			 Object.InheritsFrom(obj2, Object.Named(kSealingExtra3))) )
+d1535 2
+a1536 2
+		// tell secret its been scored
+		PostMessage(Object.Named("ManufactureSecret3"),"TurnOn");
+@
+
+
+1.17
+log
+@embellished machine scripts to make them manufacture
+secret power-ups.  code reviewed by chris carollo.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.16 1970/01/01 00:00:00 rsmith Exp $
+d84 1
+d683 121
+d899 4
+a902 10
+	    // get the LoudspeakerRelay object
+            object LoudspeakerRelay = Link.GetOne("ControlDevice", self).To();
+
+	    // Play the schema over all objects connected by ControlDevice links to the LoudspeakerRelay
+            linkset SpeakerList = Link.GetAll("ControlDevice", LoudspeakerRelay);
+            while (SpeakerList.AnyLinksLeft())
+            {
+               Sound.PlaySchema(SpeakerList.Link().To(), PlayList.Link().To(), SpeakerList.Link().To());
+               SpeakerList.NextLink();
+            }
+@
+
+
+1.16
+log
+@made 'Karras' script, which for now just relays TurnOn/TurnOffs
+embellished AmalgMachine with a new object it can create 
+(Flashbomb)
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.15 1970/01/01 00:00:00 rsmith Exp $
+d542 1
+a542 1
+		BroadcastToThoseWhoInherit("TurnOn",Object.Named("CombatBot"));
+d1063 2
+a1064 2
+	// if obj is a grenade, remove its physics
+	if (Object.InheritsFrom(obj,Object.Named("Grenadz")))
+d1209 3
+a1211 1
+#define kRollingResult  "Flare"
+d1215 3
+a1217 1
+#define kSealingResult  "Mine"
+d1225 4
+a1228 1
+#define kFusingResult   "FluxSpheroid"
+d1236 1
+a1236 1
+#define kAmalgResult3   "Flashbomb"
+d1310 1
+a1310 1
+      newObj = Object.Create(Object.Named(kRollingResult));
+d1313 13
+d1410 1
+a1410 1
+      newObj = Object.Create(Object.Named(kSealingResult));
+d1413 2
+d1416 6
+d1546 1
+a1546 1
+      newObj = Object.Create(Object.Named(kFusingResult));
+d1551 6
+d1558 8
+d1590 12
+d1641 3
+d1645 1
+a1645 1
+      PlaceAtOutput(2, newObj);
+@
+
+
+1.15
+log
+@made healing font send self TurnOn and TurnOff
+to be interpreted by AnimLight script
+to synch light being on or off with state of font (charged
+or not)
+Finished renewable resource script, had it reviewed and
+bulletproofed w/ Alex
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.14 1970/01/01 00:00:00 adurant Exp $
+d84 1
+d86 19
+d1063 9
+d1226 1
+d1229 1
+d1583 10
+d1615 6
+@
+
+
+1.14
+log
+@don't broadcast NULL data on particle attachment links broadcast on all.
+fixes crash when you frob healing fountain
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.13 1970/01/01 00:00:00 rsmith Exp $
+d87 1
+a87 1
+// identical to same in theif 1, miss 11 (RTC)
+a93 5
+// @@TODO:	this script is supposed to inherit from AnimLight but I had some problems
+//				but i had some trouble including the proper files, so for now the relevant
+//				lines are commented out
+
+//BEGIN_SCRIPT(HealingWaterFont, AnimLight)
+d104 2
+a105 1
+//	TurnOff();
+d149 2
+a150 1
+//		TurnOn();
+a581 2
+//		Debug.MPrint(" destination = ",dest);
+
+a758 1
+            // Debug.MPrint(" LoudspeakerRelay = object ",LoudspeakerRelay);
+a806 1
+//						Debug.MPrint(" Adding ",MP," to ",CDs.Link().To());
+d839 1
+a839 1
+// or OBJ_NULL if none
+d845 1
+a845 1
+		return OBJ_NULL;
+d863 2
+a864 1
+// "TrigWorldFrob" script to it, and
+d868 1
+d870 56
+d931 2
+a932 2
+// that do.  return (sum < X)  where X is the data
+// on the ScriptParams link from me to the resource archetype
+d935 29
+a963 1
+	return FALSE;
+d966 15
+d1006 2
+d1017 2
+@
+
+
+1.13
+log
+@added SoundPreload, which is currently #ifdef'ed out
+removed MachineSlotAutoTrigger, since Chris explained how it
+is not necessary.
+Made Sealing machine accept the right input no matter which thing was
+in which input slot.
+Added Quest.Set for objectives when Guiding Beacon is finally manufactured.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.12 1970/01/01 00:00:00 ccarollo Exp $
+d113 1
+a113 1
+		Link.BroadcastOnAllLinks(self,"TurnOff","~ParticleAttachement",NULL);
+d157 1
+a157 1
+			Link.BroadcastOnAllLinks(self,"TurnOn","~ParticleAttachement",NULL);
+@
+
+
+1.12
+log
+@Change to first machine
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.11 2000/02/29 07:55:52 rsmith Exp $
+d32 2
+d35 50
+d1058 1
+a1058 1
+///////////////////////////////////////////////////////////////////////////////
+a1059 39
+//  Script: MachineSlotAutoTrigger
+//
+//  Identical to MachineSlot script, above, except that it broadcasts 
+//  "TurnOn" immediately after physcontact.
+//
+
+BEGIN_SCRIPT(MachineSlotAutoTrigger, MachineSlot)
+
+MESSAGES:
+
+OnPhysContactCreate()
+{
+   // Filter on submodel 0, so we don't get multiple messages for each 
+   // submodel of a contacting model
+   if (message.contactSubmod == 0)
+   {
+		SetOneShotTimer("TriggerTurnOn",0.1);
+      link toMachine = Link.GetOne("ScriptParams", self);
+      PostMessage(toMachine.To(), "Enter", message.contactObj, (integer)toMachine.GetData());
+   }
+
+//   DefaultOnPhysContactCreate();
+}
+
+OnTimer()
+{
+	if (message.name == "TriggerTurnOn")
+	{
+		Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT (MachineSlotAutoTrigger)
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+//
+d1246 5
+a1250 2
+   if (Object.InheritsFrom(obj1, Object.Named(kSealingPlot)) &&
+       Object.InheritsFrom(obj2, Object.Named(kSealingPlot2)))
+d1255 5
+a1259 2
+   if (Object.InheritsFrom(obj1, Object.Named(kSealingExtra1)) && 
+       Object.InheritsFrom(obj2, Object.Named(kSealingExtra2)))
+d1379 2
+@
+
+
+1.11
+log
+@added "MachineSlotAutoTrigger" to compliment Chris's
+machine scripts, but on further investigation, it
+appears to be unneccessary - may very well delete later.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.10 1970/01/01 00:00:00 ccarollo Exp $
+d1098 1
+a1098 1
+void Transmogrify()
+a1099 1
+   object obj = GetData("InputObj");
+d1105 1
+d1111 1
+d1117 1
+d1122 1
+a1122 2
+   // See if we should make a powerup
+   if (((integer)newObj == OBJ_NULL) && 
+a1131 5
+   // If we're making a new object, destroy the old one
+   if (newObj != obj)
+      Object.Destroy(obj);
+
+   // Place any output object at our output location
+a1132 12
+}
+
+void HandleInput(integer slot, object obj)
+{
+   if (GetData("InputObj") == OBJ_NULL)
+      SetData("InputObj", obj);
+}
+
+void HandleRemoval(integer slot, object obj)
+{
+   if (obj == GetData("InputObj"))
+      SetData("InputObj", OBJ_NULL);
+@
+
+
+1.10
+log
+@All the machine scripts
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.9 1970/01/01 00:00:00 rsmith Exp $
+d61 1
+a61 1
+		Link.BroadcastOnAllLinks(self,"TurnOff","~ParticleAttachement");
+d105 1
+a105 1
+			Link.BroadcastOnAllLinks(self,"TurnOn","~ParticleAttachement");
+d1004 2
+d1008 5
+a1012 1
+// Constants
+d1014 1
+a1014 1
+#define kBellowPlot   "Stage0"
+d1016 1
+a1016 2
+#define kRollingPlot  "Stage1"
+#define kRollingPlot2 "MetalPlate"
+d1018 10
+a1027 2
+#define kSealingPlot  "Stage2"
+#define kSealingPlot2 "RegulatingRound"
+d1029 2
+a1030 1
+#define kFusingPlot   "Stage3"
+d1032 8
+a1039 1
+#define kFinalPlot    "FinalObj"
+d1041 20
+d1063 1
+a1063 1
+#define kBellowExtra1   "FluxOrb"
+d1068 1
+a1068 1
+#define kRollingExtra2  "MetalPlate"
+d1072 1
+a1072 1
+#define kSealingExtra2  "MetalPlate"
+d1075 1
+a1075 1
+#define kLinkingExtra1  "Gauge"
+d1077 1
+a1077 1
+#define kLinkingResult  "RegulatingRound"
+d1079 2
+a1080 2
+#define kFusingExtra1   "AcidicMixture"
+#define kFusingExtra2   "SpringWiring"
+d1083 3
+a1085 3
+#define kAmalgExtra1    "IronChasis"
+#define kAmalgExtra2    "QuicklimeMixture"
+#define kAmalgExtra3    "AcidicMixture"
+@
+
+
+1.9
+log
+@started skeleton of "RenewableResource".
+it compiles, but it doesn't do anything.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.8 1970/01/01 00:00:00 rsmith Exp $
+d708 16
+a723 16
+			if (Link.AnyExist("ControlDevice", self))
+			{
+				// get the LoudspeakerRelay object
+				object LoudspeakerRelay = Link.GetOne("ControlDevice", self).To();
+//				Debug.MPrint(" LoudspeakerRelay = object ",LoudspeakerRelay);
+
+				// Play the schema over all objects connected by ControlDevice links to the LoudspeakerRelay
+				linkset SpeakerList = Link.GetAll("ControlDevice", LoudspeakerRelay);
+				while (SpeakerList.AnyLinksLeft())
+				{
+					Sound.PlaySchema(SpeakerList.Link().To(), PlayList.Link().To(), SpeakerList.Link().To());
+					SpeakerList.NextLink();
+				}
+			}
+			else
+				Debug.MPrint(" *** WARNING: ",self," not CD-linked to a LoudspeakerRelay");
+d876 556
+d1433 1
+@
+
+
+1.8
+log
+@changed chris's schema playing script to incorporate a "SpeakerRelay"
+concept - instead of playing schemas on all outgoing CD links,
+it looks for a single object on the end of a single CD link,
+then plays the schemas on all outgoing CD links from THAT object.
+alex code reviewed.
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.7 1970/01/01 00:00:00 rsmith Exp $
+d775 102
+@
+
+
+1.7
+log
+@added a trap script that adds metaprops to linked objects
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.6 1970/01/01 00:00:00 ccarollo Exp $
+d533 1
+a533 1
+		Debug.MPrint(" destination = ",dest);
+d549 1
+a549 1
+		Debug.MPrint(" I got here.  No data.");
+d708 5
+a712 7
+         // Play it over all objects connected by ControlDevice links
+         linkset SpeakerList = Link.GetAll("ControlDevice", self);
+         while (SpeakerList.AnyLinksLeft())
+         {
+            Sound.PlaySchema(SpeakerList.Link().To(), PlayList.Link().To(), SpeakerList.Link().To());
+            SpeakerList.NextLink();
+         }
+d714 12
+a725 1
+         // Adjust its script
+@
+
+
+1.6
+log
+@Added SchemaList Broadcast script
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.5 1970/01/01 00:00:00 rsmith Exp $
+d727 39
+@
+
+
+1.5
+log
+@added OnOffFlame for dynamic flames
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.4 1970/01/01 00:00:00 rsmith Exp $
+d557 1
+a557 1
+		if (SuccessfulGoto(dest))
+d614 111
+@
+
+
+1.4
+log
+@embellished BotStationBot so that the robot can go on patrol
+when it gets to its destination if its data is set for it to do so
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.3 1970/01/01 00:00:00 rsmith Exp $
+d580 36
+@
+
+
+1.3
+log
+@added BotStation conecpt - 2 scripts:
+BotStationManager - manages messaging for BotStation
+BotStationBot - replacement for RobotResponse
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.2 1970/01/01 00:00:00 rsmith Exp $
+d540 29
+@
+
+
+1.2
+log
+@added Socket, Machine, HomingInProgress
+for victory condition support
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/miss16.scr 1.1 1970/01/01 00:00:00 rsmith Exp $
+d9 1
+a9 1
+// transcript of m16vic.h
+a31 1
+// Script:	RobotResponse
+a32 57
+// This script goes on an AI (assumed to be a combat robot that starts the mission
+// in ASLEEP state).  When the AI receives a "TurnOn", it goes to Normal state and
+// runs to the ControlDevice-linked marker object.  In other words, the AI springs 
+// to life and runs to a predetermined location which correpsonds to, say, an alarm
+// going off.
+
+BEGIN_SCRIPT (RobotResponse, AI)
+
+METHODS:
+
+object GetDest()
+{
+	return Link.GetOne("ControlDevice",self).To();
+}
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		Property.Set(self,"AI_Mode",3);
+		GotoObjLoc(GetDest(), kFast);
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (RobotResponse)
+
+
+
+// Script:	Microphone
+
+//  If you get to alert 2, go to alert 3 automatically.
+//  Otherwise, same as camera.
+
+BEGIN_SCRIPT (Microphone, AI)
+
+MESSAGES:
+
+OnAlertness()
+{
+	if ( (message.level == kModerateAlert) && (message.oldLevel < kModerateAlert) )
+	{
+		Debug.MPrint(" Mic going from 2 to 3");
+//		Property.Set(self,"AI_Alertness","Level",3);
+		Property.Set(self,"AI_AlertCap","Min level",3);
+	}
+
+	DefaultOnAlertness();
+}
+
+END_SCRIPT (Microphone)
+
+
+
+a147 2
+			Debug.MPrint (" Checking switch ",Switches.Link().To() );
+
+a150 1
+				Debug.MPrint (" Switch ",Switches.Link().To()," is in state B.");
+a170 2
+	Debug.MPrint(" Switch ",o," has AnimS = ",Property.Get(o,"StTweqJoints","AnimS"));
+
+a217 3
+
+		Debug.MPrint("An antenna has been flipped.  X = ",X,".  NumRequired = ",GetNumRequiredFlips());
+
+d332 1
+a338 1
+	Debug.MPrint(" Transmogrifying object ",o);
+a368 2
+	Debug.MPrint(self," was hit by ",WhatHitMe);
+
+d403 148
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/RCS/archer.scr 1.1 1999/10/06 11:34:56 TJS Exp $
+a4 1
+
+d6 2
+d9 9
+d19 2
+d287 4
+a290 1
+			//Quest.Set("goal_state_"+string(GOAL_FLIP_ANTENNAS),kGoalComplete,kQuestDataMission);
+d295 3
+a297 1
+			//Quest.Set("goal_state_"+string(GOAL_FLIP_ANTENNAS),kGoalIncomplete,kQuestDataMission);
+d306 165
+@

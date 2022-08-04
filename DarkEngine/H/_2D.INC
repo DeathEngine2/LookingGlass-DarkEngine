@@ -1,0 +1,35 @@
+; Debug header file x:\prj\tech\h/_2d.__i made from libdbg.dbg by DBGMAKEH
+
+DB_2D equ 1
+DS_2D_Init equ 01h
+DSRC_2D_Init equ 08000001h
+DS_2D_Memory equ 02h
+DSRC_2D_Memory equ 08000002h
+DS_2D_Screen equ 04h
+DSRC_2D_Screen equ 08000004h
+DS_2D_Canvas equ 08h
+DSRC_2D_Canvas equ 08000008h
+DS_2D_Line equ 010h
+DSRC_2D_Line equ 08000010h
+DS_2D_Polygon equ 020h
+DSRC_2D_Polygon equ 08000020h
+DS_2D_SPolygon equ 040h
+DSRC_2D_SPolygon equ 08000040h
+DS_2D_CPolygon equ 080h
+DSRC_2D_CPolygon equ 08000080h
+DS_2D_Bitmap equ 0100h
+DSRC_2D_Bitmap equ 08000100h
+DS_2D_ScaleBM equ 0200h
+DSRC_2D_ScaleBM equ 08000200h
+DS_2D_Tmap equ 0400h
+DSRC_2D_Tmap equ 08000400h
+DS_2D_Afile equ 0100000h
+DSRC_2D_Afile equ 08100000h
+DS_2D_Movie equ 0800000h
+DSRC_2D_Movie equ 08800000h
+DS_2D_MovDetl equ 01000000h
+DSRC_2D_MovDetl equ 09000000h
+DS_2D_Anim equ 02000000h
+DSRC_2D_Anim equ 0a000000h
+DS_2D_AnimDetl equ 04000000h
+DSRC_2D_AnimDetl equ 0c000000h

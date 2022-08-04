@@ -1,0 +1,55 @@
+eax: pix8
+edx: pix16_8
+ebx: pix16_clut_low
+ecx: clut
+esi: p_src
+edi: p_dest
+ebp: pix16_cluted
+
+
+clut16_loop:
+        mov     bx, [ecx * 2*edx][512]
+        mov     dl, high[eax]
+
+        shl     ebx, 16
+        mov     al, [esi]
+
+        mov     bp, [ecx + 2*edx]
+        mov     dl, low[al]
+
+        mov     bx, [ecx + 2*edx]
+        mov     dl, high[al]
+
+        shl     ebp, 16
+        mov     al, [esi+1]
+
+        mov     bp, [ecx +2*edx][512]
+        mov     dl, low[al]
+
+        add     ebp, ebx
+        add     esi, 2
+
+        mov     [edi], ebp
+        add     edi, 4
+
+        cmp     esi, buffer_end-1
+        jb      clut16_loop
+
+stupid:
+        mov     al, bufer_end[esi]
+
+        mov     ax, pal[eax]
+
+        mov     bl, al
+        mov     dl, ah
+
+        mov     bp, [ecx + 2*ebx]
+
+        add     bp, [ecx + 2*edx]
+
+        mov     [edi], bp
+
+        add     edi, 2
+        inc     esi
+     
+        jnz     stupid

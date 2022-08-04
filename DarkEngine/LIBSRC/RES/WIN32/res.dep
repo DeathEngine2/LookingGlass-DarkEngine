@@ -1,0 +1,87 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+lzw.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h lzw.h \
+	 memall.h memmacro.h mprintf.h thrdtool.h types.h
+
+lzwfd2bf.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 lzw.h memall.h memmacro.h types.h
+
+res.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h memall.h memmacro.h prikind.h \
+	 res.h res_.h restypes.h types.h
+
+restypes.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h restypes.h \
+	 types.h
+
+resfile.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h \
+	 res_.h resthred.h restypes.h types.h
+
+resacc.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h hashfns.h \
+	 hashfunc.h hashset.h hshstimp.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pool.h prikind.h res.h res_.h resarq.h \
+	 resthred.h restypes.h types.h
+
+refacc.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h memall.h memmacro.h pkzip.h \
+	 prikind.h res.h res_.h resthred.h restypes.h types.h
+
+resload.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h memall.h memmacro.h pkzip.h \
+	 prikind.h res.h res_.h restypes.h types.h
+
+resmem.obj: _res.h aggmemb.h allocapi.h cacheapi.h cachguid.h comtools.h \
+	 constrid.h coremutx.h datapath.h dbg.h dbgmacro.h dynarray.h \
+	 hashfns.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h memstat.h mprintf.h objcguid.h prikind.h res.h res_.h \
+	 rescache.h resthred.h restypes.h types.h
+
+rescum.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h \
+	 res_.h restypes.h types.h
+
+resbuild.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h memall.h memmacro.h pkzip.h \
+	 prikind.h res.h res_.h restypes.h types.h
+
+resmake.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h \
+	 res_.h restypes.h types.h
+
+resexblk.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h memall.h memmacro.h prikind.h \
+	 res.h res_.h resthred.h restypes.h types.h
+
+resmisc.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h \
+	 res_.h restypes.h types.h
+
+resarq.obj: _res.h appagg.h arqapi.h arqguid.h comtools.h datapath.h dbg.h \
+	 dbgmacro.h dbmem.h hashfns.h hashfunc.h hashset.h hshstimp.h \
+	 hshsttem.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h pool.h prikind.h res.h res_.h resarq.h resthred.h \
+	 restypes.h types.h
+
+resthred.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h resthred.h thrdtool.h types.h
+
+resagg.obj: _res.h aggmemb.h appagg.h comtools.h config.h constrid.h \
+	 datapath.h dbg.h dbgmacro.h error.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h objcguid.h prikind.h res.h \
+	 res_.h resagg.h resguid.h restypes.h types.h
+
+resguid.obj: comtools.h resguid.h types.h
+
+rescache.obj: aggmemb.h cacheapi.h cachguid.h comtools.h constrid.h dbg.h \
+	 dbgmacro.h dbmem.h dlist.h dynarray.h hashfns.h hashfunc.h \
+	 hashset.h hshstimp.h hshsttem.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mprintf.h objcguid.h pool.h prikind.h \
+	 rescache.h resthred.h templexp.h types.h
+
+rescback.obj: _res.h comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h prikind.h res.h \
+	 res_.h restypes.h types.h
+
+pkzip.obj: dbg.h dbgmacro.h dynfunc.h implode.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lzw.h memall.h memmacro.h pkzip.h types.h

@@ -1,0 +1,54 @@
+WARNING: Can't find dependency file win32\dstruct.dep.
+map root w: = x:\prj\tech\obj\win32\w105\a611\libsrc\dstruct >\dev\nul
+map root v: = x:\prj >\dev\nul
+
+Performing flags check...
+
+Building in backing tree; use 'make depend' if necessary.
+array.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\array.c
+time: 1 sec
+fname.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\fname.c
+time: 0 sec
+hash.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\hash.c
+time: 1 sec
+hheap.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\hheap.c
+time: 1 sec
+huffde.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\huffde.c
+time: 1 sec
+huffen.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\huffen.c
+time: 1 sec
+llist.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\llist.c
+time: 0 sec
+lllist.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\lllist.c
+time: 1 sec
+message.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\message.c
+time: 1 sec
+pqueue.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\pqueue.c
+time: 1 sec
+rect.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\rect.c
+time: 0 sec
+strall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\strall.c
+time: 1 sec
+symdump.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\symdump.c
+time: 1 sec
+symtab.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\dstruct\symtab.c
+time: 1 sec
+Archiving dstruct.lib.  Flavor = dbg.
+dstruct.lib <-- nonexistent
+time: 1 sec
+total time: 14 sec
+Deleting temporary files in mk174380.

@@ -1,0 +1,2 @@
+x:\prj\tech\libsrc\sndutil\oneshot.c(27): Warning! W301: No prototype found for 'LOG0'
+x:\prj\tech\libsrc\sndutil\oneshot.c(94): Warning! W301: No prototype found for 'LOG2'

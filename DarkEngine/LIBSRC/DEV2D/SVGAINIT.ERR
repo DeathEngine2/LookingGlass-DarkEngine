@@ -1,0 +1,2 @@
+svgainit.c
+x:\prj\tech\libsrc\dev2d\svgainit.c(29) : warning C4133: 'function' : incompatible types - from 'struct grs_sys_info *' to 'struct _grs_sys_info *'

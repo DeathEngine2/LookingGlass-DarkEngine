@@ -1,0 +1,8 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+hashlex.obj: dbg.h dbgmacro.h hashtok.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+hashtest.obj: _dstruct.h dbg.h dbgmacro.h dbmem.h error.h hashfns.h \
+	 hashfunc.h hashpp.h hshpptem.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h str.h types.h

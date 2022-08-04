@@ -1,0 +1,5 @@
+All errors (01-30-97, 13:26:28):
+
+Errors in WDISP.ERR (01-28-97, 12:27):
+
+x:\prj\tech\libsrc\dispdev\wdisp.cpp(888) : fatal error C1010: unexpected end of file while looking for precompiled header directive

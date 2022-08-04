@@ -1,0 +1,126 @@
+; Thief default bindings
+
+climb_touch 0
+goal_notify 1
+auto_search 0
+auto_equip 1
+joystick_enable 0
+bow_zoom 1
+mouse_invert 0
+lookspring 0
+freelook 1
+mouse_sensitivity 1.9
+
+; bindings
+bind shift +creepon
+bind alt +slideon
+
+bind z +walkfast
+bind keypad_up +walkfast
+bind up +walkfast
+
+bind s +forward
+bind keypad_center +forward
+
+bind x +backfast
+bind keypad_down +backfast
+bind down +backfast
+
+bind w +moveleftfast
+bind keypad_end +moveleftfast
+
+bind c +moverightfast
+bind keypad_pgdn +moverightfast
+
+bind q +turnleftfast
+bind keypad_left +turnleftfast
+bind left +turnleftfast
+
+bind d +turnrightfast
+bind keypad_right +turnrightfast
+bind right +turnrightfast
+
+bind t +lookup
+bind pgup +lookup
+
+bind g +lookdown
+bind pgdn +lookdown
+
+bind v lookcenter
+bind keypad_del lookcenter
+
+bind a +leanleft
+bind keypad_home +leanleft
+
+bind e +leanright
+bind keypad_pgup +leanright
+
+bind z+alt+shift +leanforward
+
+bind f crouch
+bind keypad_enter crouch
+
+bind space +jumpblock
+bind keypad_ins +jumpblock
+
+bind mouse1 +use_weapon
+bind mouse2 +use_item
+bind mouse3 +block
+bind mouse_axisx mturn
+bind mouse_axisy mlook
+
+bind keypad_minus +block
+
+bind r drop_item
+
+bind tab next_item
+bind tab+shift prev_item
+
+bind keypad_star next_item
+bind keypad_slash prev_item
+
+bind * next_item
+bind — prev_item
+
+bind backspace clear_item
+bind super_2 clear_weapon
+bind & "inv_select sword"
+bind ‚ "inv_select blackjack"
+bind quote "inv_select broadhead"
+bind ' "inv_select water"
+bind ( "inv_select firearr"
+bind - "inv_select EarthArrow"
+bind Š "inv_select GasArrow"
+bind _ "inv_select RopeArrow"
+bind € "inv_select noise"
+
+bind F1  "inv_select HealingPotion"
+bind F2  "inv_select AirPotion"
+bind F3  "inv_select HolyH2o"
+bind F4  "inv_select LockPickSM"
+bind F5  "inv_select LockPickLG"
+bind F6  "inv_select FlashBomb"
+bind F7  "inv_select GasMine"
+bind F8  "inv_select Mine"
+bind F9  "inv_select compass2"
+bind F10  loot_select
+bind F10+alt screen_dump
+bind F11  quick_save
+bind F12  quick_load
+
+bind , automap
+bind o objectives
+
+bind v+alt+shift dark_version
+
+bind ESC sim_menu
+
+bind ) "gamma_delta 0.025"
+bind = "gamma_delta -0.025"
+bind + "gamma_delta -0.025"
+
+bind joy_axisx +joyaxis
+bind joy_axisy +joyforward
+
+bind ctrl+alt+shift+end "win_mission"
+

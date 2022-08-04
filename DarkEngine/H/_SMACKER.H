@@ -1,0 +1,10 @@
+// Debug header file x:\prj\tech\h/_smacker.__h made from libdbg.dbg by DBGMAKEH
+
+#ifndef ___SMACKER_H
+#define ___SMACKER_H
+
+#define DB_SMACKER 16
+#define DS_SMACKER_Sound 0x1
+#define DSRC_SMACKER_Sound 0x80000001
+
+#endif

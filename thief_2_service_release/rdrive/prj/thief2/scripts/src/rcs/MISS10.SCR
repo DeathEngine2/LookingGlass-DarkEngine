@@ -1,0 +1,378 @@
+head	 1.5;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.5
+date	 2000.03.23.04.07.12;  author adurant;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 2000.03.17.21.41.37;  author adurant;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.02.15.16.27.02;  author TJS;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 2000.02.05.23.11.36;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.11.19.13.50.49;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Scripts specific to mission 10 - Trail of Blood.
+@
+
+
+1.5
+log
+@dewdrop power script
+@
+text
+@#include "loadup.scr"
+
+// Script file for Thief 2 - Mission 10 - Trail of Blood
+
+
+BEGIN_SCRIPT(ParticleFillPhysOBB, RootScript)
+
+   METHOD void FillPhysOBB(void)
+   {
+      vector dims, launchmin, launchmax;
+      integer density;
+      float volume;
+
+      if(!Property.Possessed(self,"PhysDims"))
+         return;
+
+      Property.Remove(self,"ParticleGroup");
+      Property.Remove(self,"PGLaunchInfo");
+      Property.Add(self,"PGLaunchInfo");
+      Property.Add(self,"ParticleGroup");
+
+      dims=Property.Get(self,"PhysDims","Size");
+
+      // Debug.MPrint("dims ",dims);
+
+      launchmin.x=dims.x/-2.0;
+      launchmin.y=dims.y/-2.0;
+      launchmin.z=dims.z/-2.0;
+      launchmax.x=-launchmin.x;
+      launchmax.y=-launchmin.y;
+      launchmax.z=-launchmin.z;
+
+      volume=dims.x*dims.y*dims.z;
+      density=Property.Get(self,"ParticleGroup","number of particles");
+
+      Property.Set(self,"PGLaunchInfo","Box Min",launchmin);
+      Property.Set(self,"PGLaunchInfo","Box Max",launchmax);
+      Property.Set(self,"ParticleGroup","number of particles",density*volume);
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      FillPhysOBB();
+      DefaultOnBeginScript();
+   }
+   OnMessage()
+   {
+      if(MessageIs("Test"))
+      {
+         FillPhysOBB();
+      }
+      DefaultOnMessage();
+   }
+END_SCRIPT(ParticleFillPhysOBB)
+
+BEGIN_SCRIPT(FixLootGoal, RootScript)
+
+MESSAGES:
+
+   OnDifficulty()
+   {
+      integer loot=Quest.Get("total_loot");
+      if (Property.Possessed(self,"TrapQVar"));
+      {
+         integer qnum=(integer)Property.Get(self,"TrapQVar");
+         integer oldtarg = (integer)Quest.Get("goal_loot_"+(string)qnum);
+         Quest.Set("goal_loot_"+(string)qnum,oldtarg+loot,kQuestDataMission);
+         Debug.MPrint("Upping loot goal on goal goal_loot_",qnum," from ",oldtarg," to ",oldtarg+loot);
+      }
+      DefaultOnDifficulty();
+   }
+
+END_SCRIPT(FixLootGoal)
+
+BEGIN_SCRIPT(DewDropDoll, RootScript)
+
+METHODS:
+
+   METHOD object GetGhostForm()
+   {
+      linkset splinks = Link.GetAll("ScriptParams",self);
+      while (splinks.AnyLinksLeft())
+      {
+         link cursplink = splinks.Link();
+         Debug.MPrint("Dewdrop has link to ",cursplink.To()," data ",cursplink.GetData());
+         if ((string)cursplink.GetData()=="myghost")
+            return (cursplink.To());
+         splinks.NextLink();
+      }
+      return (object)0;
+   }
+
+   METHOD object GetCarrier()
+   {
+      if (Link.AnyExist("~Contains",self))
+         return (Link.GetOne("~Contains",self).To());
+      return (object)0;
+   }
+
+   METHOD void DewdropPower()
+   {
+      if ((object)GetGhostForm() == (object)0)
+      {
+         Debug.MPrint("Sorrow!  Dewdrop has no ghost form.");
+         return;
+      }
+      if ((object)GetCarrier() == (object)0)
+      {
+         Debug.MPrint("Bafflement!  Dewdrop activated without a carrier.");
+         return;
+      }
+      object myghost = GetGhostForm();
+      Object.Teleport(myghost,vector(0,0,5),vector(0,0,0),GetCarrier());
+      DrkPowerups.TriggerWorldFlash(myghost);
+      SendMessage(myghost,"PowerOn");
+   }
+
+   METHOD boolean CheckProtection()
+   {
+      if ((integer)GetData("Activated")==1)
+         return FALSE;
+      if (GetCarrier()==(object)0)
+         return FALSE;
+      if (!Link.AnyExist("~AIAttack",GetCarrier()))
+         return FALSE;
+      linkset atklinks = Link.GetAll("~AIAttack",GetCarrier());
+      integer mechcount=0;
+      boolean inrange = FALSE;
+      while (atklinks.AnyLinksLeft())
+      {
+         link curatklink = atklinks.Link();
+         if (Object.InheritsFrom(curatklink.To(),"Mechanist"))
+         {
+            mechcount++;
+            Debug.MPrint("Mechanist ",curatklink.To()," found.");
+            vector carrierpos = vector(0,0,0);
+            vector mechpos = vector(0,0,0);
+            carrierpos = Object.Position(GetCarrier());
+            mechpos = Object.Position(curatklink.To());
+            vector deltapos = carrierpos - mechpos;
+            if (deltapos.Magnitude()<10)
+            {
+               Debug.MPrint("And this one is in range.");
+               inrange = TRUE;
+            }
+         }
+         atklinks.NextLink();
+      }
+      return ((mechcount >= 2) && (inrange));       
+   }
+
+MESSAGES:
+
+   OnSim()
+   {
+      if (message.starting)
+      {
+         SetData("Activated",0);
+         SetOneShotTimer(self,"Protector",3.0);
+         Debug.MPrint("Ghost form is ",GetGhostForm());
+      }
+      DefaultOnSim();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "Protector")
+      {
+         Debug.MPrint("Protector message");
+         if (CheckProtection())
+         {
+            DewdropPower();
+            SetData("Activated",1);
+         }
+         else
+         {
+            SetOneShotTimer(self,"Protector",3.0);
+         }
+      }
+      DefaultOnTimer();
+   }
+
+
+END_SCRIPT(DewDropDoll)
+
+BEGIN_SCRIPT(DewDropGhost, RootScript)
+
+METHODS:
+
+   METHOD void ReduceLight()
+   {
+      float lastlight = (float)Property.Get(self,"SelfLit");
+      lastlight = lastlight * 0.9;
+      float alpha = (float)Property.Get(self,"RenderAlpha");
+      alpha = alpha * 0.9;
+      Property.Set(self,"SelfLit",lastlight);
+      Property.Set(self,"RenderAlpha",alpha);
+   }
+
+MESSAGES:
+
+   OnMessage()
+   {
+      if (MessageIs("PowerOn"))
+      {
+         object schmname = Object.Named("pg31001c");
+         if ((object)schmname != (object)0)
+            Sound.PlaySchema(self,schmname,self);
+         SetOneShotTimer(self,"CutLight",1.0);
+         SetOneShotTimer(self,"ByeBye",24.0);
+      }
+      DefaultOnMessage();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "CutLight")
+      {
+         ReduceLight();
+         SetOneShotTimer(self,"CutLight",1.0);
+      }
+      if (message.name == "ByeBye")
+      {
+         Object.Destroy(self);
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(DewDropGhost)
+
+@
+
+
+1.4
+log
+@FixLootGoal for bonus loot objective dealing with carryover
+@
+text
+@d75 157
+@
+
+
+1.3
+log
+@Pulled out inventory carry-over stuff to their own files.
+@
+text
+@d57 18
+@
+
+
+1.2
+log
+@Added Loadup script.
+@
+text
+@d1 1
+a55 65
+
+
+/* Script on player to fill out his inventory based on items held at the end
+   of "Courier."
+   */
+BEGIN_SCRIPT(Loadup, RootScript)
+METHODS:
+   METHOD void LoadInventoryFrom(object arch, boolean descend)
+   {
+      if(!Object.Exists(arch)) return;
+
+      if(Property.Possessed(arch,"CombineType"))
+      {
+         string combine="CarryInv";
+         integer count=0;
+         combine=combine+string(Property.Get(arch,"CombineType"));
+         count=Quest.Get(combine);
+
+         Debug.MPrint(combine,"=",count);
+
+         if(count>0)
+         {
+            object newobj=Object.Create(arch);
+            if(Property.Possessed(newobj,"StackCount"))
+               Property.Set(newobj,"StackCount",count);
+            Container.Add(newobj,self);
+            Quest.Set(combine,0);
+         }
+      }
+
+      if(descend && Link.AnyExist("~MetaProp",self))
+      {
+         linkset subtypes=Link.GetAll("~MetaProp",self);
+         while(subtypes.AnyLinksLeft())
+         {
+            LoadInventoryFrom(subtypes.Link().To(),TRUE);
+            subtypes.NextLink();
+         }
+      }
+   }
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting && Object.InheritsFrom(self,"Avatar"))
+      {
+         LoadInventoryFrom("Grenadz",TRUE);
+         LoadInventoryFrom("SpeedPotion",FALSE);
+         LoadInventoryFrom("AirPotion",FALSE);
+         LoadInventoryFrom("HealingPotion",FALSE);
+         LoadInventoryFrom("InvisiPotion",FALSE);
+         LoadInventoryFrom("SlowfallPotion",FALSE);
+         LoadInventoryFrom("Flare",FALSE);
+         LoadInventoryFrom("broadhead",FALSE);
+         LoadInventoryFrom("water",FALSE);
+         LoadInventoryFrom("firearr",FALSE);
+         LoadInventoryFrom("noise",FALSE);
+         LoadInventoryFrom("EarthArrow",FALSE);
+         LoadInventoryFrom("GasArrow",FALSE);
+         LoadInventoryFrom("RopeArrow",FALSE);
+      }
+      DefaultOnSim();
+   }
+END_SCRIPT(Loadup)
+
+
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d56 65
+@

@@ -1,0 +1,2 @@
+x:\prj\tech\winsrc\input\fanjoy.cpp(11): Error! E059: (col 19) unable to open 'basjoy.h' 
+x:\prj\tech\winsrc\input\fanjoy.cpp(55): Error! E029: (col 4) symbol 'basic_read_pots_raw' has not been declared 

@@ -1,0 +1,61 @@
+
+
+scrptman.obj: aggmemb.h allocapi.h appagg.h comtools.h constrid.h datapath.h \
+         dbg.h dbgmacro.h dbmem.h dlist.h dynarray.h dynarsrv.h filekind.h \
+         filespec.h hashfns.h hashfunc.h hashset.h hshstimp.h hshsttem.h \
+         lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+         memmacro.h mprintf.h multparm.h mxang.h nullsrv.h objcguid.h \
+         persist.h pool.h prikind.h scrguid.h scrobj.h scrptapi.h scrptman.h \
+         scrptmsg.h scrptnet.h scrptobj.h scrptsrv.h scrpttyp.h smodinfo.h \
+         str.h templexp.h types.h undbmem.h 
+
+
+multparm.obj: allocapi.h comtools.h matrixs.h multparm.h mxang.h scrptobj.h \
+         types.h 
+
+
+nullsrv.obj: allocapi.h comtools.h dbg.h dbgmacro.h dbmem.h dynarray.h \
+         dynarsrv.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h \
+         lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         multparm.h mxang.h nullsrv.h persist.h pool.h scrguid.h scrptapi.h \
+         scrptmsg.h scrptobj.h scrptsrv.h scrpttyp.h str.h types.h \
+         undbmem.h 
+
+
+persist.obj: allocapi.h comtools.h dbg.h dbgmacro.h dbmem.h dynarray.h \
+         dynarsrv.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h \
+         lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         multparm.h mxang.h persist.h pool.h scrguid.h scrptapi.h scrptmsg.h \
+         scrptobj.h scrpttyp.h str.h types.h undbmem.h 
+
+
+scrobj.obj: aggmemb.h allocapi.h cfgdbg.h comtools.h constrid.h datapath.h \
+         dbg.h dbgmacro.h dbmem.h dlist.h dynarray.h dynarsrv.h hashfns.h \
+         hashfunc.h hashset.h hshstimp.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mprintf.h multparm.h \
+         mxang.h objcguid.h persist.h pool.h prikind.h scrguid.h scrobj.h \
+         scrptapi.h scrptman.h scrptmsg.h scrptnet.h scrptobj.h scrpttyp.h \
+         smodinfo.h str.h templexp.h types.h undbmem.h 
+
+
+scrptmod.obj: aggmemb.h allocapi.h comtools.h constrid.h datapath.h \
+         dbg.h dbgmacro.h dbmem.h dlist.h dynarray.h dynarsrv.h filekind.h \
+         filespec.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h \
+         lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         multparm.h mxang.h objcguid.h persist.h pool.h prikind.h scrguid.h \
+         scrobj.h scrptapi.h scrptman.h scrptmsg.h scrptnet.h scrptobj.h \
+         scrpttyp.h smodinfo.h str.h templexp.h types.h undbmem.h 
+
+
+scrptmsg.obj: allocapi.h comtools.h dbg.h dbgmacro.h dbmem.h dynarray.h \
+         dynarsrv.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h \
+         lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         multparm.h mxang.h persist.h pool.h scrguid.h scrptapi.h scrptmsg.h \
+         scrptobj.h scrpttyp.h str.h types.h undbmem.h 
+
+
+smodinfo.obj: allocapi.h comtools.h dbg.h dbgmacro.h dbmem.h dynarray.h \
+         dynarsrv.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h \
+         lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         multparm.h mxang.h persist.h pool.h scrguid.h scrptapi.h scrptmsg.h \
+         scrptobj.h scrpttyp.h smodinfo.h str.h types.h undbmem.h 

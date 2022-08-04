@@ -1,0 +1,84 @@
+    <HTML> 
+	<HEAD> 
+	    <TITLE>base - Establish IS-A relationship with base class at compile time
+
+</TITLE> 
+	</HEAD>
+
+	<BODY>
+
+<!-- INDEX BEGIN -->
+
+<UL>
+
+	<LI><A HREF="#NAME">NAME</A>
+	<LI><A HREF="#SYNOPSIS">SYNOPSIS</A>
+	<LI><A HREF="#DESCRIPTION">DESCRIPTION</A>
+	<LI><A HREF="#BUGS">BUGS</A>
+</UL>
+<!-- INDEX END -->
+
+<HR>
+<P>
+<H1><A NAME="NAME">NAME
+
+</A></H1>
+base - Establish 
+<FONT SIZE=-1>IS-A</FONT> relationship with base class at compile time
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="SYNOPSIS">SYNOPSIS
+
+</A></H1>
+<PRE>    package Baz;
+</PRE>
+
+<P>
+
+<PRE>    use base qw(Foo Bar);
+</PRE>
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="DESCRIPTION">DESCRIPTION
+
+</A></H1>
+Roughly similar in effect to
+
+
+<P>
+
+<PRE>    BEGIN {
+        require Foo;
+        require Bar;
+        push @ISA, qw(Foo Bar);
+    }
+</PRE>
+
+<P>
+
+This module was introduced with Perl 5.004_04.
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="BUGS">BUGS
+
+</A></H1>
+Needs proper documentation!
+
+
+<P>
+
+</DL>
+    </BODY>
+
+    </HTML>

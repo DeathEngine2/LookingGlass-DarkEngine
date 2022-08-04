@@ -1,0 +1,29 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+genagg.obj: aggmemb.h comtools.h constrid.h dbg.h dbgmacro.h dbmem.h dlist.h \
+	 dlisttem.h dynarray.h genagg.h hashfns.h hashfunc.h hashset.h \
+	 hshstimp.h hshsttem.h interset.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h objcguid.h objcoll.h pdynarr.h \
+	 pguidset.h pintarr.h pool.h prikind.h str.h templexp.h types.h
+
+geniset.obj: comtools.h dbg.h dbgmacro.h dbmem.h dlist.h dlisttem.h \
+	 geniset.h hashfns.h hashfunc.h hashset.h hshstimp.h hshsttem.h \
+	 interset.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h objcguid.h objcoll.h pool.h str.h templexp.h types.h
+
+interset.obj: comtools.h dbg.h dbgmacro.h dlist.h dlisttem.h hashfns.h \
+	 hashfunc.h hashset.h hshstimp.h hshsttem.h interset.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h objcguid.h \
+	 objcoll.h pool.h str.h templexp.h types.h
+
+pintarr.obj: comtools.h dbg.h dbgmacro.h dynarray.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h pdynarr.h pguidset.h \
+	 pintarr.h prikind.h str.h types.h
+
+pguidset.obj: comtools.h constrid.h dbg.h dbgmacro.h dynarray.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h pdynarr.h \
+	 pguidset.h prikind.h types.h
+
+comconn.obj: comconn.h comtools.h dbg.h dbgmacro.h dynarray.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h pdynarr.h \
+	 prikind.h types.h

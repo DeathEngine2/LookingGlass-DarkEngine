@@ -1,0 +1,3 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+prof.obj: fix.h lgsprntf.h prof.h timer.h types.h

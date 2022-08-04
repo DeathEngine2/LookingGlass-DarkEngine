@@ -1,0 +1,261 @@
+head	 1.4;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.4
+date	 2000.02.21.19.43.11;  author TJS;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.02.11.11.16.39;  author adurant;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1999.11.18.13.59.46;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.10.06.11.34.56;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Scripts related to AI clue-finding behaviors, taken from Thief 1
+shipping version.
+@
+
+
+1.4
+log
+@Pulled out "WatchMe" script.
+@
+text
+@///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/prj/thief2/scripts/src/rcs/evidence.scr 1.3 1970/01/01 00:00:00 adurant Exp $
+//
+
+
+#ifdef TOO_DANGEROUS_TO_LIVE
+/* Creates watch links to this object when it gets created.
+   Used for such things as blood pools and missing loot markers.
+   For now, we decide who cares by deciding it's always "All Humans"
+*/
+BEGIN_SCRIPT(WatchMe, RootScript)
+
+MESSAGES:
+   OnBeginScript()
+   {
+      if(!IsDataSet("Init"))
+      {
+         Link.CreateMany("AIWatchObj","@@Human",self);
+         SetData("Init",TRUE);
+      }
+      DefaultOnBeginScript();
+   }
+END_SCRIPT(WatchMe)
+#endif
+
+// Script: BloodDeathSentence
+/* Ticks off a random number of frames of the object's TweqFlicker
+   (up to the number specified in its scriptTiming property) as soon
+   as the object is created.  Number of ticks is biased towards the
+   high end of the curve.
+   Intended to cause blood stains to not pile up so much, while still
+   leaving a reasonably high duration possible for those which do stick
+   around.
+*/
+BEGIN_SCRIPT(DeathSentence, RootScript)
+MESSAGES:
+   OnBeginScript()
+   {
+      if(!IsDataSet("Init"))
+      {
+         SetOneShotTimer(self,"Tick",0.5);
+         SetData("Init",TRUE);
+      }
+      DefaultOnBeginScript();
+   }
+   OnTimer()
+   {
+      if(message.name=="Tick")
+      {
+         if(Property.Possessed(self,"ScriptTiming") &&
+            Property.Possessed(self,"StTweqBlink"))
+         {
+            integer DieMax=Property.Get(self,"ScriptTiming");
+            integer Die=Data.RandInt(0,DieMax);
+            integer Frames=Property.Get(self,"StTweqBlink","Frame #");
+         
+            Frames-=Die;
+            if(Frames<0) Frames=0;
+
+            if(Frames>0)
+               Property.Set(self,"StTweqBlink","Frame #",Frames);
+            else
+               Damage.Slay(self,self);
+         }
+      }         
+      DefaultOnTimer();
+   }
+END_SCRIPT(DeathSentence)
+
+/* For objects which are conspicuous in their absence, e.g.
+   major treasure items.  Causes the item to leave behind a "MissingLoot"
+   object when it is first frobbed.  This had better correspond to it being
+   picked up.  This wants to happen on frob and not on contain to be
+   certain that the object's position is still valid.
+*/
+BEGIN_SCRIPT(GoMissing, RootScript)
+
+MESSAGES:
+   OnFrobWorldEnd()
+   {
+      if(!IsDataSet("OutOfPlace"))
+      {
+         object newobj=Object.Create("MissingLoot");
+
+         Object.Teleport(newobj, vector(0,0,0), vector(0,0,0), self);
+
+         Property.Set(newobj,"SuspObj","Is Suspicious",TRUE);
+         Property.Set(newobj,"SuspObj","Suspicious Type","missingloot");
+	
+         SetData("OutOfPlace",TRUE);
+      }
+      DefaultOnFrobWorldEnd();
+   }
+END_SCRIPT(GoMissing)
+
+#ifdef OLD_WAY
+// Script: SecureDoor
+/* For doors which are conspicuous should they be open.
+   Adds AIWatchLink from all humans whenever the door is open.
+*/
+BEGIN_SCRIPT(SecureDoor, Door)
+METHODS:
+   METHOD void Insecure()
+   {
+      boolean secure=GetData("secure");
+
+      if(secure)
+         Link.CreateMany("AIWatchObj","@@Human",self);
+      SetData("secure",FALSE);
+   }
+   METHOD void Secure()
+   {
+      Link.DestroyMany("AIWatchObj","@@Human",self);
+      SetData("secure",TRUE);
+   }
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting)
+         SetData("secure",TRUE);
+      DefaultOnSim();
+   }
+   OnDoorHalt()
+   {
+       Insecure();
+       DefaultOnDoorHalt();
+   }
+   OnDoorClose()
+   {
+      Secure();
+      DefaultOnDoorClose();
+   }
+   OnDoorOpen()
+   {
+      Insecure();
+      DefaultOnDoorOpen();
+   }
+   OnFrobWorldEnd()
+   {
+      object frobber=message.Frobber;
+
+      if(Property.Possessed(frobber,"AI"))
+      {
+         Debug.MPrint("Hey! AI ",frobber," frobbing secure door ",self,"!");
+      }
+
+      DefaultOnFrobWorldEnd();
+   }
+END_SCRIPT(SecureDoor)
+#endif
+
+
+
+//since suspicious objects now require that objects have the property 
+//directly on them, we need to make sure that it gets set on them directly.
+//So..  on begin_script we set suspicious to the right value
+
+BEGIN_SCRIPT(InstantiateSuspicious,RootScript)
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+  
+     Property.Set(self,"SuspObj","Is Suspicious",Property.Get(self,"SuspObj","Is Suspicious"));
+
+     DefaultOnBeginScript();
+   }
+
+END_SCRIPT(InstantiateSuspicious);
+@
+
+
+1.3
+log
+@Missing loot becomes suspicious on stolen (to deal with changed suspicious
+check).  New script InstantiateSuspicious which will make objects 
+with this properly suspicious when they enter the world
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/RCS/evidence.scr 1.2 1999/11/18 13:59:46 TJS Exp $
+d5 2
+d24 1
+a24 1
+
+d87 2
+a88 2
+	 Property.Set(newobj,"SuspObj","Is Suspicious",TRUE);
+	 Property.Set(newobj,"SuspObj","Suspicious Type","missingloot");
+d96 1
+d150 2
+d170 1
+a170 1
+END_SCRIPT(InstantiateSuspicious);@
+
+
+1.2
+log
+@Secure doors spew when opened by AIs
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/thief2/scripts/src/rcs/evidence.scr 1.1 1999/10/06 11:34:56 TJS Exp $
+d84 4
+d148 18
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d2 1
+a2 1
+// $Header: r:/prj/cam/scripts/src/RCS/evidence.scr 1.3 1998/10/24 00:51:35 TJS Exp $
+d130 11
+@

@@ -1,0 +1,22 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+chr.obj: dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+chrclr.obj: chrsiz.h dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+chrsiz.obj: dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+f16fl8t.obj: dev2d.h fix.h matrixs.h mxang.h types.h
+
+setup.obj: dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+str.obj: chr.h dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+strclr.obj: dev2d.h fix.h fonts.h matrixs.h mxang.h strsiz.h types.h
+
+strsiz.obj: chr.h dev2d.h fix.h fonts.h matrixs.h mxang.h types.h
+
+strscl.obj: chr.h dev2d.h fix.h fonts.h g2.h matrixs.h mxang.h strsiz.h \
+	 types.h
+
+strwrap.obj: chr.h dev2d.h fix.h fonts.h matrixs.h mxang.h types.h

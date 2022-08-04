@@ -1,0 +1,67 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+// Script file for Thief 2 - Mission 9 - Blackmail
+#include "drkgoalt.h"
+
+#define BLACKMAIL_GOAL 1
+#define INVESTIGATE_GOAL 2
+
+BEGIN_SCRIPT(OhMyGod, RootScript)
+MESSAGES:
+   OnMessage()
+   {
+      if(MessageIs("OhMyGod"))
+      {
+         Quest.Set(GoalVisibleVarName(INVESTIGATE_GOAL),TRUE);
+         Quest.Set(GoalStateVarName(BLACKMAIL_GOAL),kGoalInactive);
+      }
+      DefaultOnMessage();
+   }
+END_SCRIPT(OhMyGod)
+
+// Script:	TheRecording
+
+// Play SoundDescription-linked sound ambiently when object is frobbed
+// identical to script in miss7.scr
+BEGIN_SCRIPT (TheRecording, RootScript)
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("Playing",FALSE);
+	}
+	DefaultOnSim();
+}
+OnFrobInvEnd()
+{
+	if (!(boolean)GetData("Playing"))
+	{
+		if (Link.AnyExist("SoundDescription",self))
+		{
+			object schema = Link.GetOne("SoundDescription",self).To();
+			if (Sound.PlaySchemaAmbient(self,schema))
+				SetData("Playing",TRUE);
+		}
+		else
+			Debug.MPrint(" TheRecording is not SoundDescription linked to anything.");
+	}
+
+	DefaultOnFrobInvEnd();
+}
+OnSchemaDone()
+{
+	object schema;
+
+	if (Link.AnyExist("SoundDescription",self,Object.Named(message.name)))
+	{
+		SetData("Playing",FALSE);
+	}
+
+	DefaultOnSchemaDone();
+}
+
+END_SCRIPT (TheRecording)

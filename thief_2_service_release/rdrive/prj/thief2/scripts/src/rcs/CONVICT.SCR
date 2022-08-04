@@ -1,0 +1,273 @@
+head	 1.5;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.5
+date	 2000.03.27.12.35.07;  author adurant;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 1999.12.02.19.08.49;  author TJS;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 1999.11.10.15.59.17;  author TJS;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1999.11.02.17.07.13;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.08.23.17.33.03;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@New revision of generic mission victory conditions script.
+@
+
+
+1.5
+log
+@Deal with possibility that room transit message has OBJ_NULL for from or
+to room
+@
+text
+@#include "victory.scr"
+
+#define MAX_GOAL ((8*sizeof(integer))-1)
+
+enum goaltype {
+   kGoalNone=0,
+   kGoalTake=1,
+   kGoalSlay=2,
+   kGoalLoot=3,
+   kGoalGoTo=4
+};
+
+
+// @@TODO: Change the names of these scripts to be less confusing...
+
+BEGIN_SCRIPT(VictoryCheck, VictoryChecker)
+
+METHODS:
+
+   // returns the type of the indexed objective.  If that
+   // objective doesn't exist, returns kGoalNone
+   METHOD integer GoalType(integer objective)
+   {
+      string qvar="goal_type_"+string(objective);
+      if(Quest.Exists(qvar))
+         return(Quest.Get(qvar));
+      else
+         return kGoalNone;
+   }
+
+   METHOD void InitGoals()
+   {
+      integer goal;
+      boolean nokillcheat=DarkGame.ConfigIsDefined("NoKillGoalCheat");
+
+      for(goal=0;goal<=MAX_GOAL;goal++)
+      {
+         if(GoalType(goal)==kGoalSlay &&
+            Quest.Get(string("goal_reverse_")+string(goal)))
+         {
+            // goal to not kill something.  We can cheat past this.
+            // doing so sets the goal inactive.
+            if(nokillcheat)
+            {
+               ObjectiveSet(goal,kGoalInactive);
+            }
+         }
+      }
+   }
+
+   // like GoalType, but returns the target of the goal, or
+   // obj null if no such goal.
+   // @@TODO: Have this go to the current mission's GOALS.STR
+   // for a string named goal_target_n, so we can refer to the
+   // target by name, before we try (for back compatibility)
+   // checking the goal_target_n ObjID.
+   METHOD object GoalTarget(integer objective)
+   {
+      string qvar="goal_target_"+string(objective);
+      if(Quest.Exists(qvar))
+         return(Quest.Get(qvar));
+      else
+         return OBJ_NULL;
+   }
+
+   // Like the above, but checks various loot goals.  If no such
+   // goal exists, then 0 of that type of loot need be got
+   METHOD integer GoalLoot(integer objective, string loottype)
+   {
+      string qvar="goal_"+loottype+"_"+string(objective);
+
+      if(Quest.Exists(qvar))
+         return(Quest.Get(qvar));
+      else
+         return 0;
+   }      
+
+   // Iterate through goals, looking for those of given type, with a
+   // target from which the given target inherits.  Those found should
+   // be scored, or unscored, as indicated in the argument. 
+   METHOD void ScanGoals(goaltype typefilter, object target, boolean score)
+   {
+      integer goal;
+
+      if ((object)target == (object)0) //don't score ObjNull.
+         return;
+      for(goal=0;goal<=MAX_GOAL;goal++)
+      {
+         if(GoalType(goal)==typefilter && 
+            Object.InheritsFrom(target,GoalTarget(goal)))
+         {
+            ObjectiveScore(goal,score);
+         }
+      }
+   }
+
+   // Loot goals require a special case: each goal can have many targets,
+   // and the point is to equal or exceed certain values of loot instead
+   // of equalling some target ObjID.
+   METHOD void LootToGoal(integer loot_total, integer goldval,
+                     integer gemsval, integer goodsval, integer lootbits)
+   {
+      integer goal;
+
+      for(goal=0;goal<=MAX_GOAL;goal++)
+      {
+         if(GoalType(goal)==kGoalLoot)
+         {
+            // Grumble, grumble.  Silly people don't get bitfields.
+            // Make default behavior for "goal_special_n" be indicating
+            // a single "Special" loot flag which must be present.
+            // Support multiple specials as in "convict 1.0" via the
+            // "goal_specials_n" variable.
+            integer specialgoal=GoalLoot(goal,"specials");
+            integer onespecial=GoalLoot(goal,"special");
+            if(onespecial>0)
+               specialgoal=specialgoal|(1<<(onespecial-1));
+
+            ObjectiveScore(goal,loot_total>=GoalLoot(goal,"loot") &&
+                                goldval>=GoalLoot(goal,"gold") &&
+                                gemsval>=GoalLoot(goal,"gems") &&
+                                goodsval>=GoalLoot(goal,"goods") &&
+                                (lootbits & specialgoal)==specialgoal);
+         }
+      }
+   }
+
+   METHOD void ObjToGoal(object obj, boolean got)
+   {
+      ScanGoals(kGoalTake,obj,got);
+   }
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      if(!IsDataSet("GoalInit"))
+      {
+         InitGoals();
+         SetData("GoalInit",TRUE);
+      }
+      DefaultOnBeginScript();
+   }
+
+   OnObjRoomTransit()
+   {
+      /* This code used to say this:
+      ScanGoals(kGoalGoTo,message.ToObjId,TRUE);
+      ScanGoals(kGoalGoTo,message.FromObjId,FALSE);
+      
+      the problem with this is that if both the To and From rooms inherit from a target
+      room, the goal won't be scored correctly.  The player is still in the target room,
+      but seems to be out of it.  Reversing the logic fixes the short-term problem.
+      It still will break in the case of a REVERSE room transition goal, since the player
+      will briefly seem to be leaving the target room (as required) when instead he's
+      really just going from one descendant of that room to another. -TJS 11/3/99
+      @@TODO: Fix this.
+      */
+      
+      ScanGoals(kGoalGoTo,message.FromObjId,FALSE);
+      ScanGoals(kGoalGoTo,message.ToObjId,TRUE);
+   }
+   OnMessage()
+   {
+      if(MessageIs("J'Accuse"))
+      {
+         // Player has killed somebody.  Was there a goal involving
+         // (or protecting) the victim?
+         ScanGoals(kGoalSlay,message.from,TRUE);
+      }
+      DefaultOnMessage();
+   }
+
+
+END_SCRIPT(VictoryCheck)
+
+
+
+
+
+
+
+
+@
+
+
+1.4
+log
+@Can cheat past "Don't Kill X" goals with NoKillGoalCheat config.
+@
+text
+@d85 2
+@
+
+
+1.3
+log
+@Reversed order in room goal scoring to get around bug in demo (for now).
+@
+text
+@d19 1
+d29 21
+a49 1
+   };
+d132 10
+@
+
+
+1.2
+log
+@Fix to crack-smoking onespecial code, lifted from Thief Gold.
+@
+text
+@d114 1
+d117 12
+d143 8
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d94 1
+a94 1
+               specialgoal=specialgoal&(1<<onespecial);
+@

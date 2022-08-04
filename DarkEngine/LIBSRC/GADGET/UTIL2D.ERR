@@ -1,0 +1,3 @@
+util2d.c
+x:\prj\tech\libsrc\gadget\util2d.c(115) : warning C4113: 'unsigned char (__cdecl *)(void)' differs in parameter lists from 'unsigned char (__cdecl *)(void )'
+x:\prj\tech\libsrc\gadget\util2d.c(134) : warning C4113: 'unsigned char (__cdecl *)(void)' differs in parameter lists from 'unsigned char (__cdecl *)(void )'

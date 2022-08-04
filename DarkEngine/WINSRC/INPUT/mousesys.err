@@ -1,0 +1,28 @@
+x:\prj\tech\h\thrdtool.h(637): Warning! W014: (col 38) no reference to symbol 'lock' 
+x:\prj\tech\h\thrdtool.h(637): Note! N392: (col 38) 'cThreadLock & lock' in 'cAutoLock::cAutoLock( cThreadLock & )' defined in: x:\prj\tech\h\thrdtool.h(637) (col 29) 
+x:\prj\tech\h\thrdtool.h(637): Note! N393: (col 38) included from x:\prj\tech\winsrc\input\mousesys.cpp(26) 
+x:\prj\tech\h\fixedque.h(304): Error! E029: (col 42) symbol 'INFINITE' has not been declared 
+x:\prj\tech\h\fixedque.h(304): Note! N393: (col 42) included from x:\prj\tech\winsrc\input\mousesys.cpp(27) 
+x:\prj\tech\h\fixedque.h(304): Note! N633: (col 42) template class instantiation for 'cFixedMTQueue<_lgMouseEvent,32>' was in: x:\prj\tech\winsrc\input\mousesys.cpp(63) (col 9) 
+x:\prj\tech\h\fixedque.h(326): Error! E336: (col 38) declaration specifiers are required to declare 'cThreadEvent' 
+x:\prj\tech\h\fixedque.h(326): Note! N633: (col 38) template class instantiation for 'cFixedMTQueue<_lgMouseEvent,32>' was in: x:\prj\tech\winsrc\input\mousesys.cpp(63) (col 9) 
+x:\prj\tech\h\fixedque.h(326): Error! E006: (col 18) syntax error; probable cause: missing ';' 
+x:\prj\tech\h\fixedque.h(326): Note! N633: (col 18) template class instantiation for 'cFixedMTQueue<_lgMouseEvent,32>' was in: x:\prj\tech\winsrc\input\mousesys.cpp(63) (col 9) 
+x:\prj\tech\winsrc\input\mousesys.cpp(294): Error! E029: (col 5) symbol 'SyncInstantToInputDevices' has not been declared 
+x:\prj\tech\winsrc\input\mousesys.cpp(316): Error! E029: (col 5) symbol 'SyncInputDevicesToInstant' has not been declared 
+x:\prj\tech\winsrc\input\mousesys.cpp(386): Error! E029: (col 50) symbol 'kPumpUntilEmpty' has not been declared 
+x:\prj\tech\winsrc\input\mousesys.cpp(414): Error! E029: (col 50) symbol 'kPumpUntilEmpty' has not been declared 
+x:\prj\tech\winsrc\input\mousesys.cpp(437): Error! E029: (col 50) symbol 'kPumpUntilEmpty' has not been declared 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Warning! W014: (col 1) no reference to symbol 'xr' 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Note! N392: (col 1) 'short xr' in 'short mouse_set_rate( short, short, short )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(527) (col 30) 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Warning! W014: (col 1) no reference to symbol 'yr' 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Note! N392: (col 1) 'short yr' in 'short mouse_set_rate( short, short, short )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(527) (col 40) 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Warning! W014: (col 1) no reference to symbol 'thold' 
+x:\prj\tech\winsrc\input\mousesys.cpp(530): Note! N392: (col 1) 'short thold' in 'short mouse_set_rate( short, short, short )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(527) (col 50) 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Warning! W014: (col 1) no reference to symbol 'xr' 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Note! N392: (col 1) 'short * xr' in 'short _mouse_get_rate( short *, short *, short * )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(533) (col 32) 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Warning! W014: (col 1) no reference to symbol 'yr' 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Note! N392: (col 1) 'short * yr' in 'short _mouse_get_rate( short *, short *, short * )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(533) (col 43) 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Warning! W014: (col 1) no reference to symbol 'thold' 
+x:\prj\tech\winsrc\input\mousesys.cpp(536): Note! N392: (col 1) 'short * thold' in 'short _mouse_get_rate( short *, short *, short * )' defined in: x:\prj\tech\winsrc\input\mousesys.cpp(533) (col 54) 
+x:\prj\tech\winsrc\input\mousesys.cpp(589): Error! E029: (col 35) symbol 'min' has not been declared 

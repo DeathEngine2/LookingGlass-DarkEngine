@@ -1,0 +1,21 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+gfile.obj: 2d.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h fname.h font.h \
+	 g2.h gfile.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mxang.h rect.h types.h
+
+pcx.obj: 2d.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h font.h g2.h gfile.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+	 memmacro.h mxang.h rect.h types.h
+
+gif.obj: 2d.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h font.h g2.h gfile.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+	 memmacro.h mxang.h rect.h types.h
+
+cel.obj: 2d.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h font.h g2.h gfile.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+	 memmacro.h mxang.h pjfli.h pjstypes.h rect.h types.h
+
+bmp.obj: 2d.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h font.h g2.h gfile.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+	 memmacro.h mxang.h rect.h types.h

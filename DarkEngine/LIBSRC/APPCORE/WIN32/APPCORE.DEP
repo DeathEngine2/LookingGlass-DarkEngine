@@ -1,0 +1,27 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+appcore.obj: appagg.h codewrit.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h objcguid.h \
+	 objcoll.h types.h
+
+dappcore.obj: appagg.h appapi.h appguid.h comconn.h comtools.h dbg.h \
+	 dbgmacro.h dynarray.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h pdynarr.h prikind.h types.h
+
+wappcore.obj: aggmemb.h appagg.h appapi.h appguid.h comconn.h comtools.h \
+	 constrid.h dbg.h dbgmacro.h dynarray.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h objcguid.h objcoll.h \
+	 pdynarr.h prikind.h pumpenum.h str.h types.h wappapi.h wappcore.h \
+	 wappguid.h
+
+defcreat.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+definit.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+defexit.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+appflags.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h

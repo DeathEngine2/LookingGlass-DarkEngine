@@ -1,0 +1,1178 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "convict.scr"
+#include "tweqflgs.h"
+
+#define KEYPATHS 9
+
+BEGIN_SCRIPT(ListenClosely, VictoryCheck)
+
+METHODS:
+
+  METHOD void PlayConversation(object target,integer spatial)
+  {
+    linkset sounds=Link.GetAll("SoundDescription",target);
+    while (sounds.AnyLinksLeft())
+    {
+      //I'm the callback object, it's the target object.
+      if (spatial==1)
+      {
+         if (!Sound.PlaySchema(self,sounds.Link().To(),target))
+         {
+            Debug.MPrint("Conversation failed to play.  Fail mission.");
+            Quest.Set(GoalStateVarName(0),kGoalFailed,kQuestDataMission);
+         }
+      }
+      else
+      {
+	 link amblink = Link.Create("ScriptParams",self,target);
+         amblink.SetData("bellsound");
+         if (!Sound.PlaySchemaAmbient(self,sounds.Link().To()))
+         {
+            Debug.MPrint("Conversation failed to play(ambient).  Fail mission.");
+            Quest.Set(GoalStateVarName(0),kGoalFailed,kQuestDataMission);
+         }
+      }
+      sounds.NextLink();
+    }
+  }
+
+  METHOD void ScriptParamClear(object source, string testdata)
+  {
+    linkset splinks = Link.GetAll("ScriptParams",source);
+    object curobj = ScriptParamPropagate(source,testdata);
+    while (curobj != (object)0)
+    {
+      linkset moresplinks = Link.GetAll("ScriptParams",source,curobj);
+      bool any = FALSE;
+      while ((moresplinks.AnyLinksLeft()) && (!any))
+      {
+        link curlink = moresplinks.Link();
+        moresplinks.NextLink();
+        if ((string)curlink.GetData()==testdata)
+        {
+          any = TRUE;
+          Link.Destroy(curlink);
+        }
+      }
+      curobj = ScriptParamPropagate(source,testdata);
+    }
+  }
+
+  METHOD object ScriptParamPropagate(object source,string testdata)
+  {
+    linkset splinks = Link.GetAll("ScriptParams",source);
+    object found = (object)0;
+    while ((splinks.AnyLinksLeft()) && (found==(object)0))
+    {
+      link splinkex = splinks.Link();
+      if ((string)splinkex.GetData() == testdata)
+        {
+	  found = splinkex.To();
+        }
+      splinks.NextLink();
+    }
+    return found;
+  }
+
+  METHOD object GetConversationObject()
+  {
+    return ScriptParamPropagate(self,"converobject");
+  }
+
+  METHOD void SetConversationObject(object dest)
+  {
+    ScriptParamClear(self,"converobject");
+    if (dest == (object)0) return;
+    link splink = Link.Create("ScriptParams",self,dest);
+    splink.SetData("converobject");
+  }
+
+  METHOD void ConversationTryStart()
+  {
+    //not nearby, ready to actually play stuff, FAIL!
+    if (Quest.Get(GoalStateVarName(0))!=kGoalIncomplete)
+       return; //we've failed or completed, stop.
+    if (InConversationRoom())
+      {
+        SetData("StartedConversation",1);
+        Debug.MPrint("Allowed to play conversation");
+	string linkinfo = "convobj";
+        object convsource = ScriptParamPropagate(GetPlayerRoomLocation(),linkinfo);
+        if (convsource != (object)0)
+          {
+            Debug.MPrint("Starting conversation");
+            PlayConversation(convsource,0);
+	    //set the object
+            SetConversationObject(convsource);
+	    //update the count
+          }
+      }
+  }
+
+  METHOD void ConversationGoalComplete(integer checkobj)
+  {
+    if (Link.AnyExist("ScriptParams",checkobj,checkobj))
+    {
+      link splink = Link.GetOne("ScriptParams",checkobj,checkobj);
+      integer qdata = (integer)splink.GetData();
+
+      Debug.MPrint("Completing conversation goal on object ",checkobj,".  Path is ",qdata);
+      SetData("PathNumber",qdata);
+      SetData("FinishedConversation",1);
+
+      if (Quest.Get(GoalStateVarName(0))==kGoalIncomplete)
+      {
+        Debug.MPrint("Setting ",GoalVisibleVarName(1)," to 1");
+        Quest.Set(GoalVisibleVarName(1),1,kQuestDataMission);
+
+        Debug.MPrint("Setting ",GoalStateVarName(0)," to complete.");
+        Quest.Set(GoalStateVarName(0),kGoalComplete,kQuestDataMission);
+      }
+
+      if (HaveTheWax())
+      {
+        Debug.MPrint("Making goal 3 visible.");
+        ObjectiveShow(3,TRUE);
+        PostMessage(GetWaxObj(),"heardit");
+      }
+
+      SetOneShotTimer(self,"DummySounds",1.5);
+
+      if (HaveTheKey())
+      {
+        PostMessage(GetKeyObj(),"heardit");
+      }
+    }
+  }
+
+  METHOD boolean ConversationContinue(integer prevobj)
+  {
+    object newspeaker = ScriptParamPropagate(prevobj,"convcont");
+    if (newspeaker == (object)0)
+      return FALSE;
+    Debug.MPrint(newspeaker," found as next part of conversation.  Playing.");
+    PlayConversation(newspeaker,1);
+    SetConversationObject(newspeaker);
+    return TRUE;
+  }
+
+  METHOD void FixSelfLink(object whichone)
+  {
+    Debug.MPrint("Setting self link info on ",whichone);
+    if (Link.AnyExist("ScriptParams",whichone,whichone))
+    {
+      link splink = Link.GetOne("ScriptParams",whichone,whichone);
+      splink.SetData(GetData("PathNumber"));
+    }
+    else
+    {
+      Debug.MPrint("Danger, ",whichone," had no self ScriptParams link!");
+    }
+  }
+
+  METHOD void SetupLocation()
+  {
+    Debug.MPrint("Setting up location.");
+    linkset splinks = Link.GetAll("ScriptParams",self);
+    while (splinks.AnyLinksLeft())
+    {
+      link cursplink = splinks.Link();
+      string spdata = (string)cursplink.GetData();
+      if (spdata == "convtrig")
+      {
+        FixSelfLink(cursplink.To());
+      }
+      if (spdata == "soundset")
+      {
+        string messdata = "eaves" + (string)GetData("PathNumber");
+        PostMessage(cursplink.To(),messdata);
+        Debug.MPrint("Told sound guy ",cursplink.To()," to set up with ",messdata);
+      }
+      if (spdata == "keyobj")
+      {
+	SetKeyObj(cursplink.To());
+        string messdata = "eaves" + (string)GetData("PathNumber");
+        PostMessage(cursplink.To(),messdata);
+        Debug.MPrint("Told key ",cursplink.To()," to set up with ",messdata);
+      }
+      splinks.NextLink();
+    }
+  }
+
+  METHOD boolean InConversationRoom()
+  {
+    object currentroom = GetPlayerRoomLocation();
+    if (Link.AnyExist("ScriptParams",currentroom,currentroom))
+      {
+        link valuelink = Link.GetOne("ScriptParams",currentroom,currentroom);
+        if ((string)valuelink.GetData() == "convroom")
+          return TRUE;
+      }
+    return FALSE;
+  }
+
+  METHOD object GetKeyObj()
+  {
+    return ScriptParamPropagate(self,"keyobject");
+  }
+ 
+  METHOD void SetKeyObj(object keyobj)
+  {
+    ScriptParamClear(self,"keyobject");
+    if (keyobj == (object)0) return;
+    link splink = Link.Create("ScriptParams",self,keyobj);
+    splink.SetData("keyobject");
+  }
+
+
+  METHOD object GetWaxObj()
+  {
+    return ScriptParamPropagate(self,"waxobject");
+  }
+
+  METHOD void SetWaxObj(object waxobj)
+  {
+    ScriptParamClear(self,"waxobject");
+    if (waxobj == (object)0) return;
+    link splink = Link.Create("ScriptParams",self,waxobj);
+    splink.SetData("waxobject");
+  }
+
+  METHOD void FollowUpKeySound(int i)
+  {
+    if (i==2)
+    {
+      Debug.MPrint("I'm following up the have key bit right after eavesdropping.");
+      if (HaveTheWax())
+      {
+        object schmname;
+        schmname = ScriptParamPropagate(GetWaxObj(),"knewwax");
+        SetData("HavePlayedKey",3);
+        if (schmname != (object)0)
+        {
+          Debug.MPrint("Playing the bit where I already have the wax(",schmname,").");
+          Sound.PlaySchema(self,schmname,self);
+        }
+        else
+        {
+          SetData("HavePlayedKey",4);
+          Debug.MPrint("Failed to find schema for already have wax.");
+          FollowUpKeySound(4);
+        }
+      }
+    }
+    if (i==4)
+    {
+      Debug.MPrint("I'm following up the have key bit right after picking it up.");
+      object schmname;
+      schmname = ScriptParamPropagate(GetKeyObj(),"getwax");
+      if (schmname != (object)0)
+      {
+        Debug.MPrint("Playing the bit where I decide to get an impression.");
+        Sound.PlaySchema(self,schmname,self);
+      }
+      else
+      {
+        Debug.MPrint("Failed to find schema for get impression.");
+      }
+    }
+  }
+
+  METHOD void PlayRightKey(int i)
+  {
+    //1 means should play wax check afterwards, 2 means finished and doing
+    //wax check
+
+    //3 means should play drop me afterwards, 4 means finished  and doing 
+    //drop me.
+    if ((integer)GetData("PlayedHaveKey")!=0)
+      return; //already done this.
+    object schmname;
+    if (i==2)
+      schmname = ScriptParamPropagate(GetKeyObj(),"havekey");
+    else
+      schmname = ScriptParamPropagate(GetKeyObj(),"gotkey");
+    SetData("PlayedHaveKey",i); //am playing
+    if (schmname != (object)0)
+    {
+      Debug.MPrint("Have key, playing schema ",schmname);
+      Sound.PlaySchema(self,schmname,self);
+    }
+    else
+    {
+      Debug.MPrint("Have key, schema load failed");
+      SetData("PlayedHaveKey",i+1);  //finished playing
+      FollowUpKeySound(i+1);
+    }
+  }
+
+  METHOD boolean HaveTheKey()
+  {
+    if (GetKeyObj()==object(0))
+      return FALSE;
+    linkset myinv = Link.GetAll("Contains",self);
+    boolean retval = FALSE;
+    while (myinv.AnyLinksLeft())
+    {
+      link curitem = myinv.Link();
+
+      if (curitem.To() == GetKeyObj())
+        retval = TRUE;
+
+      myinv.NextLink();
+    }
+    return retval;
+  }
+
+  METHOD boolean HaveTheWax()
+  {
+    linkset myinv = Link.GetAll("Contains",self);
+    boolean retval = FALSE;
+    while (myinv.AnyLinksLeft())
+    {
+      link curitem = myinv.Link();
+
+      if (curitem.To() == GetWaxObj())
+        retval = TRUE;
+
+      myinv.NextLink();
+    }
+    return retval;
+  }
+
+  METHOD boolean AllGoalsComplete()
+  {
+    int i;
+    boolean nonloot = TRUE;
+    boolean lootyes = FALSE;
+    for (i=0;i<4;i++)
+    {
+      if (Quest.Get(GoalStateVarName(i))!=kGoalComplete)
+      {
+        Debug.MPrint("All goals complete failed on goal ",i);
+        nonloot = FALSE;
+      }
+    }
+    for (i=4;i<6;i++)
+    {
+      if (Quest.Get(GoalStateVarName(i))==kGoalComplete)
+      {
+        lootyes = TRUE;
+        Debug.MPrint("Satisfied loot goal ",i);
+      }
+    }
+    return (lootyes && nonloot);
+  }
+
+  METHOD void KeyLogic(integer which)
+  {
+    boolean heardcon = (Quest.Get(GoalStateVarName(0))==kGoalComplete);
+    boolean pressedwax = (Quest.Get(GoalStateVarName(1))==kGoalComplete);
+    boolean havewax = (Quest.Get(GoalStateVarName(2))==kGoalComplete);
+    boolean putkey = (Quest.Get(GoalStateVarName(3))==kGoalComplete);
+    boolean havekey = HaveTheKey();
+
+    //should always have heardcon here.
+
+    Debug.MPrint("Key logic called.  Heardcon:",heardcon," Pressedwax:",pressedwax);
+    Debug.MPrint("Havewax:",havewax," PutKey:", putkey);
+    Debug.MPrint("Havekey:",havekey);
+
+    if ((heardcon) && (!pressedwax))   //so I don't havewax or meaningfully
+				       //putkey
+    {
+      if (!havekey)
+      {
+        if (which == 1) //ok, play I'd like to get a copy of that key.
+        {
+          //hack, schema name input directly
+          Sound.PlaySchema(self,Object.Named("gar0607"),self);
+          //no further schemas.
+        }
+      }
+      else  //I do have the key
+      {
+        if (which == 1)
+        {
+          //hack, schema name input directly
+          Sound.PlaySchema(self,Object.Named("gar0607"),self);
+          SetOneShotTimer(self,"DummySounds2",3.5);
+        }
+        if (which == 2)
+        {
+          PlayRightKey(1);
+        }
+      }
+      return;
+    }
+
+    //assume heardcon and pressedwax at this point
+    if ((havewax) && (!putkey))
+    {
+       if (which == 1)
+       {
+         object schmname = ScriptParamPropagate(GetWaxObj(),"havewax");
+	 Debug.MPrint("Trying to play good think I've got wax schema");
+         if (schmname != (object)0)
+         {
+           Sound.PlaySchema(self,schmname,self);
+         }
+         else
+           Debug.MPrint("But schema load failed");
+       }
+       return;
+    }
+  }
+
+  METHOD object GetPlayerRoomLocation()
+  {
+     return ScriptParamPropagate(self,"playroomloc");
+  }
+
+  METHOD void SetPlayerRoomLocation(object roomloc)
+  {
+    ScriptParamClear(self,"playroomloc");
+    if (roomloc == (object)0) return;
+     link splink = Link.Create("ScriptParams",self,roomloc);
+     splink.SetData("playroomloc");
+  }
+
+MESSAGES:
+
+  OnSim()
+  {
+    if (message.starting)
+      {
+        SetData("FinishedConversation",0);
+        SetData("StartedConversation",0);
+        SetData("PathNumber",0);       //which random path
+        SetData("PlayedHaveKey",0);   //played this vo already.
+        SetData("PlayedWon",0); //played the work here is done schema
+        SetData("OughtaDoIt",0);
+	if ((object)self != object("Player"))
+        {
+	  SetData("PathNumber",Data.RandInt(1,KEYPATHS)); //which key we're 
+                                                          //using.
+          //cheat override...
+	  int i = 0;
+          if (DarkGame.ConfigGetInt("eaves",i))
+	  {
+            if ((i>0) && (i <= KEYPATHS))
+            {
+              Debug.MPrint("Overriding path selection to ",i);
+              SetData("PathNumber",i);
+            }
+          }
+
+ 	  SetupLocation(); //setup the location, if we are the starting
+			   //point.  This allows all sorts of wholesome
+			   //linky goodness.
+	  string pathnum = "Pathnum" + (string)GetData("PathNumber");
+	  Debug.MPrint("Picked path ",GetData("PathNumber")," on ",self);
+        }
+      }
+    DefaultOnSim();
+  }
+
+  OnBeginScript()
+  {
+    SetPlayerRoomLocation((object)0);
+    DefaultOnBeginScript();
+  }
+
+  OnQuestChange()
+  {
+    if (message.m_oldValue != message.m_newValue)
+    {
+      if ((message.m_pName == GoalStateVarName(2)) && (message.m_newValue==kGoalComplete) && ((integer)GetData("OughtaDoIt")==0))
+      {
+        Debug.MPrint("That oughtta do it");
+	//hack, explicit schema name call
+        Sound.PlaySchema(self,Object.Named("gar0617"),self);
+      }
+      if ((AllGoalsComplete()) && ((integer)GetData("PlayedWon")==0))
+      {
+        Debug.MPrint("I think my work here is done");
+        //hack, explicit schema name call
+        Sound.PlaySchema(self,Object.Named("gar0618"),self);
+        SetData("PlayedWon",1);
+      }
+    }
+    DefaultOnQuestChange();
+  }
+
+  OnSchemaDone()
+  {
+    Debug.MPrint("Player schema callback from ",message.targetObject," received.  Name: ",message.name);
+    object convid = GetConversationObject();
+    if ((integer)convid ==  (integer)message.targetObject)
+      { 
+        Debug.MPrint("Finished conversation on ",convid);
+        SetConversationObject((object)0);
+	ConversationGoalComplete(message.targetObject);
+        Debug.MPrint("Looking for conversation continuation.");
+  	if (!ConversationContinue(message.targetObject))
+           SetData("Finished Conversation",1);
+      }
+    else
+       if (((integer)convid!=0) && ((integer)convid == (integer)ScriptParamPropagate(self,"bellsound")))
+       {
+          Debug.MPrint("Finished ambient ",message.name);
+          SetConversationObject((object)0);
+          ConversationGoalComplete(convid);
+          Debug.MPrint("Looking for conversation continuation.");
+          if (!ConversationContinue(convid))
+             SetData("Finished Conversation",1);
+       }
+    if ((integer)GetData("PlayedHaveKey")==1)
+      {
+        SetData("PlayedHaveKey",2);
+        FollowUpKeySound(2);        
+      }
+    DefaultOnSchemaDone();
+  }
+
+  OnMessage()
+  {
+    if (MessageIs("gotthekey"))
+    {
+      SetKeyObj(message.from);
+      Debug.MPrint("Picked up correct key, ",message.from);
+      if ((integer)GetData("PathNumber")!=0)
+      {
+        PostMessage(message.from,"heardit"); //tell the key we know we've
+				             //eavesdropped
+      }
+    }
+    if (MessageIs("gotthewax"))
+    {
+      SetWaxObj(message.from);
+      ObjectiveSet(2,kGoalComplete);
+      Debug.MPrint("Picked up wax ",message.from);
+      if ((integer)GetData("PathNumber")!=0)
+      {
+        Debug.MPrint("Making goal 3 visible");
+        ObjectiveShow(3,TRUE); //make it visible
+      }
+    }
+    if (MessageIs("lostthewax"))
+    {
+      SetWaxObj(0);
+      ObjectiveSet(2,kGoalIncomplete);
+      Debug.MPrint("Droped the wax ",message.from);
+    }
+    if ((MessageIs("badkey")) && ((integer)GetData("PathNumber")!=0) &&
+        (GetKeyObj()==(object)0)) 
+    {
+      linkset sounds = Link.GetAll("SoundDescription",message.from);
+      while (sounds.AnyLinksLeft())
+      {
+        Sound.PlaySchema(self,sounds.Link().To(),self);
+	sounds.NextLink();
+      }
+    }
+    DefaultOnMessage();
+  }
+
+  OnObjRoomTransit()
+  {
+    if ((integer)GetPlayerRoomLocation() != (integer)message.ToObjId)
+    {
+      Debug.MPrint("Switching rooms to ",message.ToObjId);
+      SetPlayerRoomLocation(message.ToObjId);
+      //can't change rooms if in middle of conversation.
+      if ((integer)GetData("StartedConversation")!=(integer)GetData("FinishedConversation"))
+         Quest.Set(GoalStateVarName(0),kGoalFailed,kQuestDataMission);	
+      else
+         if ((integer)GetData("StartedConversation")==0) //only check first time.
+            ConversationTryStart();
+    } //end if room actually changed.
+    DefaultOnObjRoomTransit();
+  }
+
+  OnTimer()
+  {
+    if (message.name=="DummySounds")
+    {
+      Debug.MPrint("Dummy sounds timer triggered. 1");
+      KeyLogic(1);
+    }
+    if (message.name=="DummySounds2")
+    {
+      Debug.MPrint("Dummy sounds 2 timer triggered. 2");
+      KeyLogic(2);
+    }
+    DefaultOnTimer();
+  }
+
+
+END_SCRIPT(ListenClosely)
+
+
+
+
+BEGIN_SCRIPT(SoundGuy, RootScript)
+
+METHODS:
+ 
+  METHOD void SetSoundUp(object sndobj, string sndname)
+  {
+    Debug.MPrint("Setting sound ",sndname," up on ",sndobj);
+    object sndtoplay = Object.Named(sndname);
+    Debug.MPrint("Target sound is ",sndtoplay);
+    if (!Link.AnyExist("SoundDescription",sndobj,sndtoplay))
+      Link.Create("SoundDescription",sndobj,sndtoplay);
+  }
+
+  METHOD void DoSoundSetup(int i)
+  {
+    Debug.MPrint(self," running sound setup on path ",i);
+    linkset splinks = Link.GetAll("ScriptParams",self);
+    while (splinks.AnyLinksLeft())
+    {
+      link cursplink = splinks.Link();
+
+      cAnsiStr tempstr = (cAnsiStr)((string)cursplink.GetData());
+      cAnsiStr altstr = (cAnsiStr)((string)i);
+
+      if (tempstr.Find(altstr)==0)  //string starts it off
+      {
+        if ((i != 1) || (tempstr.Find("10")!=0))  //check other case
+        {
+          tempstr.Remove(0,strlen(altstr));
+          SetSoundUp(cursplink.To(),(string)tempstr);
+        }
+      }
+
+      splinks.NextLink();
+    }
+  }
+
+MESSAGES:
+
+  OnMessage()
+  {
+    int i;
+    for (i = 1;i<=KEYPATHS;i++)
+    {
+      string teststr = "eaves" + (string)i;
+      if (MessageIs(teststr))
+        DoSoundSetup(i);
+    }
+    DefaultOnMessage();
+  }
+
+END_SCRIPT(SoundGuy)
+
+BEGIN_SCRIPT(BadKey, RootScript)
+
+MESSAGES:
+
+  OnContained()
+  {
+    if ((message.event!=kContainRemove) &&
+	object(message.container)==Object.Named("Player"))
+    PostMessage(message.container,"BadKey");
+    DefaultOnContained();
+  }
+
+  OnFrobToolEnd()
+  { 
+    PostMessage(message.DstObjId,"fakekeyfrob");
+    DefaultOnFrobToolEnd();
+  }
+
+END_SCRIPT(BadKey)
+
+BEGIN_SCRIPT(KeyGuy, Room)
+
+METHODS:
+ 
+
+  METHOD object ScriptParamPropagate(object source,string testdata)
+  {
+    linkset splinks = Link.GetAll("ScriptParams",source);
+    object found = (object)0;
+    while ((splinks.AnyLinksLeft()) && (found==(object)0))
+    {
+      link splinkex = splinks.Link();
+      if ((string)splinkex.GetData() == testdata)
+        {
+	  found = splinkex.To();
+        }
+      splinks.NextLink();
+    }
+    return found;
+  }
+
+  METHOD void ScriptParamClear(object source, string testdata)
+  {
+    linkset splinks = Link.GetAll("ScriptParams",source);
+    object curobj = ScriptParamPropagate(source,testdata);
+    while (curobj != (object)0)
+    {
+      linkset moresplinks = Link.GetAll("ScriptParams",source,curobj);
+      bool any = FALSE;
+      while ((moresplinks.AnyLinksLeft()) && (!any))
+      {
+        link curlink = moresplinks.Link();
+        moresplinks.NextLink();
+        if ((string)curlink.GetData()==testdata)
+        {
+          any = TRUE;
+          Link.Destroy(curlink);
+        }
+      }
+      curobj = ScriptParamPropagate(source,testdata);
+    }
+  }
+
+  METHOD void PlayDropMe(object playr)
+  {
+    Debug.MPrint(self," would be playing dropme safe, but we pulled that.");
+  }
+
+  METHOD object GetRightRoom()
+  {
+    return ScriptParamPropagate(self,"keyrightroom");
+  }
+
+  METHOD void SetRightRoom(object rightroom)
+  {
+    ScriptParamClear(self,"keyrightroom");
+    if (rightroom == (object)0) return;
+    link splink = Link.Create("ScriptParams",self,rightroom);
+    splink.SetData("keyrightroom");
+  }
+
+  METHOD object GetCurrentRoom()
+  {
+    return ScriptParamPropagate(self,"keycurroom");
+  }
+
+  METHOD void SetCurrentRoom(object curroom)
+  {
+    ScriptParamClear(self,"keycurroom");
+    if (curroom == (object)0) return;
+    link splink = Link.Create("ScriptParams",self,curroom);
+    splink.SetData("keycurroom");
+  }
+
+  METHOD void SetRoomGoal()
+  {
+    SetRightRoom(GetCurrentRoom());
+    Debug.MPrint("Right room is now ",GetRightRoom());
+  }
+
+  METHOD void CheckRightRoom()
+  {
+    if ((GetRightRoom()==GetCurrentRoom()) &&
+        !(Link.AnyExist("Contains",Object.Named("Player"),self)))
+    {
+      Quest.Set(GoalStateVarName(3),kGoalComplete,kQuestDataMission);
+    }
+    else
+    {
+      Quest.Set(GoalStateVarName(3),kGoalIncomplete,kQuestDataMission);
+    }
+  }
+
+  METHOD void CopyContains(object obj)
+  {
+    Debug.MPrint("Copying ~contains links from ",obj," to ",self);
+    linkset conlinks = Link.GetAll("~Contains",obj);
+    while (conlinks.AnyLinksLeft())
+    {  
+      link newclink = Link.Create("~Contains",self,conlinks.Link().To());
+      newclink.SetData(conlinks.Link().GetData()); //copy data
+      conlinks.NextLink();
+    }
+  }
+
+  METHOD void DoKeySetup(int i)
+  {
+    Debug.MPrint(self," running key setup on path ",i);    
+    linkset splinks = Link.GetAll("ScriptParams",self);
+    while (splinks.AnyLinksLeft())
+    {
+      link cursplink = splinks.Link();
+
+      if ((string)i == (string)cursplink.GetData())
+        {
+	  vector destpos = Object.Position(cursplink.To());
+          vector destfac = Object.Facing(cursplink.To());
+	  Debug.MPrint("Teleporting key ",self," to fake key ",cursplink.To());
+          Object.Teleport(self,destpos,destfac);
+          CopyContains(cursplink.To());
+          Object.Destroy(cursplink.To());
+        }
+
+      splinks.NextLink();
+    }
+    SetRoomGoal();
+
+  }
+
+  METHOD void SayReturn(object onwhom)
+  {
+    Debug.MPrint("Trying to play SayReturn");
+  
+    SetData("SaidReturn",1);
+
+    if (!Quest.Get(GoalStateVarName(0))==kGoalComplete)
+      return;
+   
+    linkset splinks = Link.GetAll("ScriptParams",self);
+    while (splinks.AnyLinksLeft())
+    {
+      link cursplink = splinks.Link();
+      if (cursplink.GetData()=="returnme")
+        Sound.PlaySchema(self,cursplink.To(),onwhom);
+      splinks.NextLink();
+    }
+  }
+
+MESSAGES:
+
+  OnSim()
+  {
+    if (message.starting)
+    {
+      SetData("Eavesdropped",0); //haven't eavesdropped yet.
+      SetData("SaidReturn",0);
+    }
+    DefaultOnSim();
+  }
+
+  OnObjRoomTransit()
+  {
+    if ((integer)GetCurrentRoom() != (integer)message.ToObjId)
+    {
+      Debug.MPrint("Key ",self," is now in room ",message.ToObjId);
+      SetCurrentRoom(message.ToObjId);
+    }
+    CheckRightRoom();
+    DefaultOnObjRoomTransit();
+  }
+ 
+  OnMessage()
+  {
+    int i;
+    for (i = 1;i<=KEYPATHS;i++)
+    {
+      string teststr = "eaves" + (string)i;
+      if (MessageIs(teststr)) 
+        DoKeySetup(i);
+    }
+    if ((MessageIs("heardit")) && ((integer)GetData("Eavesdropped")==0))
+    {
+      Debug.MPrint("Key knows you eavesdropped.");
+      SetData("Eavesdropped",1);
+      Property.Set(self,"GameName","Name_SDBoxKey"); //inventory name
+      PlayDropMe(message.from);
+    }
+    DefaultOnMessage();
+  }
+
+  OnContained()
+  {
+    if ((message.event!=kContainRemove) &&
+	object(message.container)==Object.Named("Player"))
+    {
+      CheckRightRoom();
+      PostMessage(message.container,"gotthekey");
+      if ((integer)GetData("Eavesdropped")==1)
+        PlayDropMe(message.container);
+    if ((integer)GetData("SaidReturn")==0)
+      SayReturn(message.container);
+    }
+
+    if ((message.event==kContainRemove))
+      CheckRightRoom();
+
+    DefaultOnContained();
+  }
+
+  OnFrobToolEnd()
+  {
+    PostMessage(message.DstObjId,"realkeyfrob");
+    DefaultOnFrobToolEnd();
+  }
+
+END_SCRIPT(KeyGuy)
+
+
+BEGIN_SCRIPT(WaxDoll, RootScript)
+
+MESSAGES:
+
+  OnContained()
+  {
+    if ((message.event!=kContainRemove) &&
+	object(message.container)==Object.Named("Player"))
+      PostMessage(message.container,"gotthewax");
+
+    if ((message.event==kContainRemove) &&
+	object(message.container)==Object.Named("Player"))
+      PostMessage(message.container,"lostthewax");
+
+    DefaultOnContained();
+  }
+
+  OnMessage()
+  {
+     if (MessageIs("heardit"))
+       Property.Set(self,"GameName","Name_WaxBankKey");
+     DefaultOnMessage();
+  }
+
+
+END_SCRIPT(WaxDoll)
+
+
+BEGIN_SCRIPT(WaxCube, RootScript)
+
+METHODS:
+
+  METHOD void SetTweqModel(integer tweqmod)
+  {
+    string model=Property.Get(self,"ModelName");
+    if (Property.Possessed(self,"CfgTweqModels"))
+      model=Property.Get(self,"CfgTweqModels",
+                         string("Model ")+string(tweqmod));
+ 
+    Property.Set(self,"ModelName",(const char*)model);
+  }
+
+  METHOD object ScriptParamPropagate(object source,string testdata)
+  {
+    linkset splinks = Link.GetAll("ScriptParams",source);
+    object found = (object)0;
+    while ((splinks.AnyLinksLeft()) && (found==(object)0))
+    {
+      link splinkex = splinks.Link();
+      if ((string)splinkex.GetData() == testdata)
+        {
+	  found = splinkex.To();
+        }
+      splinks.NextLink();
+    }
+    return found;
+  }
+
+  METHOD void SetCombType(object whichone)
+  {
+    if (!Property.Possessed(whichone,"CombineType"))
+      Property.Add(whichone,"CombineType");
+    Property.Set(whichone,"CombineType",(cMultiParm)GetData("PrintName"));
+    Debug.MPrint("Set combine type on ",whichone," to ",(string)GetData("PrintName"));
+  }
+
+  METHOD string GetCombType(object whichone)
+  {
+    if (Property.Possessed(whichone,"CombineType"))
+    {
+      return Property.Get(whichone,"CombineType");
+    }
+    else
+    {
+      return "blankbad";
+    }
+  }
+
+  METHOD void ResetWaxModel(object wrongobj)
+  {
+    SetTweqModel(0);
+    SetData("PrintType",0);    
+    SetData("PrintName","blank");
+    Debug.MPrint("Setting next combine type to ",GetData("PrintName"));
+  }
+
+  METHOD void PressBadKey(object wrongobj)
+  {
+    SetTweqModel(1);
+    SetData("PrintType",1);
+    string ctype = GetCombType(wrongobj);
+    SetData("PrintName",(cMultiParm)((string)ctype+"wax"));
+    Debug.MPrint("Setting next combine type to ",GetData("PrintName"));
+    if ((Quest.Get(GoalStateVarName(0))==1) && ((integer)GetData("ScrewedUp")==0))
+    {
+      Debug.MPrint("Playing screwed up sound");
+      object schmname = ScriptParamPropagate(self,"screwed");
+      if (schmname != (object)0)
+        Sound.PlaySchema(self,schmname,self);
+      else
+        Debug.MPrint("But schema load failed");
+    }
+    SetData("ScrewedUp",1);
+    
+  }
+
+  METHOD void PressGoodKey(object goodkey)
+  {
+    SetTweqModel(2);
+    SetData("PrintType",2);
+    SetData("PrintName",(cMultiParm)((string)GetCombType(goodkey)+"wax"));
+
+    if (Quest.Get(GoalVisibleVarName(1))==1)
+    {
+      Debug.MPrint("Setting ",GoalVisibleVarName(2)," to 1");
+      Quest.Set(GoalVisibleVarName(2),1,kQuestDataMission);
+    }
+
+    Debug.MPrint("Setting goal 1 to complete");
+    Quest.Set(GoalStateVarName(1),kGoalComplete,kQuestDataMission);
+    Debug.MPrint("Setting next combine type to ",GetData("PrintName"));
+  }
+
+  METHOD void PuttyPass(object knifeobj)
+  {
+    if (!Link.AnyExist("~Contains",knifeobj))
+    {
+      Debug.MPrint("Putty knife ",knifeobj," not carried?");
+      return;
+    }
+    link clink = Link.GetOne("~Contains",knifeobj);
+    Debug.MPrint("Putty knife carried by ",clink.To());
+    if ((integer)GetData("PrintType")==0)  //junk
+    {
+      object junkwax = Object.Create("JunkWax");
+      SetCombType(junkwax);
+      Container.Add(junkwax,clink.To());
+    }
+    if ((integer)GetData("PrintType")==1)  //bad key
+    {
+      object badwax = Object.Create("BadWax");
+      SetCombType(badwax);
+      Container.Add(badwax,clink.To());
+    }
+    if ((integer)GetData("PrintType")==2) //good key
+    {
+      Debug.MPrint("Creating good key impression");
+      object goodwax = Object.Create("GoodWax");
+      SetCombType(goodwax);
+      Container.Add(goodwax,clink.To());
+      object schmname = ScriptParamPropagate(self,"havewax");
+      if (Quest.Get(GoalStateVarName(0))==kGoalComplete)
+      {
+        Property.Set(goodwax,"GameName","Name_WaxBankKey");
+      }
+      if (schmname != (object)0)
+      {
+        Debug.MPrint("Propagating havewax link");
+        link splink = Link.Create("ScriptParams",goodwax,schmname);
+        splink.SetData("havewax");
+      }
+    }
+    ResetWaxModel(knifeobj);
+    return;
+  }
+
+  METHOD void TestKeyPress(object destobj)
+  {
+    if (!Object.InheritsFrom(destobj,Object.Named("Key")))
+    {
+      Debug.MPrint("Non-key ",destobj," pressed on wax.");
+      ResetWaxModel(destobj);
+      return;
+    }
+    boolean goodkey = FALSE;
+    if (Link.AnyExist("ScriptParams",self,destobj))
+    {
+      link splink = Link.GetOne("ScriptParams",self,destobj);
+      if ((string)splink.GetData() == "realkey")
+	goodkey = TRUE;
+    }
+    if (goodkey == FALSE)
+    {
+      Debug.MPrint("Wrong key ",destobj," pressed on wax.");
+      PressBadKey(destobj);
+    }
+    else
+    {
+      Debug.MPrint("Correct key ",destobj," pressed on wax.");
+      PressGoodKey(destobj);
+    }
+    
+  }
+
+MESSAGES:
+
+  OnSim()
+  {
+    if (message.starting)
+    {
+      SetData("PrintType",0);  //Print Type 0 is nothing
+			       //1 is bad key
+                               //2 is good key
+      SetData("PrintName","blank");
+      SetData("ScrewedUp",0); //have I screwed up before?
+    }
+    DefaultOnSim();
+  }
+
+  OnMessage()
+  {
+    if (MessageIs("realkeyfrob"))
+      TestKeyPress(message.from);
+    if (MessageIs("fakekeyfrob"))
+      TestKeyPress(message.from);
+    if (MessageIs("puttyknifefrob"))
+      PuttyPass(message.from);
+    DefaultOnMessage();
+  }
+
+END_SCRIPT(WaxCube)
+
+BEGIN_SCRIPT(PuttyKnife,RootScript)
+
+MESSAGES:
+
+  OnFrobToolEnd()
+  {
+    PostMessage(message.DstObjId,"puttyknifefrob");
+    DefaultOnFrobToolEnd();
+  }
+
+END_SCRIPT(PuttyKnife)
+
+BEGIN_SCRIPT(KillWax,RootScript)
+
+METHODS:
+
+  METHOD void SetTweqDelete(boolean onoff)
+  {
+    if (Property.Possessed(self,"StTweqDelete"))
+    { 
+      int curanimst = Property.Get(self,"StTweqDelete","AnimS");
+      if (onoff)
+        Property.Set(self,"StTweqDelete","AnimS",curanimst | TWEQ_AS_ONOFF);
+      else
+        Property.Set(self,"StTweqDelete","AnimS",curanimst & ~TWEQ_AS_ONOFF);
+      Debug.MPrint("Set wax ",self," to delete: ",onoff);
+    }
+    else
+      Debug.MPrint("Wanted to tweqdelete set ",self," but no prop!");
+  }
+
+MESSAGES:
+
+  OnContained()
+  {
+    if (message.event!=kContainRemove)
+    {
+      SetTweqDelete(FALSE);
+    }
+
+    if (message.event==kContainRemove)
+    {
+      SetTweqDelete(TRUE);
+    }
+    DefaultOnContained();
+  }
+
+END_SCRIPT(KillWax)

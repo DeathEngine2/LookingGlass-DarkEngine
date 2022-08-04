@@ -1,0 +1,237 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+grtm.obj: buffer.h dev2d.h fix.h g2d.h g2spoint.h g2tm.h grspoint.h grtm.h \
+	 matrixs.h memall.h memmacro.h mxang.h plytyp.h tmpalloc.h types.h
+
+permap.obj: buffer.h dev2d.h fix.h g2clip.h g2d.h g2spoint.h g2tm.h \
+	 matrixs.h memall.h memmacro.h mxang.h plyparam.h plyrast.h plytyp.h \
+	 tmapd.h tmaps.h tmpalloc.h types.h
+
+tmsetup.obj: dev2d.h fix.h g2clip.h g2d.h g2spoint.h g2tm.h icanvas.h \
+	 matrixs.h mxang.h plyparam.h plyrast.h plytyp.h tmapd.h tmaps.h \
+	 trirast.h types.h
+
+tf.obj:	 dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 plyshell.h tmapd.h tmaps.h trirast.h types.h
+
+genlm.obj: dev2d.h fix.h lgassert.h lglog.h matrixs.h mxang.h tftype.h \
+	 types.h
+
+fl8lm.obj: dev2d.h fix.h lgassert.h lglog.h matrixs.h mxang.h tftype.h \
+	 types.h
+
+fl8pm.obj: dev2d.h fix.h lgassert.h lglog.h matrixs.h mxang.h types.h
+
+f16lm.obj: dbg.h dbgmacro.h dev2d.h fix.h lgassert.h lglog.h matrixs.h \
+	 mxang.h tftype.h types.h
+
+f16pm.obj: dev2d.h fix.h lgassert.h lglog.h matrixs.h mxang.h types.h
+
+genfl8l.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h trirast.h types.h
+
+genf16l.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h trirast.h types.h
+
+genrsdtm.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+o88.obj: dev2d.h fix.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h tmapd.h tmaps.h types.h
+
+lo88.obj: dev2d.h fix.h g2clip.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h \
+	 mxang.h plyparam.h plyrast.h plytyp.h tmapd.h tmaps.h trirast.h \
+	 types.h
+
+co88.obj: dev2d.h fix.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h tmapd.h tmaps.h types.h
+
+r88.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+t88oc.obj: dev2d.h fix.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h tmapd.h tmaps.h trirast.h types.h
+
+lo816.obj: dev2d.h fix.h g2clip.h g2d.h g2spoint.h g2tm.h genrast.h \
+	 matrixs.h mxang.h plyparam.h plyrast.h plytyp.h tmapd.h tmaps.h \
+	 trirast.h types.h
+
+lht816.obj: dev2d.h fix.h g2d.h g2spoint.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+lh816.obj: dev2d.h fix.h g2clip.h g2d.h g2spoint.h g2tm.h genrast.h \
+	 matrixs.h mxang.h plyparam.h plyrast.h plytyp.h tmapd.h tmaps.h \
+	 trirast.h types.h
+
+dlh816.obj: dev2d.h fix.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h \
+	 mxang.h plyparam.h plyrast.h plyshell.h tmapd.h tmaps.h trirast.h \
+	 types.h
+
+t816oc.obj: dev2d.h fix.h g2d.h g2spoint.h g2tm.h genrast.h matrixs.h \
+	 mxang.h plyparam.h plyrast.h plyshell.h tmapd.h tmaps.h trirast.h \
+	 types.h
+
+golftmap.obj: dev2d.h fix.h g2d.h g2spoint.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h trirast.h types.h
+
+shadtmap.obj: dev2d.h fix.h g2d.h g2spoint.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h trirast.h types.h
+
+drytmap.obj: dev2d.h fix.h g2d.h g2spoint.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h trirast.h types.h
+
+shadhack.obj: dev2d.h fix.h g2d.h g2spoint.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h tmapd.h tmaps.h trirast.h types.h
+
+area.obj: dev2d.h fix.h g2d.h g2spoint.h genrast.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h plyshell.h types.h
+
+trigrad.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 tmapd.h tmaps.h trirast.h types.h
+
+trirast.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 types.h
+
+genply.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+gensply.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+genrast.obj: dev2d.h fix.h g2spoint.h lgassert.h lglog.h mathmac.h matrixs.h \
+	 mxang.h plyparam.h plyrast.h trirast.h types.h
+
+fl8sply.obj: dev2d.h fix.h g2spoint.h genrast.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h tmapd.h tmaps.h types.h
+
+tmapd.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 tmapd.h tmaps.h types.h
+
+clip.obj: buffer.h dev2d.h fix.h g2clip.h g2spoint.h lgassert.h lglog.h \
+	 matrixs.h memall.h memmacro.h mxang.h plytyp.h tmpalloc.h types.h
+
+uvgrad.obj: cseg.inc dseg.inc g2spoint.inc grs.inc macros.inc plyparam.inc \
+	 thunks.inc type.inc types.inc
+
+scshell.obj: dbg.h dbgmacro.h dev2d.h fix.h g2spoint.h matrixs.h mxang.h \
+	 plyparam.h plyrast.h tmapd.h tmaps.h trirast.h types.h
+
+fl8s.obj: dev2d.h fix.h matrixs.h mxang.h sftype.h types.h
+
+gens.obj: dbg.h dbgmacro.h dev2d.h fix.h matrixs.h mxang.h sftype.h types.h
+
+fl8fl8s.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 scshell.h trirast.h types.h
+
+genfl8s.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 scshell.h types.h
+
+genrsds.obj: dev2d.h fix.h g2d.h grscale.h icanvas.h matrixs.h mxang.h \
+	 sftype.h types.h
+
+cc816.obj: dev2d.h fix.h g2d.h g2spoint.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h scshell.h tmapd.h tmaps.h types.h
+
+clplin.obj: dev2d.h fix.h lftype.h mathmac.h matrixs.h mxang.h plytyp.h \
+	 types.h
+
+fl8lin.obj: dev2d.h fix.h fl8lin.h mathmac.h matrixs.h mxang.h plytyp.h \
+	 types.h
+
+fl8l.obj: dev2d.h fix.h lftype.h matrixs.h mxang.h plytyp.h types.h
+
+genline.obj: dev2d.h fix.h lftype.h mathmac.h matrixs.h mxang.h plytyp.h \
+	 types.h
+
+gen8il.obj: dev2d.h fix.h g2d.h g2spoint.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h types.h
+
+gen16il.obj: dev2d.h fix.h g2d.h g2spoint.h matrixs.h mxang.h plyparam.h \
+	 plyrast.h types.h
+
+o88il.obj: cseg.inc dseg.inc grs.inc plyparam.inc plyrast.inc thunks.inc \
+	 type.inc
+
+o88bil.obj: cseg.inc dseg.inc grs.inc plyparam.inc plyrast.inc thunks.inc \
+	 tmapd.inc type.inc
+
+lo88il.obj: cseg.inc dseg.inc grs.inc macros.inc plyparam.inc plyrast.inc \
+	 thunks.inc type.inc types.inc
+
+co88il.obj: cseg.inc dseg.inc grs.inc plyparam.inc plyrast.inc thunks.inc \
+	 type.inc
+
+n88il.obj: cseg.inc dseg.inc grs.inc plyparam.inc plyrast.inc thunks.inc \
+	 tmaps.inc type.inc
+
+lo816il.obj: cseg.inc dseg.inc grs.inc macros.inc plyparam.inc plyrast.inc \
+	 thunks.inc type.inc types.inc
+
+ptmap.obj: dbg.inc dbgmacro.inc fix.inc lg.inc macros.inc malloc.inc \
+	 memall.inc memmacro.inc stdio.inc types.inc
+
+ptmapper.obj: dbg.inc dbgmacro.inc fix.inc lg.inc macros.inc malloc.inc \
+	 memall.inc memmacro.inc stdio.inc thunks.inc types.inc
+
+ptfloat.obj: dbg.inc dbgmacro.inc fix.inc lg.inc macros.inc malloc.inc \
+	 memall.inc memmacro.inc stdio.inc types.inc
+
+ptmap_8.obj: grs.inc macros.inc thunks.inc type.inc types.inc
+
+ptmap_n.obj: grs.inc macros.inc thunks.inc type.inc types.inc
+
+ptpersp.obj: macros.inc thunks.inc type.inc types.inc
+
+ptlinear.obj: dbg.inc dbgmacro.inc fix.inc lg.inc macros.inc malloc.inc \
+	 memall.inc memmacro.inc stdio.inc thunks.inc types.inc
+
+pt_main.obj: dbg.h dbgmacro.h dev2d.h fix.h g2spoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 plyparam.h plyrast.h pt.h pt_asm.h ptmap.h tmapd.h tmaps.h types.h
+
+pt_map.obj: dbg.h dbgmacro.h dev2d.h fix.h g2spoint.h grspoint.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+	 mprintf.h mxang.h prof.h profile.h ptmap.h ptmapper.h r3ds.h \
+	 recip.h scancvt.h timer.h types.h
+
+pt_duv.obj: fix.h matrix.h matrixs.h mxang.h prof.h profile.h timer.h \
+	 types.h
+
+pt_grad.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h plyparam.h plyrast.h \
+	 tmapd.h tmaps.h types.h
+
+blend.obj: blncon.h dev2d.h fix.h matrixs.h mxang.h types.h
+
+init.obj: dbg.h dbgmacro.h dev2d.h fix.h g2d.h g2makewr.h matrixs.h mxang.h \
+	 setdrv.h types.h
+
+svgainit.obj: dev2d.h fix.h matrixs.h mxang.h types.h
+
+setdrv.obj: g2d.h
+
+g2makewr.obj: codewrit.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+g2rot.obj: dev2d.h fix.h grtm.h matrixs.h mxang.h plytyp.h types.h
+
+g2circ.obj: dev2d.h fix.h grcurv.h matrixs.h mxang.h types.h
+
+g2el.obj: buffer.h dev2d.h fix.h matrixs.h memall.h memmacro.h mxang.h \
+	 plytyp.h rastel.h raster.h tmpalloc.h types.h
+
+g2ov.obj: buffer.h dev2d.h fix.h matrixs.h memall.h memmacro.h mxang.h \
+	 plytyp.h rastel.h raster.h tmpalloc.h types.h
+
+g2ring.obj: buffer.h dev2d.h fix.h matrixs.h memall.h memmacro.h mxang.h \
+	 plytyp.h rastel.h raster.h tmpalloc.h types.h
+
+point.obj: dev2d.h fix.h g2spoint.h matrixs.h mxang.h point.h types.h
+
+rastel.obj: altfix.h buffer.h dev2d.h fix.h fixreal.h matrixs.h memall.h \
+	 memmacro.h mxang.h plytyp.h raster.h tmpalloc.h types.h
+
+chkply.obj: fix.h plytyp.h polyint.h types.h
+
+chkedges.obj: cseg.inc dseg.inc fix.inc plytyp.inc thunks.inc type.inc
+
+chkedgeb.obj: cseg.inc dseg.inc fix.inc plytyp.inc type.inc

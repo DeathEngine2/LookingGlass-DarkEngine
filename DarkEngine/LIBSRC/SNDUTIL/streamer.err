@@ -1,0 +1,2 @@
+x:\prj\tech\libsrc\sndutil\streamer.c(70): Warning! W301: No prototype found for 'LOG3'
+x:\prj\tech\libsrc\sndutil\streamer.c(204): Warning! W301: No prototype found for 'LOG0'

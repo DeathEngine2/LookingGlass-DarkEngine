@@ -1,0 +1,13 @@
+mpvm.c
+x:\prj\tech\libsrc\mp\mpvm.c(82) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(82) : warning C4024: 'mp_solve_limb' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpvm.c(94) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(94) : warning C4024: 'mp_solve_limb' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpvm.c(144) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(144) : warning C4024: 'mp_evaluate_motion' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpvm.c(145) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(145) : warning C4024: 'mp_apply_motion' : different types for formal and actual parameter 2
+x:\prj\tech\libsrc\mp\mpvm.c(161) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(161) : warning C4024: 'mp_evaluate_motion' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpvm.c(162) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpvm.c(162) : warning C4024: 'mp_apply_motion' : different types for formal and actual parameter 2

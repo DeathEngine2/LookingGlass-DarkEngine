@@ -1,0 +1,100 @@
+    <HTML> 
+	<HEAD> 
+	    <TITLE>GDBM_File - Perl5 access to the gdbm library.
+
+</TITLE> 
+	</HEAD>
+
+	<BODY>
+
+<!-- INDEX BEGIN -->
+
+<UL>
+
+	<LI><A HREF="#NAME">NAME</A>
+	<LI><A HREF="#SYNOPSIS">SYNOPSIS</A>
+	<LI><A HREF="#DESCRIPTION">DESCRIPTION</A>
+	<LI><A HREF="#AVAILABILITY">AVAILABILITY</A>
+	<LI><A HREF="#BUGS">BUGS</A>
+	<LI><A HREF="#SEE_ALSO">SEE ALSO</A>
+</UL>
+<!-- INDEX END -->
+
+<HR>
+<P>
+<H1><A NAME="NAME">NAME
+
+</A></H1>
+GDBM_File - Perl5 access to the gdbm library.
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="SYNOPSIS">SYNOPSIS
+
+</A></H1>
+<PRE>    use GDBM_File ;
+    tie %hash, 'GDBM_File', $filename, &amp;GDBM_WRCREAT, 0640);
+    # Use the %hash array.
+    untie %hash ;
+</PRE>
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="DESCRIPTION">DESCRIPTION
+
+</A></H1>
+<STRONG>GDBM_File</STRONG> is a module which allows Perl programs to make use of the facilities provided by the 
+<FONT SIZE=-1>GNU</FONT> gdbm library. If you intend to use this module you should really have a copy of the gdbm manualpage at hand.
+
+
+
+<P>
+
+Most of the libgdbm.a functions are available through the GDBM_File
+interface.
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="AVAILABILITY">AVAILABILITY
+
+</A></H1>
+Gdbm is available from any 
+<FONT SIZE=-1>GNU</FONT> archive. The master site is
+<CODE>prep.ai.mit.edu</CODE>, but your are strongly urged to use one of the many mirrors. You can
+obtain a list of mirror sites by issuing the command	<CODE>finger fsf@prep.ai.mit.edu</CODE>.
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="BUGS">BUGS
+
+</A></H1>
+The available functions and the gdbm/perl interface need to be documented.
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="SEE_ALSO">SEE ALSO
+
+</A></H1>
+<EM>perl(1)</EM>, <EM>DB_File(3)</EM>. 
+
+
+<P>
+
+</DL>
+    </BODY>
+
+    </HTML>

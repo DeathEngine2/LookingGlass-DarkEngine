@@ -1,0 +1,16 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+entrywin.obj: \
+	 lg.h \
+		 lgalt.h \
+		 dbg.h \
+			 dbgmacro.h \
+			 types.h \
+		 memall.h \
+			 memmacro.h \
+			 types.h \
+		 lgassert.h \
+			 lglog.h \
+		 lglocmsg.h \
+		 lglog.h \
+		 types.h

@@ -1,0 +1,3 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+vec2.obj: fix.h matrixs.h mxang.h types.h vec2.h

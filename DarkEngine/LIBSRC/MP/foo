@@ -1,0 +1,20 @@
+MPLIST.C:			if (m->targets)
+MPLIST.C:				mp_free(m->targets);
+MPLIST.C:				m->targets = NULL;
+MPLIST.C:		if (m->targets)
+MPLIST.C:			mp_free(m->targets);
+MPLIST.C:			m->targets = NULL;
+MPMOT.C:	m->targets = NULL;
+MPMOT.C:	m->targets = (quat *) mp_alloc(sizeof(quat) * mp->num_joints, __FILE__, __LINE__);
+MPMOT.C:	memcpy(m->targets, mp->rel_orients, sizeof(quat) * mp->num_joints);
+MPSTACK.C:      memcpy(rot, m->targets, sizeof(quat) * mp->num_joints);
+MPSTACK.C:   // targets then. 
+MPSTACK.C:   if (m->targets)
+MPSTACK.C:      quat * q = m->targets, dest;
+MPSTACK.C:                  // Use targets for placement duration.
+MPVM.C:	// Alloc targets for rotations 1 and 2, copy.
+MPVM.C:		m->targets = (quat *) mp_alloc(sizeof(quat) * ep->l->num_segments * 2, __FILE__, __LINE__);
+MPVM.C:		q = m->targets;
+MPVM.C:	// Alloc targets for rotations 1, copy.
+MPVM.C:		m->targets = (quat *) mp_alloc(sizeof(quat) * ep->l->num_segments, __FILE__, __LINE__);
+MPVM.C:		q = m->targets;

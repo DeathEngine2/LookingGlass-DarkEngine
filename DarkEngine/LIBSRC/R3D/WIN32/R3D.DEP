@@ -1,0 +1,320 @@
+
+
+block.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+         fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+         matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+         r3ds.h types.h xfrmtab.h 
+
+
+clip.obj: clip.h clipcon.h clipcon_.h cliptab.h ctxts.h fix.h grspoint.h \
+         matrixs.h mxang.h primcon.h primfunc.h primtab.h r3ds.h types.h \
+         xfrmtab.h 
+
+
+clipclip.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h cliptab.h \
+         ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+clipglob.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h clipprim.h \
+         cliptab.h clipu.h ctxts.h dbg.h dbgmacro.h fix.h grspoint.h \
+         lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h \
+         memall.h memmacro.h mprintf.h mxang.h primcon.h primtab.h \
+         r3ds.h types.h xform.h xfrmtab.h 
+
+
+clipplan.obj: clip.h clip_.h clipcon.h cliptab.h clipu.h ctxts.h dbg.h \
+         dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+         r3ds.h space.h types.h xfrmtab.h 
+
+
+clipproj.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h clipprim.h \
+         cliptab.h ctxts.h dbg.h dbgmacro.h dev2d.h fix.h grspoint.h \
+         lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+         memmacro.h mxang.h primcon.h primtab.h r3ds.h types.h xfrmtab.h 
+
+
+cliptest.obj: clip.h clipcon.h clipcon_.h clipprim.h cliptab.h clipu.h \
+         ctxts.h fix.h grspoint.h matrix.h matrixs.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+clipunsc.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h cliptab.h \
+         ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+ctxtguts.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxtguts.h ctxts.h \
+         dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h prim.h \
+         primcon.h primtab.h r3ds.h space.h types.h view.h xfrmtab.h 
+
+
+ctxtmang.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxtguts.h ctxts.h dbg.h \
+         dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+         r3dctxt.h r3ds.h types.h xfrmtab.h 
+
+
+ctxtmult.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h \
+         grspoint.h matrixs.h mxang.h primcon.h primtab.h r3dctxt.h \
+         r3ds.h types.h xfrmtab.h 
+
+
+frame.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+         fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+         matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+         r3dctxt.h r3ds.h types.h xfrmtab.h 
+
+
+init.obj: _ctxt.h _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+         dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+         r3dctxt.h r3ds.h types.h xfrmtab.h 
+
+
+object.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+         fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+         matrix.h matrixs.h memall.h memmacro.h mxang.h object.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+prim.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h grspoint.h \
+         matrixs.h mxang.h prim.h primcon.h primcon_.h primfunc.h primtab.h \
+         primtab_.h r3ds.h types.h xfrmtab.h 
+
+
+primconv.obj: fix.h grspoint.h matrixs.h mxang.h primconv.h r3ds.h types.h 
+
+
+primd3d.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h g2.h grspoint.h \
+         lgd3d.h matrixs.h mxang.h prim.h primcon.h primcon_.h primfunc.h \
+         primtab.h primtab_.h r3ds.h tmgr.h types.h xfrmtab.h 
+
+
+primface.obj: clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h fix.h \
+         grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+         matrixs.h memall.h memmacro.h mprintf.h mxang.h primcon.h \
+         primface.h primtab.h r3ds.h types.h xfrmtab.h 
+
+
+primfunc.obj: clip.h clipcon.h clipcon_.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+         fix.h grspoint.h matrixs.h mxang.h prim.h primcon.h primcon_.h \
+         primfunc.h primpoly.h primtab.h primtab_.h r3ds.h types.h \
+         xfrmtab.h 
+
+
+primg2.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h g2.h grspoint.h \
+         lgd3d.h matrixs.h mxang.h prim.h primcon.h primcon_.h primconv.h \
+         primfunc.h primtab.h primtab_.h r3ds.h tmgr.h types.h xfrmtab.h 
+
+
+primmisc.obj: _test.h clip.h clipcon.h clipcon_.h clipprim.h cliptab.h \
+         ctxts.h dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         mxang.h primcon.h primtab.h primtab_.h r3ds.h types.h xfrmtab.h 
+
+
+primnull.obj: dev2d.h fix.h grspoint.h matrixs.h mxang.h primfunc.h r3ds.h \
+         types.h 
+
+
+primpoly.obj: clip.h clipcon.h clipprim.h cliptab.h ctxts.h dev2d.h fix.h \
+         grspoint.h matrixs.h mxang.h prim.h primcon.h primface.h primpoly.h \
+         primtab.h primtab_.h r3ds.h types.h xfrmtab.h 
+
+
+space.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h clipprim.h cliptab.h \
+         ctxts.h dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h memall.h \
+         memmacro.h mxang.h prim.h primcon.h primtab.h r3ds.h types.h \
+         xfrmtab.h 
+
+
+utils.obj: clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h fix.h grspoint.h \
+         lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h \
+         memall.h memmacro.h mxang.h prim.h primcon.h primtab.h r3ds.h \
+         r3dutil.h types.h xform.h xfrmtab.h 
+
+
+view.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+         dev2d.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h view.h xfrmtab.h 
+
+
+xfrmclip.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h cliptab.h ctxts.h \
+         dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+xfrmglob.obj: clip.h clipcon.h cliptab.h ctxts.h fix.h grspoint.h matrixs.h \
+         mxang.h primcon.h primtab.h r3ds.h types.h xform.h xfrmtab.h 
+
+
+xfrmlin.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+         dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+
+
+xfrmproj.obj: _test.h _xfrm.h clip.h clip_.h clipcon.h clipcon_.h cliptab.h \
+         ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         mxang.h primcon.h primtab.h r3ds.h types.h xfrmtab.h 
+
+
+xfrmunsc.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h cliptab.h ctxts.h \
+         dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+         primtab.h r3ds.h types.h xfrmtab.h 
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+block.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+	 primtab.h r3ds.h types.h xfrmtab.h
+
+clip.obj: clip.h clipcon.h clipcon_.h cliptab.h ctxts.h fix.h grspoint.h \
+	 matrixs.h mxang.h primcon.h primfunc.h primtab.h r3ds.h types.h \
+	 xfrmtab.h
+
+clipclip.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h \
+	 cliptab.h ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h
+
+clipglob.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h \
+	 clipprim.h cliptab.h clipu.h ctxts.h dbg.h dbgmacro.h fix.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+	 matrixs.h memall.h memmacro.h mprintf.h mxang.h primcon.h primtab.h \
+	 r3ds.h types.h xform.h xfrmtab.h
+
+clipplan.obj: clip.h clip_.h clipcon.h cliptab.h clipu.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+	 r3ds.h space.h types.h xfrmtab.h
+
+clipproj.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h \
+	 clipprim.h cliptab.h ctxts.h dbg.h dbgmacro.h dev2d.h fix.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mxang.h primcon.h primtab.h r3ds.h types.h \
+	 xfrmtab.h
+
+cliptest.obj: clip.h clipcon.h clipcon_.h clipprim.h cliptab.h clipu.h \
+	 ctxts.h fix.h grspoint.h matrix.h matrixs.h mxang.h primcon.h \
+	 primtab.h r3ds.h types.h xfrmtab.h
+
+clipunsc.obj: _test.h clip.h clip_.h clipcon.h clipcon_.h clipoff.h \
+	 cliptab.h ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h
+
+ctxtguts.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxtguts.h ctxts.h \
+	 dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h prim.h \
+	 primcon.h primtab.h r3ds.h space.h types.h view.h xfrmtab.h
+
+ctxtmang.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxtguts.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+	 r3dctxt.h r3ds.h types.h xfrmtab.h
+
+ctxtmult.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h \
+	 grspoint.h matrixs.h mxang.h primcon.h primtab.h r3dctxt.h r3ds.h \
+	 types.h xfrmtab.h
+
+frame.obj: _ctxt.h clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h fix.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mxang.h primcon.h primtab.h r3dctxt.h r3ds.h \
+	 types.h xfrmtab.h
+
+init.obj: _ctxt.h _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrixs.h memall.h memmacro.h mxang.h primcon.h primtab.h \
+	 r3dctxt.h r3ds.h types.h xfrmtab.h
+
+object.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h object.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h
+
+prim.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h grspoint.h \
+	 matrixs.h mxang.h prim.h primcon.h primcon_.h primfunc.h primtab.h \
+	 primtab_.h r3ds.h types.h xfrmtab.h
+
+primconv.obj: fix.h grspoint.h matrixs.h mxang.h primconv.h r3ds.h types.h
+
+primd3d.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h g2.h \
+	 grspoint.h lgd3d.h matrixs.h mxang.h prim.h primcon.h primcon_.h \
+	 primfunc.h primtab.h primtab_.h r3ds.h tmgr.h types.h xfrmtab.h
+
+primface.obj: clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h fix.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+	 matrixs.h memall.h memmacro.h mprintf.h mxang.h primcon.h \
+	 primface.h primtab.h r3ds.h types.h xfrmtab.h
+
+primfunc.obj: clip.h clipcon.h clipcon_.h cliptab.h ctxts.h dbg.h dbgmacro.h \
+	 fix.h grspoint.h matrixs.h mxang.h prim.h primcon.h primcon_.h \
+	 primfunc.h primpoly.h primtab.h primtab_.h r3ds.h types.h xfrmtab.h
+
+primg2.obj: clip.h clipcon.h cliptab.h ctxts.h dev2d.h fix.h g2.h grspoint.h \
+	 lgd3d.h matrixs.h mxang.h prim.h primcon.h primcon_.h primconv.h \
+	 primfunc.h primtab.h primtab_.h r3ds.h tmgr.h types.h xfrmtab.h
+
+primmisc.obj: _test.h clip.h clipcon.h clipcon_.h clipprim.h cliptab.h \
+	 ctxts.h dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h primtab_.h r3ds.h types.h xfrmtab.h
+
+primnull.obj: dev2d.h fix.h grspoint.h matrixs.h mxang.h primfunc.h r3ds.h \
+	 types.h
+
+primpoly.obj: clip.h clipcon.h clipprim.h cliptab.h ctxts.h dev2d.h fix.h \
+	 grspoint.h matrixs.h mxang.h prim.h primcon.h primface.h primpoly.h \
+	 primtab.h primtab_.h r3ds.h types.h xfrmtab.h
+
+projfast.obj: cseg.inc ctxts.inc r3spoint.inc thunks.inc type.inc
+
+space.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h clipprim.h cliptab.h \
+	 ctxts.h dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h memall.h \
+	 memmacro.h mxang.h prim.h primcon.h primtab.h r3ds.h types.h \
+	 xfrmtab.h
+
+utils.obj: clip.h clipcon.h cliptab.h ctxts.h dbg.h dbgmacro.h fix.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+	 matrixs.h memall.h memmacro.h mxang.h prim.h primcon.h primtab.h \
+	 r3ds.h r3dutil.h types.h xform.h xfrmtab.h
+
+view.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+	 dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h view.h xfrmtab.h
+
+xfrmclip.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h cliptab.h ctxts.h \
+	 dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h
+
+xfrmglob.obj: clip.h clipcon.h cliptab.h ctxts.h fix.h grspoint.h matrixs.h \
+	 mxang.h primcon.h primtab.h r3ds.h types.h xform.h xfrmtab.h
+
+xfrmlin.obj: _test.h _xfrm.h clip.h clipcon.h cliptab.h ctxts.h dbg.h \
+	 dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h primcon.h \
+	 primtab.h r3ds.h types.h xfrmtab.h
+
+xfrmproj.obj: _test.h _xfrm.h clip.h clip_.h clipcon.h clipcon_.h cliptab.h \
+	 ctxts.h dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h
+
+xfrmunsc.obj: _test.h _xfrm.h clip.h clipcon.h clipcon_.h cliptab.h ctxts.h \
+	 dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h \
+	 primcon.h primtab.h r3ds.h types.h xfrmtab.h

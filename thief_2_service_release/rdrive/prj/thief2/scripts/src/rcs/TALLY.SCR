@@ -1,0 +1,77 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 2000.02.15.16.25.58;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Inventory carry-over quest variables.
+@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@#include "drkgoalt.h"
+
+// Put on the player to tally up his inventory items (by combine type, as campaign
+// quest variables) so we can grant them back again at the beginning of "Trail of Blood"
+// and "Kidnap."
+
+BEGIN_SCRIPT(PlayerTally, RootScript)
+METHODS:
+   METHOD void TallyCombine(object obj)
+   {
+      string combine="";
+      integer count=0;
+
+      if(Property.Possessed(obj,"CombineType"))
+         combine=Property.Get(obj,"CombineType");
+      else
+         return;
+
+      Debug.MPrint("Tallying combine type ",combine);
+
+      if(Property.Possessed(obj,"StackCount"))
+         count=Property.Get(obj,"StackCount");
+      else
+         // receiving script takes care of not actually giving a stack count to a
+         // that shouldn't have one.
+         count=1;
+
+      if(count!=0)
+         Quest.Set(string("CarryInv")+combine,count,kQuestDataCampaign);
+   }
+MESSAGES:
+   OnSim()
+   {
+      Debug.MPrint("On sim.");
+      if(!message.starting)
+      {
+         linkset contains=Link.GetAll("Contains",self);
+
+         while(contains.AnyLinksLeft())
+         {
+            object obj=contains.Link().To();
+            // what the heck.  tally up every damn thing we're carrying
+            TallyCombine(obj);
+            contains.NextLink();
+         }
+      }
+      DefaultOnSim();
+   }
+
+END_SCRIPT(PlayerTally)
+
+@

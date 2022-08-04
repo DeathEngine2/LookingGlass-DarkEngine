@@ -1,0 +1,42 @@
+
+
+RAMP UP 	2 days
+
+Rearrange squadmate menus: 1 day
+
+NEW SQUADMATE COMMANDS 
+
+Variants on Existing: 2 days
+  - Go to picup/nav
+  - Follow object
+  - Attack my Target
+  
+Attack my attacker: 1 day
+
+Wait for my signal/go now: 1-2 days?
+
+Avoiding combat: 1-2 days?
+ - Disengage
+ - Don't attack unless attacked
+
+
+"CURRENT PLAN" DISPLAY: 1 day
+
+SQUADMATE COMMAND SHORTCUTS: 1 day
+
+NAV POINT: done? 
+
+SPECIAL WEAPON AI: 1-2 days
+
+NEW DRONE UI: 2-3 days
+
+
+total: 13-17 days
+
+
+
+
+
+
+
+

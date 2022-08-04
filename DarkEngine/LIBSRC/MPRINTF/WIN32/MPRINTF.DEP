@@ -1,0 +1,3 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+mprintf.obj: coremutx.h lgsprntf.h mprintf.h msconv.h nameconv.h types.h

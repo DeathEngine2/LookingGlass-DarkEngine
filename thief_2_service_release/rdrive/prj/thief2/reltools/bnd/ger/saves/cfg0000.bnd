@@ -1,0 +1,105 @@
+; Binds fÅr Dark 2
+
+bind ' gamma_up
+bind + zoominsome
+bind 0+alt show_poly
+bind 1 "inv_select sword"
+bind 2 "inv_select blackjack"
+bind 3 "inv_select broadhead"
+bind 4 "inv_select water"
+bind 5 "inv_select firearr"
+bind 6 "inv_select eartharrow"
+bind 7 "inv_select gasarrow"
+bind 8 "inv_select ropeyarrow"
+bind 9 "inv_select noise"
+bind ^ clear_weapon
+bind `+alt+shift screen_dump
+bind a +moveleftfast
+bind b +block
+bind backspace clear_item
+bind c +turnrightfast
+bind d +moverightfast
+bind del lookcenter
+bind down +backfast
+bind e +leanright
+bind end+alt+ctrl+shift win_mission
+bind enter +use_item
+bind esc sim_menu
+bind f "inv_select flare"
+bind f1 "inv_select healingpotion"
+bind f10 "inv_select mine"
+bind f11 "inv_select cameragrenade"
+bind f12 "inv_select compass2"
+bind f2 "inv_select airpotion"
+bind f3 "inv_select invisipotion"
+bind f4 "inv_select slowfall"
+bind f5 "inv_select speedpotion"
+bind f6 "inv_select lockpicksm"
+bind f7 "inv_select lockpicklg"
+bind f8 "inv_select flashbomb"
+bind f9 "inv_select gasmine"
+bind g +lookdown
+bind g+alt game_mode
+bind joy_axisx +joyxaxis
+bind joy_axisy +joyforward
+bind keypad_center +backfast
+bind keypad_down crouch
+bind keypad_end +turnleftfast
+bind keypad_enter +creepon
+bind keypad_home +leanleft
+bind keypad_ins +jump
+bind keypad_left +moveleftfast
+bind keypad_minus prev_weapon
+bind keypad_pgdn +turnrightfast
+bind keypad_pgup +leanright
+bind keypad_plus next_weapon
+bind keypad_right +moverightfast
+bind keypad_slash prev_item
+bind keypad_star next_item
+bind keypad_up +walk
+bind l+alt quick_load
+bind left +moveleftfast
+bind m automap
+bind mouse1 +use_weapon
+bind mouse2 +use_item
+bind mouse_axisx mturn
+bind mouse_axisy mlook
+bind o objectives
+bind p zoomoutfull
+bind pgdn +lookdown
+bind pgup +lookup
+bind print_screen screen_dump
+bind q +leanleft
+bind r drop_item
+bind right +moverightfast
+bind s +backfast
+bind s+alt quick_save
+bind shift +runon
+bind space +jump
+bind t +lookup
+bind tab next_item
+bind tab+shift prev_item
+bind up +walk
+bind v lookcenter
+bind w +walk
+bind w+alt +leanforward
+bind x crouch
+bind y +turnleftfast
+bind Å zoomoutsome
+bind · gamma_down
+
+bow_zoom 1
+joystick_enable 0
+mouse_invert 0
+lookspring 0
+freelook 1
+mouse_sensitivity 3.0
+joy_rotate 0
+joystick_sensitivity 1.0
+joystick_deadzone 0.05
+rudder_sensitivity 1.0
+rudder_deadzone 0.05
+auto_equip 1
+auto_search 0
+goal_notify 1
+climb_touch 0

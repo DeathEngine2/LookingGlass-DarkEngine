@@ -1,0 +1,185 @@
+
+
+butarray.obj: 2d.h 2dres.h array.h butarray.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h kb.h kbcook.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h \
+         rect.h region.h res.h restypes.h slab.h slider.h tng.h tngapp.h \
+         tngbarry.h tngslidr.h types.h 
+
+
+curdrw.obj: 2d.h array.h comtools.h curdat.h cursors.h curtyp.h dbg.h \
+         dbgmacro.h dev2d.h dispapi.h dispguid.h error.h fix.h font.h \
+         g2.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h \
+         memmacro.h mouse.h mxang.h rect.h region.h slab.h types.h 
+
+
+cursors.obj: 2d.h _ui.h array.h cursors.h curtyp.h dbg.h dbgmacro.h dev2d.h \
+         error.h fix.h font.h g2.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h rect.h \
+         region.h slab.h types.h vmouse.h 
+
+
+event.obj: 2d.h _ui.h appagg.h array.h comtools.h cursors.h dbg.h dbgmacro.h \
+         dev2d.h dispapi.h dispguid.h error.h event.h fix.h font.h g2.h \
+         joystick.h kb.h kbcook.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mousevel.h mxang.h \
+         rect.h region.h slab.h types.h vmouse.h 
+
+
+gadgets.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h kb.h kbcook.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h lgsprntf.h matrixs.h memall.h memmacro.h mouse.h mxang.h \
+         prikind.h rect.h region.h res.h restypes.h slab.h tng.h tngapp.h \
+         types.h 
+
+
+hotkey.obj: _dstruct.h _ui.h array.h dbg.h dbgmacro.h error.h hash.h hotkey.h \
+         kb.h kbcook.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+         memmacro.h types.h 
+
+
+menu.obj: 2d.h 2dres.h _dstruct.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h hash.h hotkey.h kb.h kbcook.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h llist.h matrixs.h memall.h memmacro.h menu.h \
+         mouse.h mxang.h prikind.h rect.h region.h res.h restypes.h \
+         slab.h texttool.h tng.h tngapp.h tngmenu.h types.h 
+
+
+plain.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h plain.h prikind.h rect.h \
+         region.h res.h restypes.h slab.h tng.h tngapp.h tngplain.h \
+         types.h 
+
+
+pushbutt.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h pushbutt.h rect.h \
+         region.h res.h restypes.h slab.h tng.h tngapp.h tngpushb.h \
+         types.h 
+
+
+qboxgadg.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h kb.h kbcook.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h \
+         qboxgadg.h rect.h region.h res.h restypes.h slab.h tng.h tngapp.h \
+         tngqbox.h types.h 
+
+
+region.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h slist.h tng.h tngapp.h types.h 
+
+
+slab.obj: 2d.h array.h cursors.h dbg.h dbgmacro.h dev2d.h error.h fix.h \
+         font.h g2.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h rect.h region.h slab.h \
+         types.h 
+
+
+slider.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h slider.h tng.h tngapp.h tngslidr.h \
+         types.h 
+
+
+textgadg.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fakefont.h fdesc.h \
+         fix.h font.h g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h \
+         rect.h region.h res.h restypes.h slab.h slider.h textgadg.h \
+         texttool.h tng.h tngapp.h tngslidr.h tngtextg.h types.h 
+
+
+texttool.obj: dbg.h dbgmacro.h fakefont.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h memall.h memmacro.h mprintf.h rect.h texttool.h tngfont.h \
+         types.h 
+
+
+tng.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h dbg.h \
+         dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h g2.h \
+         gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h tng.h tngapp.h types.h 
+
+
+tngbarry.obj: 2d.h 2dres.h _ui.h array.h barrykey.h comtools.h cursors.h \
+         datapath.h dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h \
+         fix.h font.h g2.h gadgets.h kb.h kbcook.h keydefs.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+         mouse.h mprintf.h mxang.h prikind.h rect.h region.h res.h restypes.h \
+         slab.h tng.h tngapp.h tngbarry.h tngslidr.h types.h 
+
+
+tngfont.obj: 2d.h 2dres.h array.h comtools.h cursors.h datapath.h dbg.h \
+         dbgmacro.h dev2d.h error.h event.h fakefont.h fdesc.h fix.h \
+         font.h g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+         matrixs.h memall.h memmacro.h mouse.h mprintf.h mxang.h prikind.h \
+         rect.h region.h res.h restypes.h slab.h texttool.h tng.h tngapp.h \
+         tngfont.h types.h 
+
+
+tngmenu.obj: 2d.h 2dres.h _dstruct.h _ui.h array.h barrykey.h comtools.h \
+         cursors.h datapath.h dbg.h dbgmacro.h dev2d.h error.h event.h \
+         fdesc.h fix.h font.h g2.h gadgets.h hash.h hotkey.h kb.h kbcook.h \
+         keydefs.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h llist.h \
+         matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h rect.h \
+         region.h res.h restypes.h slab.h texttool.h tng.h tngapp.h \
+         tngfont.h tngmenu.h types.h 
+
+
+tngplain.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h tng.h tngapp.h tngplain.h types.h 
+
+
+tngpushb.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h tng.h tngapp.h tngpushb.h types.h 
+
+
+tngqbox.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h texttool.h tng.h tngapp.h tngqbox.h \
+         tngslidr.h tngtextg.h types.h 
+
+
+tngslidr.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fdesc.h fix.h font.h \
+         g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+         memall.h memmacro.h mouse.h mxang.h prikind.h rect.h region.h \
+         res.h restypes.h slab.h tng.h tngapp.h tngslidr.h types.h 
+
+
+tngtextg.obj: 2d.h 2dres.h _ui.h array.h comtools.h cursors.h datapath.h \
+         dbg.h dbgmacro.h dev2d.h error.h event.h fakefont.h fdesc.h \
+         fix.h font.h g2.h gadgets.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h \
+         rect.h region.h res.h restypes.h slab.h texttool.h tng.h tngapp.h \
+         tngfont.h tngslidr.h tngtextg.h types.h 
+
+
+uires.obj: 2d.h 2dres.h _ui.h comtools.h cursors.h datapath.h dbg.h dbgmacro.h \
+         dev2d.h error.h fdesc.h fix.h font.h g2.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mouse.h mxang.h \
+         prikind.h rect.h region.h res.h restypes.h types.h uires.h 
+
+
+vmouse.obj: dbg.h dbgmacro.h error.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h memall.h memmacro.h mouse.h mprintf.h types.h 

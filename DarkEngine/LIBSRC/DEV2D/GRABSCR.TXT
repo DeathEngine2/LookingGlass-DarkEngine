@@ -1,0 +1,42 @@
+_TEXT segment para public use32 'CODE'                                                                                              
+_TEXT ends                                                                                                                          
+                                                                                                                                    
+S:\PRJ\TECH\LIBSRC\DEV2D>grep "*" cseg.inc                                                                                          
+ * Revision 1.1  1996/04/10  16:24:45  KEVIN                                                                                        
+ * Initial revision                                                                                                                 
+ *                                                                                                                                  
+                                                                                                                                    
+S:\PRJ\TECH\LIBSRC\DEV2D>grep "*" *.inc                                                                                             
+bitmap.inc: * Revision 1.1  1996/04/10  16:24:29  KEVIN                                                                             
+bitmap.inc: * Initial revision                                                                                                      
+bitmap.inc: *                                                                                                                       
+cseg.inc: * Revision 1.1  1996/04/10  16:24:45  KEVIN                                                                               
+cseg.inc: * Initial revision                                                                                                        
+cseg.inc: *                                                                                                                         
+dseg.inc: * Revision 1.1  1996/04/10  16:24:56  KEVIN                                                                               
+dseg.inc: * Initial revision                                                                                                        
+dseg.inc: *                                                                                                                         
+grd.inc: * Revision 1.1  1996/04/10  16:25:04  KEVIN                                                                                
+grd.inc: * Initial revision                                                                                                         
+grd.inc: *                                                                                                                          
+rsdblt.inc:        lea     ecx,[2*ecx+ecx]                                                                                          
+rsdblt.inc:        mov     [edi+n],eax    ;3*16                                                                                     
+rsdunpck.inc:        lea     ecx,[2*ecx+ecx]                                                                                        
+rsdunpck.inc:        mov     [edi+n],eax    ;3*16                                                                                   
+valloc.inc: * Revision 1.1  1996/04/10  16:26:40  KEVIN                                                                             
+valloc.inc: * Initial revision                                                                                                      
+valloc.inc: *                                                                                                                       
+vgabios.inc: * Revision 1.1  1996/04/10  16:27:06  KEVIN                                                                            
+vgabios.inc: * Initial revision                                                                                                     
+vgabios.inc: *                                                                                                                      
+vgaregs.inc: * Revision 1.1  1996/04/10  16:27:15  KEVIN                                                                            
+vgaregs.inc: * Initial revision                                                                                                     
+vgaregs.inc: *                                                                                                                      
+                                                                                                                                    
+S:\PRJ\TECH\LIBSRC\DEV2D>grep "*" *.asm                                                                                             
+vgaasm.asm:        ; calculate start address = bits-base + y*row + x/4.                                                             
+vgaasm.asm:        lea     ecx,[edx+2*edx]         ; ecx = 3*count                                                                  
+vgaasm.asm:        lea     ecx,[edx+2*edx]         ; ecx = 3*count                                                                  
+vgaasm.asm:        shl     ax,5                    ;ax=w/8*256                                                                      
+                                                                                                                                    
+S:\PRJ\TECH\LIBSRC\DEV2D>grabscr                                                                                                    

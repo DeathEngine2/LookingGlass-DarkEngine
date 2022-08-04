@@ -1,0 +1,5 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+rectest.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h mprintf.h recapi.h recguid.h \
+	 types.h

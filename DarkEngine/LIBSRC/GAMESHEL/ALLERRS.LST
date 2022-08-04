@@ -1,0 +1,10 @@
+All errors (02-11-98, 09:44:12):
+
+Errors in DGSHELL.ERR (09-03-97, 17:10):
+
+Errors in wgshell.err (02-11-98, 09:39):
+
+p:\w106\h\nt\nb30.h(1): Error! E101: (col 0) keyboard interrupt detected 
+p:\w106\h\nt\windows.h(167): Error! E077: (col 9) missing matching #endif directive 
+p:\w106\h\nt\windows.h(60): Error! E077: (col 9) missing matching #endif directive 
+p:\w106\h\nt\windows.h(16): Error! E077: (col 9) missing matching #endif directive 

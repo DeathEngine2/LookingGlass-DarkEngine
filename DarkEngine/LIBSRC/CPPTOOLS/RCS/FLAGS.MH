@@ -1,0 +1,38 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 1996.04.29.16.27.12;  author TOML;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@dev_cpptools = cpptools
+dev_lib_flav = dbg
+dev_obj_flav = dbg
+
+##########################
+#
+# The above defaults can be overridden in flagsloc.mh, which is a local
+# per-person file, unlike flags.mh, which is universal.  You may also
+# want to set MASTER_FLAG in there.
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+@

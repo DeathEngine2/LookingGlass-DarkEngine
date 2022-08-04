@@ -1,0 +1,6 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+genguid1.obj: appguid.h arqguid.h cachguid.h comtools.h dbg.h dbgmacro.h \
+	 dispguid.h gshlguid.h indvguid.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h loopguid.h memall.h memmacro.h moviguid.h objcguid.h \
+	 recguid.h thrmguid.h types.h wappguid.h wdspguid.h wnshguid.h

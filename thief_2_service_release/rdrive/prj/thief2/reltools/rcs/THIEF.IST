@@ -1,0 +1,38 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 1999.10.05.18.29.58;  author adurant;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@for mkitype
+@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@r:\prj\thief2\daily\cd1\thief2\itypes.m
+r:\prj\thief2\daily\cd1\thief2
+*
+r:\prj\thief2\reltools\exclude.m
+r:\prj\thief2\daily\cd1\thief2\itypes.f
+r:\prj\thief2\daily\cd1\thief2
+*
+r:\prj\thief2\reltools\exclude.f
+r:\prj\thief2\daily\cd1\thief2\itypes.t
+r:\prj\thief2\daily\cd1\thief2
+*
+r:\prj\thief2\reltools\exclude.t
+@

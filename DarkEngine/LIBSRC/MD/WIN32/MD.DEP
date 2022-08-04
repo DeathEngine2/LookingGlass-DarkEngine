@@ -1,0 +1,41 @@
+
+
+render.obj: dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h md.h md_.h \
+         mds.h memall.h memmacro.h mprintf.h mxang.h r3d.h r3ds.h types.h 
+
+
+debug.obj: fix.h grspoint.h matrix.h matrixs.h mdd.h mds.h mxang.h r3ds.h \
+         types.h 
+
+
+fancy.obj: fix.h grspoint.h matrix.h matrixs.h md.h mds.h mdutil.h mprintf.h \
+         mxang.h r3d.h r3ds.h types.h 
+
+
+hitdet.obj: fix.h grspoint.h matrix.h matrixs.h mds.h mxang.h r3ds.h types.h 
+
+
+light.obj: fix.h grspoint.h matrix.h matrixs.h md.h mds.h mprintf.h mxang.h \
+         r3d.h r3ds.h types.h 
+
+
+mipmap.obj: dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h mds.h mdutil.h memall.h \
+         memmacro.h mxang.h r3d.h r3ds.h types.h 
+
+
+scale.obj: dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h md.h mds.h memall.h memmacro.h mxang.h \
+         r3ds.h types.h 
+
+
+shear.obj: dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h md.h mds.h memall.h memmacro.h mxang.h \
+         r3ds.h types.h 
+
+
+utils.obj: comtools.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h \
+         lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h md.h mds.h \
+         mdutil.h memall.h memmacro.h mxang.h prikind.h r3ds.h res.h \
+         restypes.h tmgr.h types.h 

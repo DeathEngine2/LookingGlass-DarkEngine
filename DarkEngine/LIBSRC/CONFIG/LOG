@@ -1,0 +1,18 @@
+WARNING: Can't find dependency file win32\config.dep.
+map root w: = x:\prj\tech\obj\win32\w105\a611\libsrc\config >\dev\nul
+map root v: = x:\prj >\dev\nul
+
+Performing flags check...
+
+Building in backing tree; use 'make depend' if necessary.
+config.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\config\config.c
+time: 4 sec
+cfg.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\config\cfg.c
+time: 0 sec
+Archiving config.lib.  Flavor = dbg.
+config.lib <-- nonexistent
+time: 1 sec
+total time: 5 sec
+Deleting temporary files in mk174379.

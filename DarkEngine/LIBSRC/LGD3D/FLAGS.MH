@@ -1,0 +1,15 @@
+%if $(COMP)==w110
+ILINK = 1
+%endif
+
+dev_d3dtest = d3dtest
+dev_lib_flav = dbg
+
+USE_D3D2_API = USE_D3D2_API
+MONO_SPEW =
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+
+ALL_FLAGS = $(USE_D3D2_API) $(MONO_SPEW)

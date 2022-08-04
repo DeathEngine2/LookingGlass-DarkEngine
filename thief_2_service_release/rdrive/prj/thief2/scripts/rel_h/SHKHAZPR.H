@@ -1,0 +1,33 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+// $Header: r:/prj/cam/src/shock/RCS/shkhazpr.h 1.1 1998/10/26 13:28:35 XEMU Exp $
+
+#include <propfac_.h>
+#include <propbase.h>
+
+// current ambient rad level
+#define PROP_RADAMBIENT_NAME "RadAmb"
+EXTERN IFloatProperty *gPropRadAmbient;
+
+// personal radiation level
+#define PROP_RADLEVEL_NAME "RadLevel"
+EXTERN IFloatProperty *gPropRadLevel;
+
+// ambient radiation dropoff rate
+#define PROP_RADDRAIN_NAME "RadDrain"
+EXTERN IFloatProperty *gPropRadDrain;
+
+// base radiation absorption rate
+#define PROP_RADABSORB_NAME "RadAbsorb"
+EXTERN IFloatProperty *gPropRadAbsorb;
+
+// base radiation absorption rate
+#define PROP_RADRECOVER_NAME "RadRecover"
+EXTERN IFloatProperty *gPropRadRecover;
+
+// Toxin level
+#define PROP_TOXIN_NAME "Toxin"
+EXTERN IFloatProperty *gPropToxin;

@@ -1,0 +1,10 @@
+All errors (02-11-98, 09:48:54):
+
+Errors in config.err (02-11-98, 09:48):
+
+x:\prj\tech\h\hashfns.h(16): Error! E1009: Expecting ',' or ';' but found 'HashString'
+x:\prj\tech\h\hashfns.h(21): Error! E1009: Expecting ',' or ';' but found 'HashStringCaseless'
+x:\prj\tech\h\hashfns.h(28): Error! E1009: Expecting ',' or ';' but found 'HashGUID'
+x:\prj\tech\h\hashfns.h(33): Error! E1009: Expecting ',' or ';' but found 'HashPtr'
+x:\prj\tech\h\hashfns.h(38): Error! E1009: Expecting ',' or ';' but found 'HashLong'
+x:\prj\tech\h\hashfns.h(48): Error! E1009: Expecting ',' or ';' but found 'HashThing'

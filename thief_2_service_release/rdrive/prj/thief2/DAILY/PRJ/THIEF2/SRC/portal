@@ -1,0 +1,28986 @@
+// $Header: r:/t2repos/thief2/src/portal/animlit.c,v 1.4 2000/02/19 12:32:39 toml Exp $
+///////////////////////////////////////////////////////////////
+// animated lighting--now, with lightmaps!
+
+#include <lg.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <animlit.h>
+#include <fix.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+
+#if 0
+
+  // max number of lights, at 8 bytes apiece
+#define MAX_LIGHTS 1024
+
+  // max number of animating lights; of course, non-animating
+  // lights should probably not go through this system, unless
+  // you just use it with your own system for modifying lights
+#define MAX_ANIM_LIGHTS  MAX_LIGHTS
+
+  // max number of light-vs-cell interactions
+#define MAX_LIGHT_REGIONS  8192
+
+  // max number of light-vs-vertex interactions
+static unsigned char light_raw_data[1 << 17];   // 128K
+
+typedef struct
+{
+   uint16  cell_id;
+   uint8 num_verts;
+   uint8 surf_offset;
+} CellLightInfo;
+
+//static CellLightInfo cell_info[MAX_LIGHT_REGIONS];
+
+typedef struct
+{
+     // generic database stuff
+   uint32 light_raw_offset;   // offset into light_raw_data
+   uint16 num_cells;          // number of cells we affect
+   uint16 first_cell;         // offset into cell_info of first one
+
+     // current light animation info
+   uint16 current_brightness;
+   uint16 default_brightness;
+   uint16 anim;
+   uint16 padding;
+} LightInfo;
+
+static LightInfo light_info[MAX_LIGHTS];
+
+static int num_lights;
+static int num_cells, data_used;
+
+//   Do a lighting delta for a light by a particular brightness
+//   This is an internal function.
+
+//  Turn lighting to a particular brightness
+//  This is mostly an internal function
+
+void LightClear(void)
+{
+//   max_light_anims = 0;
+   num_lights = 0;
+   num_cells = 0;
+   data_used = 0;
+}
+
+
+
+void LightSetBrightness(int t, int b)
+{
+   if (light_info[t].current_brightness == b)
+      return;
+#if 0
+   if (light_info[t].current_brightness)
+      LightAdjust(t, -light_info[t].current_brightness);
+
+   LightAdjust(t, b);
+#endif
+
+   light_info[t].current_brightness = b;
+}
+
+#endif
+
+////////////////////////////////////////////////////////////////
+//
+// Here on down is the old vertex-based animated lighting.
+// None of this code is active.
+//
+
+
+//  Vertex-based lighting animation
+
+
+//
+// The basic idea is that for each animating light,
+// we keep a list of all the vertices it affected,
+// and what the brightness of that was.
+//
+// If we want to support dynamically loaded cells
+// (which the rest of portal supports), we probably
+// need to make this data dynamically loaded.  That
+// means inverting it so each cell stores it's associated
+// lighting information, which isn't worth my effort
+// right now.
+//
+// Once we have production levels, we should collect
+// stats and see if we should compress the data more
+// (e.g. do we have lots of runs of 0).  It might also
+// turn out that we could supercompress it by using
+// less precision (maybe only 4 or 5 bits), and then
+// delta encoding that (producing even more 0s), or
+// some such.
+
+  // I think lg.h secretly includes some old version of sean.h,
+  // so we don't need these.
+#if 0
+typedef unsigned  char uint8;
+typedef unsigned short uint16;
+typedef unsigned  long uint32;
+
+typedef   signed  char  int8;
+typedef          short  int16;
+typedef           long  int32;
+#endif
+
+
+#if 0
+//  Turn lighting off
+
+void LightTurnOff(int t)
+{
+   LightSetBrightness(t, 0);
+}
+
+
+//  Turn lighting on
+
+void LightTurnOn(int t)
+{
+   LightSetBrightness(t, light_info[t].default_brightness);
+}
+
+
+//  Set the brightness for a light without changing its current state
+
+void LightSet(int t, int b)
+{
+   light_info[t].default_brightness = b;
+}
+
+
+//  Turn lighting on setting the brightness
+
+void LightTurnOnSet(int t, int b)
+{
+   LightSet(t,b);
+   LightTurnOn(t);
+}
+
+
+//  Check if light is on (non-zero) or off.  This doesn't
+//  check the current against default or anything like that.
+
+bool IsLightOn(int t)
+{
+   return light_info[t].current_brightness != 0;
+}
+
+//  Toggle lighting
+
+void LightToggle(int t)
+{
+   if (IsLightOn(t))
+      LightTurnOff(t);
+   else
+      LightTurnOn(t);
+}
+
+//
+//
+//
+////////////////////////////////////////////////////
+//
+//
+//    animating light system
+//
+//  for each light currently in the animation system,
+//  we do wacky automatic processing.
+//
+//  the basic moves a light can make are:
+//
+//    1    turn on in X time (X can be 0)
+//    0    turn off in X time (X can be 0)
+//    b    set a new brightness value X
+//    w    delay for time X
+//    r    execute next instruction with random range from this X to it's X
+//    c    branch to beginning of script
+//    s    skip next instruction X/256 % of the time
+//    j    jump relative by X instructions (from the j)
+//    .    end animation
+//     
+//  'r' does not work as a prefix on 's'
+//
+//  you can make a random jump table with 'rj' which then
+//  jump into a collection of jumps
+//
+//  So we have a simple light scripting language
+//  which defines how a light behaves.
+//
+//  Time is in "ticks", which are 70 times/second
+//  Actually, they're in whatever the app makes them
+
+enum
+{
+   LA_NOP,
+   LA_DELAY,
+   LA_FADE
+};
+
+typedef struct
+{
+   uchar *script;
+   uint16 iptr;
+   uint16 light;
+   uint16 state;
+   uint16 delay;
+   fix cur_bright;
+   fix delta_bright;
+} LightAnimInfo;
+
+//LightAnimInfo anim_info[MAX_ANIM_LIGHTS];
+//static int max_light_anims=0;
+
+int LightAnimAlloc(int light)
+{
+   // if we already have an animation playing, screw it
+   // this shouldn't happen because SetScript should free it
+
+   if (light_info[light].anim)
+      return 0;
+
+   if (max_light_anims < MAX_LIGHTS) {
+      int a = ++max_light_anims;
+      anim_info[a].light = light;
+      anim_info[a].state = LA_DELAY;
+      anim_info[a].delay = 1;
+      anim_info[a].iptr  = 0;
+
+      light_info[light].anim = a;
+      return a;
+   }
+   return 0;
+}
+
+void LightAnimFree(int a)
+{
+   light_info[anim_info[a].light].anim = 0;
+   if (a < max_light_anims) {
+      anim_info[a] = anim_info[max_light_anims];
+      light_info[anim_info[a].light].anim = a;
+   }
+   --max_light_anims;
+}
+
+void LightAnimSetScript(int t, uchar *script)
+{
+   int a;
+   // check if this light already has a script
+
+   if (light_info[t].anim)
+      LightAnimFree(light_info[t].anim);
+
+   if (!script)
+      return;
+
+   a = LightAnimAlloc(t);
+   if (!a)
+      return;    // so sad!
+   anim_info[a].script = script;
+}
+
+fix LightDefault(int t)
+{
+   return fix_make(light_info[t].default_brightness, 0x8000);
+}
+
+bool LightAnimPlayScript(int a, int ticks)
+{
+   uchar *script = anim_info[a].script;
+   int i = anim_info[a].iptr;
+   int j = anim_info[a].light;
+   int random_base = -1, parm;
+   bool turn_off = FALSE;
+
+   while (ticks) {
+      if (anim_info[a].delay) {
+         int t = anim_info[a].delay;
+         if (ticks < t)
+            t = ticks;
+
+         if (anim_info[a].state == LA_FADE)
+            anim_info[a].cur_bright += anim_info[a].delta_bright * t;
+
+         ticks -= t;
+
+         anim_info[a].delay -= t;
+         if (anim_info[a].delay)
+            goto done;
+      }
+
+      // compute parameter to next element
+      parm = script[i+1];
+      if (random_base != -1) {
+         parm = (rand() >> 2) % (parm - random_base) + random_base;
+         random_base = -1;
+      }
+
+      switch (tolower(script[i])) {
+         case 'b':
+            LightSet(j, parm);
+            break;
+         case 'w':
+            anim_info[a].state = LA_DELAY;
+            anim_info[a].delay = parm;
+            break;
+         case 'r':
+            random_base = parm;
+            break;
+         case 0:    // go off the end, start over!
+         case 'c':
+            i = 0;
+            goto no_skip;
+         case 's':
+            if (((rand() >> 3) & 255) < script[i+1])
+               i += 2;
+            break;
+         case 'j':
+            i = i + 2 * ((signed char) script[i+1]);
+            goto no_skip;
+         case '1':
+            if (parm) {
+               anim_info[a].state = LA_FADE;
+               anim_info[a].delta_bright =
+                 (LightDefault(j) - anim_info[a].cur_bright) / parm;
+               anim_info[a].delay = parm;
+            } else {
+               anim_info[a].cur_bright = LightDefault(j);
+            }
+            break;
+         case '0':
+            if (parm) {
+               anim_info[a].state = LA_FADE;
+               anim_info[a].delta_bright =
+                    (0 - anim_info[a].cur_bright) / parm;
+               anim_info[a].delay = parm;
+            } else {
+               anim_info[a].cur_bright = 0;
+            }
+            break;
+         case '.':
+            turn_off = TRUE;
+            goto done;
+      }
+
+      i += 2;
+
+     no_skip:
+      ;
+   }
+done:
+   anim_info[a].iptr = i;
+   LightSetBrightness(anim_info[a].light, fix_int(anim_info[a].cur_bright));
+   return turn_off;
+}
+
+void LightAnimPlayScripts(int ticks)
+{
+   int i;
+   for (i=1; i <= max_light_anims;) {
+      if (LightAnimPlayScript(i, ticks))
+         LightAnimFree(i);
+      else
+         ++i;
+   }
+}
+
+
+//
+//
+//
+//
+////////////////////////////////////////////////////
+//
+//   Interface to build the lighting data stuff   //
+//
+//  The calling convention is this:
+//
+//     LightDefineStart();
+//        LightCellStart(cell_number);
+//           LightAtVertex(int vertex, uchar lighting);
+//        LightCellEnd();
+//     lt = LightDefineEnd();
+//
+//  Within any LightCell block, all vertex numbers
+//  passed in must be ascending.  They do not have to
+//  be sequential, however, they are treated as if
+//  they are (gaps are filled with 0s).
+//
+//  Empty cells (i.e. do a LightCellStart, but never do any
+//  LightAtVertex) do not cost any storage, since we allocate
+//  cell storage only on the first call to LightAtVertex
+//
+
+static int skipped;
+static int added;
+
+void LightDefineStart(void)
+{
+   light_info[num_lights].light_raw_offset = data_used;
+   light_info[num_lights].first_cell = num_cells;
+   light_info[num_lights].num_cells = 0;
+   light_info[num_lights].current_brightness = 0;
+   light_info[num_lights].default_brightness = 0;
+   light_info[num_lights].anim = 0;
+
+   skipped = added = 0;
+}
+
+int LightDefineEnd(void)
+{
+   return num_lights++;
+}
+
+static int current_loc, current_cell;
+static int last_vertex;
+
+void LightCellStart(int cell)
+{
+   current_loc = -1;
+   current_cell = cell;
+}
+
+void LightCellEnd(void)
+{
+}
+
+
+void LightAdjust(int t, int b)
+{
+   int i,r,n,z,k, c;
+   uchar a, *data;
+   bool negative;
+   r = light_info[t].first_cell;
+   n = light_info[t].num_cells;
+
+   z = light_info[t].light_raw_offset;
+
+   negative = b < 0;
+   if (negative) b = -b;
+
+   while (n--) {
+      k = cell_info[r].num_verts;
+      i = cell_info[r].surf_offset;
+      data = portal_get_lighting_data(cell_info[r].cell_id) + i;
+      if (!negative)
+         while (k--) {
+            a = light_raw_data[z++];
+            if (a) {
+               c = (int) *data + ((a * b) >> 8);
+               *data = (c < 255 ? c : 255);
+            }
+            ++data;
+         }
+      else
+         while (k--) {
+            a = light_raw_data[z++];
+            if (a) {
+               c = (int) *data - ((a * b) >> 8);
+               *data = (c > 0 ? c : 0);
+            }
+            ++data;
+         }
+      ++r;
+   }
+}
+
+
+void LightAtVertex(int vertex, uchar lighting)
+{
+   if (current_loc == -1) {
+      // allocate cell
+
+      current_loc = num_cells++;
+      ++light_info[num_lights].num_cells;
+
+      cell_info[current_loc].surf_offset = vertex;
+      cell_info[current_loc].num_verts = 0;
+      cell_info[current_loc].cell_id = current_cell;
+
+   } else if (vertex != last_vertex + 1) {
+      int i;
+#if 0
+      if (vertex <= last_vertex) {
+         mprintf("Vertices out of order in LightAtVertex\n");
+         return;
+      }
+#endif
+      cell_info[current_loc].num_verts += vertex - last_vertex - 1;
+      skipped += vertex - last_vertex - 1;
+      for (i = last_vertex + 1; i < vertex; ++i)
+         light_raw_data[data_used++] = 0;
+   }
+
+   ++cell_info[current_loc].num_verts;
+   light_raw_data[data_used++] = lighting;
+   last_vertex = vertex;
+   ++added;
+}
+#endif
+
+// $Header: r:/t2repos/thief2/src/portal/animlit.h,v 1.3 2000/01/29 13:37:11 adurant Exp $
+#pragma once
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+extern void LightTurnOff(int t);
+extern void LightTurnOn(int t);
+extern void LightTurnOnSet(int t, int b);
+extern void LightSet(int t, int b);
+extern bool IsLightOn(int t);
+extern void LightToggle(int t);
+
+// internal function, doesn't change default brightness
+//   could be useful for flickering to partial bright
+extern void LightSetBrightness(int t, int b);
+
+// animation system
+extern void LightAnimSetScript(int t, uchar *script);
+extern void LightAnimPlayScripts(int ticks);
+
+//  Defining the meaning of lights
+
+extern void LightDefineStart(void);
+extern int LightDefineEnd(void);
+
+extern void LightCellStart(int cell_id);
+extern void LightCellEnd(void);
+
+extern void LightAtVertex(int vertex, uchar lighting);
+
+// clear all existing definitions of lights
+extern void LightClear(void);
+
+//// INTERFACE BACK INTO PORTAL ////
+// not defined by lighting.h, but I'm making sure to
+// keep the interface as narrow as possible and this
+// is one strange way to do it.  The function is defined
+// in portal.c
+extern unsigned char *portal_get_lighting_data(int cell);
+
+
+#ifdef __cplusplus
+};
+#endif
+// $Header: r:/t2repos/thief2/src/portal/bspsphr.c,v 1.8 2000/02/19 12:32:40 toml Exp $
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   bspsphr.c
+
+   In this module we intersect spheres with those leaves of the BSP
+   which correspond to cells in the world rep.  It ignores, entirely,
+   the question of whether the result is contiguous.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#include <mprintf.h>
+#include <wrdb.h>
+#include <wrfunc.h>
+#include <wrbsp.h>
+#include <bspsphr.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+
+// If we hit this limit, that's one biiiig level.  Or horribly
+// unbalanced.
+#define MAX_STACK_SIZE 200
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   When we find the set of cells intersecting a given sphere we don't
+   check whether the sphere also intersects terrain.  So since the set
+   of cells returned is complete, it may not be one contiguous space.
+
+   We return the number of cells.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int portal_cells_intersecting_sphere(Location *loc, float radius, 
+                                     int *output_list)
+{
+   wrBspNode *stack[MAX_STACK_SIZE];
+   wrBspNode *pCurNode;
+   PortalCell *cell;
+   PortalPlane *plane, *end_plane;
+   mxs_vector *normal;
+   int stack_pos;
+   int cell_id;
+   mxs_real dist;
+   float minus_radius = -radius;
+   mxs_vector center = loc->vec;
+   int num_cells = 0;
+
+   // We only find our initial cell if we're told the location is
+   // marked as invalid.  Otherwise, outside of a ship build anyhow,
+   // we spew if the hint is bad.
+   if (loc->cell == CELL_INVALID) {
+      cell_id = CellFromLoc(loc);
+
+      if (cell_id == CELL_INVALID) {
+         Warning(("portal_cells_intersecting_sphere: bad loc.\n"));
+         return 0;
+      }
+   }
+
+#ifdef DBG_ON
+   if (!PortalTestInCell(loc->cell, loc)) {
+      Warning(("portal_cells_intersecting_sphere: loc with fabulous hint.\n"));
+      return 0;
+   }
+#endif // DBG_ON
+
+   // It's a lot quicker if our sphere is entirely within our initial
+   // cell.
+   cell = WR_CELL(loc->cell);
+   plane = cell->plane_list;
+   end_plane = plane + cell->num_planes;
+
+   while (plane != end_plane) {
+      normal = &plane->normal;
+      dist = center.x * normal->x
+           + center.y * normal->y
+           + center.z * normal->z
+           + plane->plane_constant;
+
+      if (dist < radius)
+         goto more_than_one_cell;
+
+      plane++;
+   }
+
+   *output_list = loc->cell;
+   return 1;
+
+more_than_one_cell:
+
+   stack_pos = 0;
+   stack[0] = g_wrBspTree;
+
+   while (stack_pos != -1) {
+      pCurNode = stack[stack_pos];
+      --stack_pos;
+
+      if (wrBspIsLeaf(pCurNode)) {
+         cell_id = pCurNode->cell_id;
+
+         // Is this a real leaf, or an artifact of the solid medium in
+         // the CSG BSP?
+         if (cell_id != -1) {
+
+            if (num_cells == (BSPSPHR_OUTPUT_LIMIT - 1)) {
+#ifndef SHIP
+               mprintf("portal_cells_intersecting_sphere: "
+                       "too many cells @ (%g %g %g)\n",
+                       loc->vec.x, loc->vec.y, loc->vec.z);
+#endif
+               return num_cells;
+            }
+
+            output_list[num_cells++] = cell_id;
+         }
+
+      } else {
+
+         // It's an internal node.  If our sphere straddles the plane
+         // we end up visiting both sides.
+         if (wrBspIsReversed(pCurNode))
+            dist = -mx_dot_vec(&center, &pCurNode->plane->normal) - pCurNode->plane->plane_constant;
+         else
+            dist = mx_dot_vec(&center, &pCurNode->plane->normal) + pCurNode->plane->plane_constant;
+
+         if (dist > minus_radius)
+         {      
+            if (wrInsideIndex(pCurNode) != WRBSP_INVALID)
+               stack[++stack_pos] = &g_wrBspTree[wrInsideIndex(pCurNode)];
+         }
+
+         if (dist < radius)
+         {
+            if (wrOutsideIndex(pCurNode) != WRBSP_INVALID)
+               stack[++stack_pos] = &g_wrBspTree[wrOutsideIndex(pCurNode)];
+         }
+
+#ifndef SHIP
+         AssertMsg(stack_pos < MAX_STACK_SIZE, 
+                   "portal_cells_intersecting_sphere: "
+                   "out of stack space.\n");
+#endif // ~SHIP
+      }
+   }
+
+   return num_cells;
+}
+
+// $Header: r:/t2repos/thief2/src/portal/bspsphr.h,v 1.3 2000/01/29 13:37:12 adurant Exp $
+#pragma once
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   bspsphr.h
+
+   export header for bspsphr.c
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#ifndef _BSPSPHR_H_
+#define _BSPSPHR_H_
+
+#include <lg.h>
+
+// Clients will want to use this limit in sizing their output arrays.
+#define BSPSPHR_OUTPUT_LIMIT 512
+
+EXTERN int portal_cells_intersecting_sphere(Location *loc, float radius, 
+                                            int *output_list);
+
+#endif // ~_BSPSPHR_H_
+
+// $Header: r:/t2repos/thief2/src/portal/char.c,v 1.2 2000/02/19 12:32:41 toml Exp $
+
+// dumb character renderer
+// only does numbers for now
+
+#include <lg.h>
+#include "char.h"
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+static char *char_data[10] = {
+"xxxx\n"
+"x  x\n"
+"x  x\n"
+"x  x\n"
+"xxxx\n",
+
+"  x \n"
+"  x \n"
+"  x \n"
+"  x \n"
+"  x \n",
+
+"xxxx\n"
+"   x\n"
+"xxxx\n"
+"x   \n"
+"xxxx\n",
+
+"xxxx\n"
+"   x\n"
+" xxx\n"
+"   x\n"
+"xxxx\n",
+
+"x  x\n"
+"x  x\n"
+"xxxx\n"
+"   x\n"
+"   x\n",
+
+"xxxx\n"
+"x   \n"
+"xxxx\n"
+"   x\n"
+"xxxx\n",
+
+"xxxx\n"
+"x   \n"
+"xxxx\n"
+"x  x\n"
+"xxxx\n",
+
+"xxxx\n"
+"   x\n"
+"   x\n"
+"   x\n"
+"   x\n",
+
+"xxxx\n"
+"x  x\n"
+"xxxx\n"
+"x  x\n"
+"xxxx\n",
+
+"xxxx\n"
+"x  x\n"
+"xxxx\n"
+"   x\n"
+"   x\n"
+};
+
+void plot_pixel(uchar *dest, int row, int x, int y, int c)
+{
+   if (x >= 0 && x < row && y >= 0 && y < 200)
+      dest[x+y*row] = c;
+}
+
+int draw_char(uchar *dest, int row, int c, int x, int y)
+{
+   if (c >= '0' && c <= '9') {
+      int col = x;
+      char *s = char_data[c - '0'];
+      while (*s) {
+         if (*s == '\n')
+            col=x-1,++y;
+         else if (*s == 'x')
+            plot_pixel(dest,row,col,y,7);
+         ++col;
+         ++s;
+      }
+      return 6;
+   } else 
+      return 6;
+}
+
+void draw_string(uchar *dest, int row, int x, int y, char *str)
+{
+   while (*str)
+      x += draw_char(dest, row, *str++, x, y);
+}
+// $Header: r:/t2repos/thief2/src/portal/char.h,v 1.2 2000/01/29 13:37:13 adurant Exp $
+#pragma once
+
+extern void draw_string(uchar *dest, int row, int x, int y, char *str);
+/*
+ *  for a true planar mapping, we have
+ *
+ *    P + uS + vT = (x,y,z)
+ *    i = x/z*xsc,  j = y/z*ysc
+ *
+ *  So we want to compute the mapping from (i,j)
+ *    to (u,v), knowing the intermediate form is
+ *
+ *    u = a/c, v = b/c
+ *
+ *   So first we want to find the point
+ *   intersected by i,j in the plane:
+ *
+ *     i = x/z*xsc
+ *     j = y/z*ysc
+ *
+ *    z*i = x*xsc
+ *    z*j = y*ysc
+ *
+ *    P + uS + vT = (x,y,z)
+ *
+ *      x = z*i/xsc
+ *      y = z*j/ysc
+ *
+ *    P + uS + vT = (z*i/xsc, z*j/ysc, z)
+ *
+ *    P0 + uS0 + vT0 = z*i/xsc
+ *    P1 + uS1 + vT1 = z*j/ysc
+ *    P2 + uS2 + vT2 = z
+ *
+ *    P0 + uS0 + vT0 = (P2 + uS2 + vT2)/xsc * i
+ *    P1 + uS1 + vT1 = (P2 + uS2 + vT2)/ysc * j
+ *
+ *    (S0 - S2/xsc*i)*u + (T0 - T2/xsc*i)*v = P2/xsc*i - P0
+ *    (S1 - S2/ysc*j)*u + (T1 - T2/ysc*j)*v = P2/ysc*j - P1
+ *
+ *    Now we just solve the above, say, using Cramer's rule:
+ *
+ *    S20 = S2/xsc    T20 = T2/xsc    P20 = P2/xsc
+ *    S21 = S2/ysc    T21 = T2/ysc    P21 = P2/ysc
+ *
+ *    denom = (S0-S20i)*(T1-T21j) - (t0-t20i)*(s1-s21j)
+ *     utop = (P20i-P0)*(t1-t21j) - (t0-t20i)*(p21j-p1)
+ *     vtop = (S0-S20i)*(p21j-p1) - (p20i-p0)*(s1-s21j)
+ *
+ *    u = utop/denom
+ *    v = vtop/denom
+ *
+ *    denom = s0*t1 - s0*t21j - t1*s20i + s20*t21*i*j - (t0*s1 - t0*s21j - s1*t20i + t20*s21*i*j)
+ *     utop = t1*p20i - p20*t21*i*j - p0*t1 + p0*t21j - (t0*p21j - t0*p1 - t20*p21*i*j + p1*t20i)
+ *     vtop = s0*p21j - s0*p1 - s20*p21*i*j + p1*s20i - (s1*p20i - p20*s21*i*j - p0*s1 + p0*s21j)
+ *    
+ *    a = (t0*p1 - p0*t1) + (t1*p20 - p1*t20)*i + (p0*t21 - t0*p21)*j
+ *    b = (p0*s1 - s0*p1) + (p1*s20 - s1*p20)*i + (s0*p21 - p0*s21)*j
+ *    c = (s0*t1 - t0*s1) + (s1*t20 - t1*s20)*i + (t0*s21 - s0*t21)*j
+ */
+
+#include <matrix.h>
+#include <profile.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+float xsci=320,ysci=240;
+double xsc=1.0/320,ysc=1.0/240;
+extern bool project_space;
+
+void duv_set_size(int w, int h)
+{
+   xsci = w/2.0;
+   ysci = h/2.0;
+
+   xsc = 2.0 / w;
+   ysc = 2.0 / h;
+}
+
+double tmap_data[9];
+
+void calc_uvw_deltas(mxs_vector *pt, mxs_vector *u, mxs_vector *v)
+{  PROF
+   double p0,p1,p2;
+
+#define s0  (u->x)
+#define s1  (u->y)
+#define s2  (u->z)
+
+#define t0  (v->x)
+#define t1  (v->y)
+#define t2  (v->z)
+
+   p0 = pt->x;
+   p1 = pt->y;
+   p2 = pt->z;
+
+   // raw calculation
+
+   tmap_data[0] = t0 * p1 - p0 * t1;
+   tmap_data[1] = p0 * s1 - s0 * p1;
+   tmap_data[2] = s0 * t1 - t0 * s1;
+
+   tmap_data[3] = t1 * p2 - p1 * t2;
+   tmap_data[4] = p1 * s2 - s1 * p2;
+   tmap_data[5] = s1 * t2 - t1 * s2;
+
+   tmap_data[6] = p0 * t2 - t0 * p2;
+   tmap_data[7] = s0 * p2 - p0 * s2;
+   tmap_data[8] = t0 * s2 - s0 * t2;
+
+     // account for screen centering bias
+
+   if (project_space) {
+      // in project space, x is prescaled by xsci*65536
+      //                   y is prescaled by ysci*65536
+
+      // so tmap_data[0..2] is scaled by xsci*ysci*65536*65536
+      //             [3..5] is scaled by ysci*65536
+      //             [6..8] is scaled by xsci*65536
+
+      // so we need to pull out the extra 65536 from 0..2
+
+      int i;
+      for (i=0; i < 3; ++i) tmap_data[i] /= 65536.0;
+
+      tmap_data[0] = tmap_data[0] - xsci*tmap_data[3] - ysci*tmap_data[6];
+      tmap_data[1] = tmap_data[1] - xsci*tmap_data[4] - ysci*tmap_data[7];
+      tmap_data[2] = tmap_data[2] - xsci*tmap_data[5] - ysci*tmap_data[8];
+
+        // adjust for half-pixel bias that compensates for fix_cint
+
+      tmap_data[0] += (tmap_data[3] + tmap_data[6])/2;
+      tmap_data[1] += (tmap_data[4] + tmap_data[7])/2;
+      tmap_data[2] += (tmap_data[5] + tmap_data[8])/2;
+
+        // scale numerators by 2^16 so we get free fixed-point conversion
+
+      tmap_data[0] *= 65536;
+      tmap_data[1] *= 65536;
+
+      tmap_data[3] *= 65536;
+      tmap_data[4] *= 65536;
+
+      tmap_data[6] *= 65536;
+      tmap_data[7] *= 65536;
+
+   } else {
+      tmap_data[0] = tmap_data[0] - tmap_data[3] - tmap_data[6];
+      tmap_data[1] = tmap_data[1] - tmap_data[4] - tmap_data[7];
+      tmap_data[2] = tmap_data[2] - tmap_data[5] - tmap_data[8];
+
+        // scale by screen size because the viewspace vectors aren't
+        // actually quite yet what we want
+
+        // this is only needed if we're not in project space?
+
+      tmap_data[3] *= xsc;
+      tmap_data[4] *= xsc;
+      tmap_data[5] *= xsc;
+
+      tmap_data[6] *= ysc;
+      tmap_data[7] *= ysc;
+      tmap_data[8] *= ysc;
+
+        // adjust for half-pixel bias that compensates for fix_cint
+
+      tmap_data[0] += (tmap_data[3] + tmap_data[6])/2;
+      tmap_data[1] += (tmap_data[4] + tmap_data[7])/2;
+      tmap_data[2] += (tmap_data[5] + tmap_data[8])/2;
+
+        // scale numerators by 2^16 so we get free fixed-point conversion
+
+      tmap_data[0] *= 65536;
+      tmap_data[1] *= 65536;
+
+      tmap_data[3] *= 65536;
+      tmap_data[4] *= 65536;
+
+      tmap_data[6] *= 65536;
+      tmap_data[7] *= 65536;
+   }
+
+   END_PROF;
+}
+# $Header: r:/t2repos/thief2/src/portal/makefile,v 1.36 1998/05/15 18:23:43 buzzard Exp $
+
+MAKETOP = $(CWD)
+
+PROJECT = cam
+PRJBACK ?= r:\prj
+
+%include $(MRC)\env.rc
+
+%include $(MRC)\init.rc
+
+EXETARGS = merge 
+
+#
+# all portal objects, divvied up into major types as self-commenting
+
+world_rep_objs = wrfunc wrcast bspsphr
+world_rep_dbg_objs = wrdbg
+portal_support_objs = animlit oracle
+portal_render_objs = portal portdraw portlit portclip portbg portpick \
+                        portwatr porthw portsky
+portal_surface_objs = portsurf surfaces ptsurf ptsurf16
+portal_mapper_objs = pt_mem pt_clut
+
+# the following have been replaced by equivalent code in the g2 library:
+# duv mapper pt_main
+# ptfloat ptpersp ptlinear ptmap ptmap_8 ptmap_n ptmapper
+
+#
+# all portal objects
+
+portal_objs = $(world_rep_objs) \
+              $(world_rep_dbg_objs) \
+              $(portal_support_objs) \
+              $(portal_render_objs) \
+              $(portal_surface_objs) \
+              $(portal_mapper_objs)
+
+portal_HDRS = wr.h portal.h portsky.h pt.h animlit.h wrobj.h wrtype.h bspsphr.h
+
+portal_newline_hack=" "
+portal_newline=$(portal_newline_hack,W\n)
+portal_dependent_includes="\#include \<r3ds.h\>"$(portal_newline)"\#include \<wr.h\>"$(portal_newline)"\#include \<objtype.h\>"
+
+portal.h .REREAD: port.h 
+	$(eko1) $(@,F) \<-- $(?,F)
+	%do comp_h h_pre=$(portal_dependent_includes) h_in="$^" h_out="$(@,F)"
+
+wr_newline_hack=" "
+wr_newline=$(portal_newline_hack,W\n)
+wr_dependent_includes="\#include \<r3d.h\>"$(portal_newline)"\#include \<wrtype.h\>"
+
+wr.h .REREAD: wrlimit.h wrdb.h wrfunc.h
+	$(eko1) $(@,F) \<-- $(?,F)
+	%do comp_h h_pre=$(wr_dependent_includes) h_in="$^" h_out="$(@,F)"
+
+bspsphr.h .REREAD: bspsphr.h
+	$(eko1) $(@,F) \<-- $(?,F)
+        %do comp_h h_pre=$h_in="$^" h_out="$(@,F)"
+
+# standalone test program
+port_objs = main wrdb
+port_libs = fix g2 dev2d lg r3d fault mprintf matrix portal eos prof timer
+
+# standalone test program which doesn't go via library,
+# so it's simpler to link
+pt_objs = $(portal_objs) $(port_objs)
+pt_libs = fix g2 dev2d lg r3d fault mprintf matrix eos prof timer
+
+# program to test portal-tmap-memory-manager
+memtest_objs = pt_mem memtest
+memtest_libs = lg mprintf
+
+# program to optimize portal databases
+merge_objs = merge
+merge_libs = lg mprintf matrix lgalloc
+merge_STACK = 16384
+
+# program to performance test portal & 2d
+#perftest_objs = perftest perfcore char unlit
+#perftest_libs = fix g2 dev2d lg r3d mprintf matrix portal timer
+
+dev_lib_flav = dbg
+
+dev_pt = pt
+dev_port = port
+dev_memtest = memtest
+#dev_perftest = perftest
+
+%include $(MRC)\make.rc
+// $Header: r:/t2repos/thief2/src/portal/mapper.c,v 1.26 2000/02/19 12:32:43 toml Exp $
+//
+// Setup/initialization etc. for port demo
+
+#include <stdlib.h>
+#include <conio.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include <lg.h>
+#include <2d.h>
+#include <fix.h>
+#include <lgsprntf.h>
+#include <r3d.h>
+#include <tmpalloc.h>
+#include <mprintf.h>
+
+#include <timer.h>
+#include <tminit.h>
+
+#include <ptmap.h>
+#include <recip.h>
+
+#include <mapper.h>
+#include <ptmapper.h>
+
+#include <profile.h>
+
+#ifdef FLOAT_TMAP
+#include <math.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+#endif
+
+extern int scale;
+extern bool tm_on;
+int scanline;
+
+bool poly_lit;
+
+double fda,fdb,fdc;
+double gda,gdb,gdc;
+double one=1.0;
+
+extern double tmap_data[9];
+static fix tmap_data_fix[9];
+
+extern void my_error(char *s);
+
+
+// enable various asm routines in ptmapper
+
+//#define UNCLIPPED_ASM
+//#define CLIPPED_ASM
+
+#define USE_ASM_OUTER_LOOP
+#define RPI_UNLIT_ASM
+
+
+#define MAX_LENGTH 1024
+#define NUM_ENTRIES 32
+
+extern int pixel_count[NUM_ENTRIES];
+extern uchar length_mapping[MAX_LENGTH];
+
+// fast conversion from float to fix
+//   hack value for float to int is 2^52
+//   this corresponds to "right shifting".
+//   to convert from float to fix, we want
+//   to rightshift less, so we use 2^(52-16)
+
+#if 1
+
+  static double convert_hack;
+  #define HACK_VALUE ((double) (1 << 18) * (1 << 18) * 1.5)
+
+  #define fast_float_to_fix(x)  \
+     (convert_hack = (x) + HACK_VALUE, * (fix *) &convert_hack)
+
+#else
+
+  #define fast_float_to_fix(x)  float_to_fix(x)
+
+#endif
+
+
+///////////////////////////////////////////////////
+//
+//   General scan conversion routines
+//
+
+#define MAX_HEIGHT  768
+
+int y_max, y_min;
+extern bool span_clip;
+
+static int xdata[MAX_HEIGHT][2];
+static fix idata[MAX_HEIGHT][2];
+static fix uvdata[MAX_HEIGHT][2];
+
+void reset_scan_buffer(void)
+{
+   y_max = -1;
+   y_min = MAX_HEIGHT;
+}
+
+//   note we just scan convert into a table
+//   rather than have to try to cope with
+//   edges in the main code
+
+#define SHADES fix_make(16,0)
+
+void scan_convert(r3s_point *p1, r3s_point *p2)
+{  PROF
+   r3s_point *temp;
+
+   int left, y1,y2;
+   fix x,dx, i,di;
+
+   // swap so point p1 is first
+   if (p1->grp.sy > p2->grp.sy) {
+      temp = p1;
+      p1 = p2;
+      p2 = temp;
+      left = 1;
+   } else
+      left = 0;
+
+   y1 = fix_cint(p1->grp.sy);
+   y2 = fix_cint(p2->grp.sy);
+   
+   if (y1 == y2) { END_PROF; return; }
+
+   // update the global max/min scanline counter
+   if (y1 < y_min)
+      y_min = y1;
+   if (y2 > y_max)
+      y_max = y2;
+
+   // compute slope w.r.t. y axis
+   dx = fix_div(p2->grp.sx - p1->grp.sx, p2->grp.sy - p1->grp.sy);
+
+   // compute scan location, fixed up to the next crossing
+   x = p1->grp.sx + fix_mul(dx, fix_ceil(p1->grp.sy) - p1->grp.sy);
+
+   if (poly_lit) {
+      di = (p2->grp.i - p1->grp.i)*SHADES * 65536 / (p2->grp.sy - p1->grp.sy);
+      i  = p1->grp.i*SHADES + fix_mul(di, fix_ceil(p1->grp.sy) - p1->grp.sy);
+      if (di < 0) di += 1;
+
+      // now generate all crossings for this edge
+      while (y1 < y2) {
+         xdata[y1][left] = fix_cint(x);
+         idata[y1][left] = i;
+         x += dx;
+         i += di;
+         ++y1;
+      }
+   } else {
+#if 1
+      pt_scan_convert(x, &xdata[y1][left], dx, y2 - y1);
+#else
+      // now generate all crossings for this edge
+      while (y1 < y2) {
+         xdata[y1][left] = fix_cint(x);
+         x += dx;
+         ++y1;
+      }
+#endif
+   }
+   END_PROF;
+}
+
+void scan_convert_uv(r3s_point *p1, r3s_point *p2)
+{  PROF
+
+   int left, y1,y2, j;
+   fix x,dx, i,di, dy_fixup, delta_y;
+   int this_x, prev_x, x_step;
+   fix du2, dv2, x_fixup;
+   uv_scan_info info;
+
+   fix u,v, du,dv;
+   fix u_adjust[4], v_adjust[4];
+
+   // swap so point p1 is first
+   if (p1->grp.sy > p2->grp.sy) {
+#if 0
+      r3s_point *temp;
+      temp = p1;
+      p1 = p2;
+      p2 = temp;
+      left = 1;
+#else
+      // only bother computing uv values down the left
+      scan_convert(p1, p2);
+      return;
+#endif
+   } else
+      left = 0;
+
+   y1 = fix_cint(p1->grp.sy);
+   y2 = fix_cint(p2->grp.sy);
+   
+   if (y1 == y2) { END_PROF; return; }
+
+   // update the global max/min scanline counter
+   if (y1 < y_min)
+      y_min = y1;
+   if (y2 > y_max)
+      y_max = y2;
+
+   // compute u_adjust, v_adjust tables
+   u = 0;
+   v = 0;
+   du = tmap_data_fix[3] >> 2;
+   dv = tmap_data_fix[4] >> 2;
+   for (j=3; j >= 0; --j) {
+      u_adjust[j] = u;
+      v_adjust[j] = v;
+      u += du;
+      v += dv;
+   }   
+
+   // compute slope w.r.t. y axis
+   delta_y  = p2->grp.sy - p1->grp.sy;
+   dy_fixup = fix_ceil(p1->grp.sy) - p1->grp.sy;
+
+   dx = fix_div(p2->grp.sx - p1->grp.sx, delta_y);
+
+   // compute scan location, fixed up to the next crossing
+   x = p1->grp.sx + fix_mul(dx, dy_fixup);
+
+#if 0
+   // naive implementation for u,v,du,dv as floats
+
+   // duv slope
+   du = (p2->grp.u - p1->grp.u) / ((p2->grp.sy - p1->grp.sy) / 65536.0);
+   dv = (p2->grp.v - p1->grp.v) / ((p2->grp.sy - p1->grp.sy) / 65536.0);
+
+   // subpixel corrected
+   u = p1->grp.u + du * dy_fixup / 65536;
+   v = p1->grp.v + dv * dy_fixup / 65536;
+#endif
+   // fixes
+
+   // duv slope
+   du = fast_float_to_fix((p2->grp.u - p1->grp.u) / delta_y * 65536.0);
+   dv = fast_float_to_fix((p2->grp.v - p1->grp.v) / delta_y * 65536.0);
+
+   // subpixel corrected vertically
+   u = fast_float_to_fix(p1->grp.u) + fix_mul(du, dy_fixup);
+   v = fast_float_to_fix(p1->grp.v) + fix_mul(dv, dy_fixup);
+
+   du2 = tmap_data_fix[3];
+   dv2 = tmap_data_fix[4];
+
+   x_fixup = fix_ceil(x)-x;
+   u += fix_mul(x_fixup, du2);
+   v += fix_mul(x_fixup, dv2);
+
+   x_step = fix_int(dx); // take the floor of the x step size
+   
+   du = tmap_data_fix[6] + du2 * x_step;   // compute vertical step
+   dv = tmap_data_fix[7] + dv2 * x_step;   // compute vertical step
+
+   du2 += du;   // alternate step goes one further to the right
+   dv2 += dv;
+
+   info.x   =  x;
+   info.dx  = dx;
+   info.u   =  u;
+   info.v   =  v;
+   info.du  = du;
+   info.dv  = dv;
+   info.du2 = du2;
+   info.dv2 = dv2;
+
+   if (poly_lit) {
+      di = (p2->grp.i - p1->grp.i)*SHADES * 65536 / (p2->grp.sy - p1->grp.sy);
+      i  = p1->grp.i*SHADES + fix_mul(di, fix_ceil(p1->grp.sy) - p1->grp.sy);
+      if (di < 0) di += 1;
+
+      this_x = fix_cint(x);
+
+      // now generate all crossings for this edge
+      while (y1 < y2) {
+         xdata[y1][0] = this_x;
+         uvdata[y1][0] = u;
+         uvdata[y1][1] = v;
+         idata[y1][left] = i;
+         i += di;
+         x += dx;
+
+         prev_x = this_x;
+         this_x = fix_cint(x);
+
+         if (prev_x + x_step == this_x) {
+            u  += du;
+            v  += dv;
+         } else {
+            u  += du2;
+            v  += dv2;
+         }
+         ++y1;
+      }
+   } else {
+#if 1
+      pt_scan_convert_uv(&info, &xdata[y1][0], &uvdata[y1][0], y2-y1);
+#else
+      this_x = fix_cint(x);
+      while (y1 < y2) {
+         xdata[y1][0] = this_x;
+         uvdata[y1][0] = u;
+         uvdata[y1][1] = v;
+         x += dx;
+
+         prev_x = this_x;
+         this_x = fix_cint(x);
+
+         if (prev_x + x_step == this_x) {
+            u  += du;
+            v  += dv;
+         } else {
+            u  += du2;
+            v  += dv2;
+         }
+         ++y1;
+      }
+#endif
+   }
+   END_PROF;
+}
+
+
+///////////////////////////////////////////////////
+//
+//   Triangle scan conversion routines
+//
+// This takes a triangle and sets y_min, y_max,
+//    and xdata,udata,vdata within that range
+//
+// A trivial implementation can build upon the
+// above scan converters; however, that's not
+// particularly efficient.
+//
+// requires we've computed the triangle u,v slopes
+// into tmap_data as seen in compute_duv_tri_full.
+
+#if 0
+   #define fix_frac_ceil(n)  (fix_ceil(n) - (n))
+#else
+   #define fix_frac_ceil(n)  ((-n) & 65535)  // two's complement hack
+#endif
+
+
+// draw a horizontal trapeziod
+void tri_flat(r3s_phandle l0, r3s_phandle l1, r3s_phandle r0, r3s_phandle r1)
+{
+   fix xl, xr, dxl, dxr, u,v,du,dv, du2,dv2, x_step, prev_x, this_x;
+   fix delta_y, y_adjust;
+   int y;
+
+   y_min = fix_cint(l0->grp.sy);
+   y_max = fix_cint(l1->grp.sy);
+
+   // compute right info
+
+   xr = r0->grp.sx;
+   delta_y = r1->grp.sy - r0->grp.sy;
+   y_adjust = fix_frac_ceil(r0->grp.sy);
+
+   dxr = fix_div(r1->grp.sx - r0->grp.sx, delta_y);
+   xr += fix_mul(dxr, y_adjust);
+
+   // compute left info
+
+   xl = l0->grp.sx;
+   delta_y = l1->grp.sy - l0->grp.sy;
+   y_adjust = fix_frac_ceil(l0->grp.sy);
+
+   dxl = fix_div(l1->grp.sx - l0->grp.sx, delta_y);
+   xl += fix_mul(dxl, y_adjust);
+
+   // determine what the two different x steps are
+   x_step = fix_int(dxl); // take the floor of the x step size
+   
+   this_x = fix_cint(xl);
+
+   u = v = du = dv = du2 = dv2 = 0;
+
+   for (y=y_min; y < y_max; ++y) {
+      xdata[y][0] = this_x;
+      xdata[y][1] = fix_cint(xr);
+      uvdata[y][0] = u;
+      uvdata[y][0] = v;
+      xr += dxr;
+      xl += dxl;
+
+      prev_x = this_x;
+      this_x = fix_cint(xl);
+
+      if (prev_x + x_step == this_x) {
+         u  += du;
+         v  += dv;
+      } else {
+         u  += du2;
+         v  += dv2;
+      }
+   }
+}
+
+// draw a triangle with two edges on left, one on right
+void tri_two_left(r3s_phandle top, r3s_phandle mid, r3s_phandle bot)
+{
+   fix xl, xr, dxl, dxr, u,v,du,dv;
+   fix delta_y, y_adjust;
+   int y, y_between;
+
+   y_min = fix_cint(top->grp.sy);
+   y_max = fix_cint(bot->grp.sy);
+   y_between = fix_cint(mid->grp.sy);
+
+   // compute right info
+
+   xr = top->grp.sx;
+   delta_y = bot->grp.sy - top->grp.sy;
+   y_adjust = fix_frac_ceil(top->grp.sy);
+
+   dxr = fix_div(bot->grp.sx - top->grp.sx, delta_y);
+   xr += fix_mul(dxr, y_adjust);
+
+   // compute first edge left info
+
+   xl = top->grp.sx;
+   delta_y = mid->grp.sy - top->grp.sy;
+   y_adjust = fix_frac_ceil(top->grp.sy);
+
+   dxl = fix_div(mid->grp.sx - top->grp.sx, delta_y);
+   xl += fix_mul(dxl, y_adjust);
+   
+   du = fix_div((mid->grp.u - top->grp.u)*65536, delta_y);
+   dv = fix_div((mid->grp.v - top->grp.v)*65536, delta_y);
+
+   u = top->grp.u*65536 + fix_mul(du, y_adjust);
+   v = top->grp.v*65536 + fix_mul(dv, y_adjust);
+
+   for (y=y_min; y < y_between; ++y) {
+      xdata[y][0] = fix_cint(xl);
+      xdata[y][1] = fix_cint(xr);
+      xl += dxl;
+      xr += dxr;
+   }
+
+   // now update the left edge
+
+   xl = mid->grp.sx;
+   delta_y = bot->grp.sy - mid->grp.sy;
+   y_adjust = fix_frac_ceil(mid->grp.sy);
+
+   dxl = fix_div(bot->grp.sx - mid->grp.sx, delta_y);
+   xl += fix_mul(dxl, y_adjust);
+
+   for (y=y_between; y < y_max; ++y) {
+      xdata[y][0] = fix_cint(xl);
+      xdata[y][1] = fix_cint(xr);
+      xl += dxl;
+      xr += dxr;
+   }
+}
+
+// draw a triangle with two edges on right, one on left
+void tri_two_right(r3s_phandle top, r3s_phandle mid, r3s_phandle bot)
+{
+   fix xl, xr, dxl, dxr;
+   fix delta_y, y_adjust;
+   int y, y_between;
+
+   y_min = fix_cint(top->grp.sy);
+   y_max = fix_cint(bot->grp.sy);
+   y_between = fix_cint(mid->grp.sy);
+
+   // compute left info
+
+   delta_y = bot->grp.sy - top->grp.sy;
+   y_adjust = fix_frac_ceil(top->grp.sy);
+
+   dxl = fix_div(bot->grp.sx - top->grp.sx, delta_y);
+   xl = top->grp.sx + fix_mul(dxl, y_adjust);
+
+   // compute first edge right info
+
+   delta_y = mid->grp.sy - top->grp.sy;
+   y_adjust = fix_frac_ceil(top->grp.sy);
+
+   dxr = fix_div(mid->grp.sx - top->grp.sx, delta_y);
+   xr = top->grp.sx + fix_mul(dxl, y_adjust);
+   
+   for (y=y_min; y < y_between; ++y) {
+      xdata[y][0] = fix_cint(xl);
+      xdata[y][1] = fix_cint(xr);
+      xl += dxl;
+      xr += dxr;
+   }
+
+   // now update the right edge
+
+   delta_y = bot->grp.sy - mid->grp.sy;
+   y_adjust = fix_frac_ceil(mid->grp.sy);
+
+   dxr = fix_div(bot->grp.sx - mid->grp.sx, delta_y);
+   xr = mid->grp.sx + fix_mul(dxl, y_adjust);
+
+   for (y=y_between; y < y_max; ++y) {
+      xdata[y][0] = fix_cint(xl);
+      xdata[y][1] = fix_cint(xr);
+      xl += dxl;
+      xr += dxr;
+   }
+}
+
+void scan_convert_tri_uv(r3s_phandle *vp)
+{
+   int sy[3];
+
+   sy[0] = fix_cint(vp[0]->grp.sy);
+   sy[1] = fix_cint(vp[1]->grp.sy);
+   sy[2] = fix_cint(vp[2]->grp.sy);
+
+   // there are four meaningful cases:
+   //     1:  two left edges
+   //     2:  two right edges
+   //     3:  horizontal top edge
+   //     4:  horizontal bottom edge
+
+   // So we have three main triangle scanners:
+   //     1:  tri_two_left(pleft0, pleft1, pleft2) (right == pleft0->pleft2)
+   //     2:  tri_two_right(prt0, prt1, prt2) (left == prt0->prt2)
+   //     3:  tri_flat(pleft0,pleft1, prt0, prt1)
+
+   // ideally, we wouldn't do our equality tests first,
+   // because we could infer them from some inequality tests.
+   // however, we could only infer them half the time, so
+   // we don't bother for now, since the code would be less clear.
+
+   if (sy[0] == sy[1]) {
+      if (sy[0] == sy[2])
+         y_min = y_max = 0;
+      if (sy[2] < sy[0])
+         tri_flat(vp[2],vp[1], vp[2],vp[0]);
+      else 
+         tri_flat(vp[0],vp[2], vp[1],vp[2]);
+   } else if (sy[0] == sy[2]) {
+      if (sy[1] < sy[0])
+         tri_flat(vp[1],vp[0], vp[1],vp[2]);
+      else
+         tri_flat(vp[2],vp[1], vp[0],vp[1]);
+   } else if (sy[1] == sy[2]) {
+      if (sy[0] < sy[1])
+         tri_flat(vp[0],vp[2], vp[0],vp[1]);
+      else
+         tri_flat(vp[1],vp[0], vp[2],vp[0]);
+
+   // now come the normal 3! cases
+   // we've designed the called functions so that
+   // the parameters always appear in top to bottom
+   // order, for ease of verifying correctness
+
+   } else if (sy[0] < sy[1]) {
+      if (sy[1] < sy[2])
+         tri_two_right(vp[0], vp[1], vp[2]); // 0 < 1 < 2
+      else if (sy[0] < sy[2]) // 0 < 1, 2 < 1
+         tri_two_left(vp[0], vp[2], vp[1]);  // 0 < 2 < 1
+      else
+         tri_two_right(vp[2], vp[0], vp[1]); // 2 < 0 < 1
+   } else {
+      if (sy[0] < sy[2])
+         tri_two_left(vp[1], vp[0], vp[2]);  // 1 < 0 < 2
+      else if (sy[1] < sy[2]) // 1 < 0, 2 < 0
+         tri_two_right(vp[1], vp[2], vp[0]); // 1 < 2 < 0
+      else
+         tri_two_left(vp[2], vp[1], vp[0]);  // 2 < 1 < 0
+   }
+}     
+
+extern uchar *pt;
+
+double u_step_data, v_step_data;
+
+void real_render_poly_lit_float(int y0, int y1)
+{  PROF
+   int x,len, i;
+   int row;
+   uchar *dest, *destcore;
+   float a,b,c, ma,mb,mc;
+
+#ifdef DBG_ON
+   if (y0 < y_min || y0 >= y_max || y1 < y_min || y1 > y_max) {
+      mprintf("Invalid real render: %d-%d in %d-%d\n", y0,y1, y_min, y_max);
+      END_PROF;
+      return;
+   }
+#endif
+
+   ma = tmap_data[0] + tmap_data[6] * y0;
+   mb = tmap_data[1] + tmap_data[7] * y0;
+   mc = tmap_data[2] + tmap_data[8] * y0;
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y0 * row;
+
+   for (i=y0; i < y1; ++i) {
+      x   = xdata[i][0];
+      len = xdata[i][1] - x;
+
+      if (len > 0) {
+         scanline = i&1;
+         dest = destcore + x;
+
+         a = ma + fda*x;
+         b = mb + fdb*x;
+         c = mc + fdc*x;
+
+         u_step_data = c * fda - a * fdc;
+         v_step_data = c * fdb - b * fdc;
+
+         ptmap_set_lighting(idata[i][0], idata[i][1], dest);
+         ptmap_do_perspective_lit_run_implicit(dest, len, a, b, c);
+      }
+      destcore += row;
+      ma += tmap_data[6];
+      mb += tmap_data[7];
+      mc += tmap_data[8];
+   }
+   END_PROF;
+}
+
+#define IS_NEGATIVE(a,b,c)  (((c) < 0) ^ (((a) < 0) || ((b) < 0)))
+#define NEG_PAIR(a,c)    (((c) < 0) ^ ((a) < 0))
+
+extern int stat_num_spans_clamped;
+extern int stat_num_spans_drawn;
+extern int stat_num_polys_clipped_away;
+int dest_row;
+bool asm_outer;
+
+void real_render_poly_float(int y0, int y1)
+{  PROF
+#ifndef USE_ASM_OUTER_LOOP
+   int x,len, i;
+   float a,b,c;
+   uchar *dest;
+#endif
+   float ma,mb,mc;
+   int row;
+   uchar *destcore;
+
+#ifdef DBG_ON
+   if (y0 < y_min || y0 >= y_max || y1 < y_min || y1 > y_max) {
+      mprintf("Invalid real render: %d-%d in %d-%d\n", y0,y1, y_min, y_max);
+      END_PROF;
+      return;
+   }
+#endif
+
+   if (y0 >= y1) return;
+
+   ma = tmap_data[0] + tmap_data[6] * y0;
+   mb = tmap_data[1] + tmap_data[7] * y0;
+   mc = tmap_data[2] + tmap_data[8] * y0;
+
+   dest_row = row = grd_bm.row;
+   destcore = grd_bm.bits + y0 * row;
+
+   stat_num_spans_drawn += (y1 - y0);
+
+#ifdef USE_ASM_OUTER_LOOP
+   {
+      double abc[3];
+      abc[0] = ma;
+      abc[1] = mb;
+      abc[2] = mc;
+      pt_asm_outer_loop(abc, destcore, &xdata[y0][0], y1-y0);
+   }
+#else
+   for (i=y0; i < y1; ++i) {
+      x   = xdata[i][0];
+      len = xdata[i][1] - x;
+
+      if (len > 0) {
+         float end_a, end_b, end_c;
+#ifdef DBG_ON
+         float orig_a, orig_b, orig_c;
+         float old_u_step, old_v_step;
+#endif
+
+         dest = destcore + x;
+
+         a = ma + fda*x;
+         b = mb + fdb*x;
+         c = mc + fdc*x;
+
+         u_step_data = c * fda - a * fdc;
+         v_step_data = c * fdb - b * fdc;
+
+         if (len > 1) {
+            end_a = a + (len-1) * fda;
+            end_b = b + (len-1) * fdb;
+            end_c = c + (len-1) * fdc;
+         }
+
+         pixel_count[length_mapping[len]] += len;
+
+#if 1
+         {
+            while (len--) {
+               fix u = a/c + fix_make(2,0), v = b/c + fix_make(2,0);
+               a += fda;
+               b += fdb;
+               c += fdc;
+               *dest++ = pt_tmap_ptr[256*(v >> 16) + (u >> 16)]; 
+            }
+         }
+#else
+         ptmap_do_perspective_lit_run_implicit(dest, len, a, b, c);
+#endif
+      }
+      destcore += row;
+      ma += tmap_data[6];
+      mb += tmap_data[7];
+      mc += tmap_data[8];
+   }
+#endif
+
+   END_PROF;
+}
+
+void do_perspective_poly(grs_bitmap *bm, int n, r3s_phandle *vp)
+{  PROF
+   int len;
+   int i,j;
+
+   ptmap_setup(bm);
+
+   reset_scan_buffer();
+
+   j = n-1;
+   for (i=0; i < n; ++i) {
+      scan_convert(vp[i], vp[j]);
+      j = i;
+   }
+
+   // 0-height poly
+   if (y_min >= y_max) {
+      END_PROF;
+      return;
+   }
+
+   if (poly_lit) {
+      for (i=y_min; i < y_max; ++i) {
+         len = xdata[i][1] - xdata[i][0];
+         if (len > 0) {
+            idata[i][1] = (idata[i][1] - idata[i][0]) / len;
+            if (idata[i][1] < 0) ++idata[i][1];
+         }
+      }
+   }
+
+   fda = tmap_data[3];
+   fdb = tmap_data[4];
+   fdc = tmap_data[5];
+
+   gda = tmap_data[3]*8;
+   gdb = tmap_data[4]*8;
+   gdc = tmap_data[5]*8;
+
+   if (poly_lit)
+      real_render_poly_lit_float(y_min, y_max);
+   else
+      real_render_poly_float(y_min, y_max);
+
+   END_PROF;
+}
+
+/*
+ *   compute_duv_tri
+ *
+ * computes triangle gradients for affine mapping:
+ *
+ *  [ tmap_data[0] = u(0,0)  ]
+ *  [ tmap_data[1] = v(0,0)  ]
+ *    tmap_data[3] = du/dx
+ *    tmap_data[4] = dv/dx
+ *    tmap_data[6] = du/dy
+ *    tmap_data[7] = dv/dy
+ */
+
+//dr/dx = ((r1-r2)(y0-y2)-(r0-r2)(y1-y2))/((x1-x2)(y0-y2)-(x0-x2)(y1-y2))
+
+void compute_duv_tri(r3s_phandle *vp)
+{
+   grs_point *p0 = &vp[0]->grp;
+   grs_point *p1 = &vp[1]->grp;
+   grs_point *p2 = &vp[2]->grp;
+
+   double dx02 = (p0->sx - p2->sx) / 65536.0;
+   double dx12 = (p1->sx - p2->sx) / 65536.0;
+   double dy02 = (p0->sy - p2->sy) / 65536.0;
+   double dy12 = (p1->sy - p2->sy) / 65536.0;
+
+   double grad_div = 1 / (dx12 * dy02 - dx02 * dy12);
+
+   tmap_data[3] = ((p1->u-p2->u)*dy02 - (p0->u-p2->u)*dy12) * grad_div;
+   tmap_data[4] = ((p1->v-p2->v)*dy02 - (p0->v-p2->v)*dy12) * grad_div;
+
+   tmap_data_fix[3] = fast_float_to_fix(tmap_data[3]);
+   tmap_data_fix[4] = fast_float_to_fix(tmap_data[4]);
+}
+
+void compute_duv_tri_full(r3s_phandle *vp)
+{
+   grs_point *p0 = &vp[0]->grp;
+   grs_point *p1 = &vp[1]->grp;
+   grs_point *p2 = &vp[2]->grp;
+
+   double dx02 = (p0->sx - p2->sx) / 65536.0;
+   double dx12 = (p1->sx - p2->sx) / 65536.0;
+   double dy02 = (p0->sy - p2->sy) / 65536.0;
+   double dy12 = (p1->sy - p2->sy) / 65536.0;
+
+   double grad_div = 1 / (dx12 * dy02 - dx02 * dy12);
+
+   tmap_data[3] = ((p1->u-p2->u)*dy02 - (p0->u-p2->u)*dy12) * grad_div;
+   tmap_data[4] = ((p1->v-p2->v)*dy02 - (p0->v-p2->v)*dy12) * grad_div;
+
+   tmap_data[6] = ((p0->u-p2->u)*dx12 - (p1->u-p2->u)*dx02) * grad_div;
+   tmap_data[7] = ((p0->v-p2->v)*dx12 - (p1->v-p2->v)*dx02) * grad_div;
+
+   tmap_data_fix[3] = fast_float_to_fix(tmap_data[3]);
+   tmap_data_fix[4] = fast_float_to_fix(tmap_data[4]);
+
+   tmap_data_fix[6] = fast_float_to_fix(tmap_data[6]);
+   tmap_data_fix[7] = fast_float_to_fix(tmap_data[7]);
+#if 0
+   // p0->u = tmap_data[0] + tmap_data[3]*p0->sx + tmap_data[6]*p0->sy
+
+   // ideally we might compute this for all 3 points, and take the average
+
+   tmap_data[0] = p0->u - tmap_data[3]*p0->sx/65536 - tmap_data[6]*p0->sy/65536;
+   tmap_data[1] = p0->v - tmap_data[4]*p0->sx/65536 - tmap_data[7]*p0->sy/65536;
+#endif
+}
+
+void do_linear_tri(grs_bitmap *bm, r3s_phandle *vp)
+{  PROF
+   uchar *destcore;
+   int i, row;
+   fix dudx, dvdx;
+
+   ptmap_setup(bm);
+
+   reset_scan_buffer();
+
+   compute_duv_tri_full(vp);
+
+   scan_convert_uv(vp[0], vp[2]);
+   scan_convert_uv(vp[1], vp[0]);
+   scan_convert_uv(vp[2], vp[1]);
+
+   // 0-height poly
+   if (y_min >= y_max) {
+      END_PROF;
+      return;
+   }
+
+   if (poly_lit) {
+      for (i=y_min; i < y_max; ++i) {
+         int len = xdata[i][1] - xdata[i][0];
+         if (len > 0) {
+            idata[i][1] = (idata[i][1] - idata[i][0]) / len;
+            if (idata[i][1] < 0) ++idata[i][1];
+         }
+      }
+   }
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y_min*row;
+
+   stat_num_spans_drawn += (y_max - y_min);
+
+   dudx = tmap_data_fix[3];
+   dvdx = tmap_data_fix[4];
+
+   if (poly_lit) {
+      for (i=y_min; i < y_max; ++i) {
+         int x;
+         int len;
+         x = xdata[i][0];
+         len = xdata[i][1] - x;
+   
+         if (len > 0) {
+            ptmap_do_lit_run(destcore+x, len,
+                     uvdata[i][0], uvdata[i][1], dudx, dvdx,
+                     idata[i][0], idata[i][1]);
+         }
+         destcore += row;
+      }
+   } else {
+      for (i=y_min; i < y_max; ++i) {
+         int x;
+         int len;
+         x = xdata[i][0];
+         len = xdata[i][1] - x;
+   
+         if (len > 0) {
+            ptmap_do_run(destcore+x, len,
+                     uvdata[i][0], uvdata[i][1], dudx, dvdx);
+         }
+         destcore += row;
+      }
+   }
+
+   END_PROF;
+}
+
+///////////////////////////////////////////////////////////////
+
+//  span clipping
+
+typedef struct span_item
+{
+   ushort start_x;  // starting location
+   uchar  len;      // length in pixels
+   uchar  delta_y;  // vertical delta from last span
+} SpanItem;
+
+typedef struct render_poly_info
+{
+   grs_bitmap *bm;
+   uchar *bits;
+   double tm_dat[9];
+   int y;
+   int count;
+   SpanItem *span_info;
+   struct render_poly_info *next;
+} RenderPolyInfo;
+
+RenderPolyInfo *rpi_head;
+RenderPolyInfo **rpi_tail=&rpi_head;
+
+void render_rpi(RenderPolyInfo *rpi)
+{  PROF
+   int y,len, x, dy, skip_i;
+   int row;
+   uchar *dest, *destcore;
+   float a,b,c, ma,mb,mc;
+   SpanItem *si, *end;
+
+   memcpy(tmap_data, rpi->tm_dat, sizeof(tmap_data));
+
+   fda = tmap_data[3];
+   fdb = tmap_data[4];
+   fdc = tmap_data[5];
+
+   gda = tmap_data[3]*8;
+   gdb = tmap_data[4]*8;
+   gdc = tmap_data[5]*8;
+
+   pt_tmap_ptr  = rpi->bits;
+   pt_tmap_mask = (rpi->bm->h-1) * 256 + (rpi->bm->w-1);
+   
+   ptmap_setup(rpi->bm);
+
+   y = rpi->y;
+   si = rpi->span_info;
+   end = si + rpi->count;
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y * row;
+
+   ma = tmap_data[0] + tmap_data[6] * y;
+   mb = tmap_data[1] + tmap_data[7] * y;
+   mc = tmap_data[2] + tmap_data[8] * y;
+
+   skip_i = 0;
+
+   while (si < end) {
+      len = si->len;
+      if (len == 0) {
+         // if we get a 0 length thing,
+         // that means we should skip vertically
+         // by more than our normally allowed limit (255)
+         // by using this item solely for skipping
+         ++si;
+         dy = si->start_x;
+         goto skip_y;
+      }
+
+      x = si->start_x;
+
+      // if length == 255, then we've encoded
+      // the real length in the next one
+      if (len == 255) {
+         ++si;
+         len = si->start_x;
+      }
+      dy = si->delta_y;
+         
+      dest = destcore + x;
+
+
+      if (!skip_i) {
+         int mylen = xdata[y][1] - xdata[y][0];
+         idata[y][1] = fix_mul((idata[y][1] - idata[y][0]) >> 4, reciprocal_table_24[mylen] >> 4);
+         if (idata[y][1] < 0) ++idata[y][1];
+         //if (idata[y][1] != 0) mprintf("%d\n", idata[y][1]);
+         scanline = y & 1;
+      }
+
+      if (x == xdata[y][0])
+         ptmap_set_lighting(idata[y][0], idata[y][1], dest);
+      else
+         ptmap_set_lighting(idata[y][0] + idata[y][1]*(x - xdata[y][0]), idata[y][1], dest);
+
+      a = ma + fda*x;
+      b = mb + fdb*x;
+      c = mc + fdc*x;
+
+      u_step_data = c * fda - a * fdc;
+      v_step_data = c * fdb - b * fdc;
+
+      ptmap_do_perspective_lit_run_implicit(dest, len, a, b, c);
+
+      if (!dy)
+         skip_i = 1;
+      else if (dy == 1) {
+         destcore += row;
+         ma += tmap_data[6];
+         mb += tmap_data[7];
+         mc += tmap_data[8];
+         skip_i = 0;
+      } else {
+        skip_y:
+         destcore += row*dy;
+         ma += tmap_data[6]*dy;
+         mb += tmap_data[7]*dy;
+         mc += tmap_data[8]*dy;
+         skip_i = 0;
+      }
+      y += dy;
+      ++si;
+   }
+   END_PROF;
+}
+
+void render_rpi_unlit(RenderPolyInfo *rpi)
+{  PROF
+   int y, row;
+   uchar *destcore;
+#ifdef RPI_UNLIT_ASM
+   double mabc[3];
+#else
+   float a,b,c, ma,mb,mc;
+   uchar *dest;
+   int i,x,dy,len;
+#endif
+   SpanItem *si, *end;
+
+   memcpy(tmap_data, rpi->tm_dat, sizeof(tmap_data));
+
+   fda = tmap_data[3];
+   fdb = tmap_data[4];
+   fdc = tmap_data[5];
+
+   gda = tmap_data[3]*8;
+   gdb = tmap_data[4]*8;
+   gdc = tmap_data[5]*8;
+
+   pt_tmap_ptr  = rpi->bits;
+   pt_tmap_mask = (rpi->bm->h-1) * 256 + (rpi->bm->w-1);
+   
+   ptmap_setup(rpi->bm);
+
+   y = rpi->y;
+   si = rpi->span_info;
+   end = si + rpi->count;
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y * row;
+
+#ifdef RPI_UNLIT_ASM
+   dest_row = grd_bm.row;
+   mabc[0] = tmap_data[0] + tmap_data[6]*y;
+   mabc[1] = tmap_data[1] + tmap_data[7]*y;
+   mabc[2] = tmap_data[2] + tmap_data[8]*y;
+   pt_render_rpi_unlit_asm(si, mabc, destcore, end);
+#else
+   ma = tmap_data[0] + tmap_data[6] * y;
+   mb = tmap_data[1] + tmap_data[7] * y;
+   mc = tmap_data[2] + tmap_data[8] * y;
+
+   while (si < end) {
+      len = si->len;
+      if (len == 0) {
+         // if we get a 0 length thing,
+         // that means we should skip vertically
+         // by more than our normally allowed limit (255)
+         // by using this item solely for skipping
+         ++si;
+         dy = si->start_x;
+         goto skip_y;
+      }
+
+      x = si->start_x;
+
+      // if length == 255, then we've encoded
+      // the real length in the next one
+      if (len == 255) {
+         ++si;
+         len = si->start_x;
+      }
+      dy = si->delta_y;
+         
+      dest = destcore + x;
+
+      c = mc + fdc*x;
+      a = ma + fda*x;
+      b = mb + fdb*x;
+
+      u_step_data = c * fda - a * fdc;
+      v_step_data = c * fdb - b * fdc;
+
+      ptmap_do_perspective_lit_run_implicit(dest, len, a, b, c);
+
+      if (dy == 1) {
+         destcore += row;
+         ma += tmap_data[6];
+         mb += tmap_data[7];
+         mc += tmap_data[8];
+      } else if (dy) {
+        skip_y:
+         destcore += row*dy;
+         ma += tmap_data[6]*dy;
+         mb += tmap_data[7]*dy;
+         mc += tmap_data[8]*dy;
+      }
+      y += dy;
+      ++si;
+   }
+#endif
+   END_PROF;
+}
+
+void render_rpi_linear(RenderPolyInfo *rpi)
+{  PROF
+   int y,len, x, dy, skip_i;
+   int row;
+   uchar *dest, *destcore;
+   fix dudx,dvdx, u_value, v_value, istart;
+   SpanItem *si, *end;
+
+   memcpy(tmap_data, rpi->tm_dat, sizeof(tmap_data));
+
+   dudx = fast_float_to_fix(tmap_data[3]);
+   dvdx = fast_float_to_fix(tmap_data[4]);
+
+   pt_tmap_ptr  = rpi->bits;
+   pt_tmap_mask = (rpi->bm->h-1) * 256 + (rpi->bm->w-1);
+   
+   ptmap_setup(rpi->bm);
+
+   y = rpi->y;
+   si = rpi->span_info;
+   end = si + rpi->count;
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y * row;
+
+   skip_i = 0;
+
+   while (si < end) {
+      len = si->len;
+      if (len == 0) {
+         // if we get a 0 length thing,
+         // that means we should skip vertically
+         // by more than our normally allowed limit (255)
+         // by using this item solely for skipping
+         ++si;
+         dy = si->start_x;
+         goto skip_y;
+      }
+
+      x = si->start_x;
+
+      // if length == 255, then we've encoded
+      // the real length in the next one
+      if (len == 255) {
+         ++si;
+         len = si->start_x;
+      }
+      dy = si->delta_y;
+         
+      dest = destcore + x;
+
+      if (!skip_i) {
+         int mylen = xdata[y][1] - xdata[y][0];
+         idata[y][1] = fix_mul((idata[y][1] - idata[y][0]) >> 4, reciprocal_table_24[mylen] >> 4);
+         if (idata[y][1] < 0) ++idata[y][1];
+      }
+
+      if (x == xdata[y][0])
+         istart = idata[y][0];
+      else
+         istart = idata[y][0] + idata[y][1]*(x - xdata[y][0]);
+
+      if (x == xdata[y][0]) {
+         u_value = uvdata[y][0];
+         v_value = uvdata[y][1];
+      } else {
+         int delta = x - xdata[y][0];
+         u_value = uvdata[y][0] + delta * dudx;
+         v_value = uvdata[y][1] + delta * dvdx;
+      }
+
+      ptmap_do_lit_run(dest, len, u_value, v_value,
+          dudx, dvdx, istart, idata[y][1]);
+
+      if (!dy)
+         skip_i = 1;
+      else if (dy == 1) {
+         destcore += row;
+         skip_i = 0;
+      } else {
+        skip_y:
+         destcore += row*dy;
+         skip_i = 0;
+      }
+      y += dy;
+      ++si;
+   }
+   END_PROF;
+}
+
+void render_rpi_linear_unlit(RenderPolyInfo *rpi)
+{  PROF
+   int y,len, x, dy;
+   int row;
+   uchar *dest, *destcore;
+   fix dudx,dvdx, u_value, v_value;
+   SpanItem *si, *end;
+
+   memcpy(tmap_data, rpi->tm_dat, sizeof(tmap_data));
+
+   dudx = fast_float_to_fix(tmap_data[3]);
+   dvdx = fast_float_to_fix(tmap_data[4]);
+
+   pt_tmap_ptr  = rpi->bits;
+   pt_tmap_mask = (rpi->bm->h-1) * 256 + (rpi->bm->w-1);
+   
+   ptmap_setup(rpi->bm);
+
+   y = rpi->y;
+   si = rpi->span_info;
+   end = si + rpi->count;
+
+   row = grd_bm.row;
+   destcore = grd_bm.bits + y * row;
+
+   while (si < end) {
+      len = si->len;
+      if (len == 0) {
+         // if we get a 0 length thing,
+         // that means we should skip vertically
+         // by more than our normally allowed limit (255)
+         // by using this item solely for skipping
+         ++si;
+         dy = si->start_x;
+         goto skip_y;
+      }
+
+      x = si->start_x;
+
+      // if length == 255, then we've encoded
+      // the real length in the next one
+      if (len == 255) {
+         ++si;
+         len = si->start_x;
+      }
+      dy = si->delta_y;
+         
+      dest = destcore + x;
+
+      if (x == xdata[y][0]) {
+         u_value = uvdata[y][0];
+         v_value = uvdata[y][1];
+      } else {
+         int delta = x - xdata[y][0];
+         u_value = uvdata[y][0] + delta * dudx;
+         v_value = uvdata[y][1] + delta * dvdx;
+      }
+
+      ptmap_do_run(dest, len, u_value, v_value, dudx, dvdx);
+
+      if (dy == 1) {
+         destcore += row;
+      } else if (dy) {
+        skip_y:
+         destcore += row*dy;
+      }
+      y += dy;
+      ++si;
+   }
+   END_PROF;
+}
+
+void post_render_polys(void)
+{  PROF
+   RenderPolyInfo *rpi = rpi_head, *next;
+   while (rpi) {
+      render_rpi_unlit(rpi);
+      next = rpi->next;
+      Free(rpi->span_info);
+      Free(rpi);
+      rpi = next;
+   }
+   rpi_head = 0;
+   rpi_tail = &rpi_head;
+   END_PROF;
+}
+
+#define SLIST_BUFFER_SIZE  8192
+
+SpanItem slist_buffer[SLIST_BUFFER_SIZE];
+int start_y;
+int last_y;
+SpanItem *slist;
+SpanItem *snext;
+int slist_max;
+int slist_count;
+
+static void grow(void)
+{
+   // check if this is the very first run, which is a bit special
+   if (slist_count == 0) {
+      slist_max = SLIST_BUFFER_SIZE;
+      slist = slist_buffer;
+   } else {
+      void *old = slist;
+      slist_max *= 2;
+      // Damn you realloc!
+      slist = Malloc(sizeof(SpanItem) * slist_max);
+      memcpy(slist, old, sizeof(SpanItem) * slist_count);
+      if (old != slist_buffer)
+         Free(old);
+   }
+   snext = slist + slist_count;
+}
+
+static void *malloc_slist(void)
+{
+   SpanItem *s = Malloc(sizeof(SpanItem) * slist_count);
+   memcpy(s, slist, sizeof(SpanItem) * slist_count);
+   return s;
+}
+
+static void free_slist(SpanItem *s)
+{
+   if (s != slist_buffer)
+      Free(s);
+}
+
+extern int stat_num_drawn_pixels, stat_num_clipped_pixels;
+extern int stat_num_transp_pixels;
+
+#ifdef UNCLIPPED_ASM
+
+  #define add_unclipped_run(a,b,c)  pt_add_unclipped_run_asm(a,b,c)
+
+#else
+
+void add_unclipped_run(int x0, int x1, int y)
+{
+   int len;
+
+#ifdef DBG_ON
+   if (x0 == x1) { mprintf("x0 = x1 = %d\n", x0); return; }
+#endif
+
+#if 0
+   if (slist_count == slist_max)
+      grow();
+#endif
+
+   // compute delta y and patch over previous
+   if (slist_count)
+      snext[-1].delta_y = y - last_y;
+   else
+      start_y = y;
+
+   last_y = y;
+
+   len = x1-x0;
+   stat_num_drawn_pixels += len;
+
+   if (len > 254) {
+      snext->start_x = x0;
+      snext->len = 255; // len == 255 means long length in next one
+      ++slist_count;
+      ++snext;
+#if 0
+      if (slist_count == slist_max)
+         grow();
+#endif
+      snext->start_x = len;
+   } else {
+      snext->start_x = x0;
+      snext->len = len;
+   }
+
+   ++slist_count;
+   ++snext;
+}
+
+#endif
+
+typedef unsigned short xloc;
+typedef struct foo
+{
+   xloc start_x;
+   xloc end_x;
+   struct foo *next;
+} RunClipData;
+
+#define CLIP_DATA_HEIGHT   768
+#define CLIP_DATA_TOTAL    (CLIP_DATA_HEIGHT * 8)
+
+RunClipData clip_data[CLIP_DATA_TOTAL];  // allocation pool
+RunClipData *clip_alloc, *clip_alloc_end = &clip_data[CLIP_DATA_TOTAL - CLIP_DATA_HEIGHT];
+
+RunClipData *clip[CLIP_DATA_HEIGHT];
+
+void reset_clip(int x0, int x1, int max_y)
+{  PROF
+   int i;
+   clip_alloc = clip_data;
+   for (i=0; i < max_y; ++i) {
+      clip_alloc->start_x = x0;
+      clip_alloc->end_x = x1;
+      clip_alloc->next = NULL;
+      clip[i] = clip_alloc++;
+   }
+   END_PROF;
+}
+
+#ifdef CLIPPED_ASM
+
+  #define add_clipped_run(a,b,c)     \
+     pt_add_clipped_run_asm(&clip[c], a, b, c)
+
+#else
+
+void add_clipped_run(int x0, int x1, int y)
+{  PROF
+   RunClipData *z, **last;
+   last = &clip[y];
+   z = *last;
+   if (x0 < x1)
+      stat_num_clipped_pixels += x1 - x0;
+
+   while (z) {
+      if (x1 <= z->start_x) {
+         END_PROF;
+         return;   // ended before this run
+      }
+
+      if (x0 < z->end_x) {
+         // we are visible... there are four cases:
+         //   we fill this run
+         //   we fit against the left side
+         //   we fit against the right side
+         //   we're in the middle
+         if (x0 <= z->start_x) {
+            // we fit against the left at least
+            if (x1 >= z->end_x) {
+               add_unclipped_run(z->start_x, z->end_x, y);
+               // delete the run
+               *last = z->next;
+               z = z->next;
+            } else {
+               // we clipped against the left edge
+               add_unclipped_run(z->start_x, x1, y);
+               z->start_x = x1;
+               END_PROF;
+               return;
+            }
+         } else {
+            if (x1 >= z->end_x) {
+               // we clipped against the right edge
+               add_unclipped_run(x0, z->end_x, y);
+               z->end_x = x0;
+               last = &z->next;
+               z = z->next;
+            } else {
+               // we added in the middle
+               add_unclipped_run(x0, x1, y);
+               clip_alloc->next = z->next;
+               clip_alloc->end_x = z->end_x;
+               clip_alloc->start_x = x1;
+
+               z->next = clip_alloc++;
+               z->end_x = x0;
+               END_PROF;
+               return;
+            }
+         }
+      } else {
+         last = &z->next;
+         z = z->next;
+      }
+   }
+   END_PROF;
+}
+
+#endif
+
+void clipped_run(int x0, int x1, int y)
+{  PROF
+   RunClipData *z, **last;
+   int n = stat_num_drawn_pixels;
+
+   last = &clip[y];
+   z = *last;
+   while (z) {
+      if (x1 <= z->start_x) {
+         goto done;
+      }
+      if (x0 < z->end_x) {
+         // we are visible... there are four cases:
+         //   we fill this run
+         //   we fit against the left side
+         //   we fit against the right side
+         //   we're in the middle
+         if (x0 <= z->start_x) {
+            // we fit against the left at least
+            if (x1 >= z->end_x) {
+               add_unclipped_run(z->start_x, z->end_x, y);
+            } else {
+               // we clipped against the left edge
+               add_unclipped_run(z->start_x, x1, y);
+               goto done;
+            }
+         } else {
+            if (x1 >= z->end_x) {
+               // we clipped against the right edge
+               add_unclipped_run(x0, z->end_x, y);
+            } else {
+               // we added in the middle
+               add_unclipped_run(x0, x1, y);
+               goto done;
+            }
+         }
+      }
+      z = z->next;
+   }
+  done:
+   stat_num_transp_pixels += (stat_num_drawn_pixels - n);
+   stat_num_drawn_pixels = n;   
+   END_PROF;
+}
+
+void fake_render_perspective(grs_bitmap *b, int n, r3s_phandle *vp)
+{  PROF
+   RenderPolyInfo *rpi;
+   bool opaque;
+   int i,j;
+
+   // no more memory for clipping, so punt
+   if (clip_alloc > clip_alloc_end) {
+      Warning(("fake_render_perspective: scene too complex for spanclip\n"));
+      return;
+   }
+
+   reset_scan_buffer();
+
+   j = n-1;
+   for (i=0; i < n; ++i) {
+      scan_convert(vp[i], vp[j]);
+      j = i;
+   }
+
+   // 0-height poly
+   if (y_min >= y_max)
+      return;
+
+   if (y_min < 0) {
+      Warning(("Polygon off top of screen.\n"));
+      return;
+   }
+
+   if (y_max >= MAX_HEIGHT) {
+      Warning(("Polygon off bottom of max-sized screen.\n"));
+      return;
+   }
+
+   // now clip it against the span tables
+   // and convert it to spans
+
+   opaque = TRUE;
+   if (b->type == BMT_TLUC8) opaque = FALSE;
+   else if (b->flags & BMF_TRANS) opaque = FALSE;
+
+   slist = 0;
+   slist_max = slist_count = 0;
+   grow();
+
+   if (opaque) {
+      for (i=y_min; i < y_max; ++i)
+         if (xdata[i][0] < xdata[i][1])
+            add_clipped_run(xdata[i][0], xdata[i][1], i);
+   } else {
+      for (i=y_min; i < y_max; ++i)
+         if (xdata[i][0] < xdata[i][1])
+            clipped_run(xdata[i][0], xdata[i][1], i);
+   }
+
+   if (!slist_count) { ++stat_num_polys_clipped_away; return; }
+   
+   snext[-1].delta_y = 0;
+
+   // now allocate the drawing structure for it
+   rpi = Malloc(sizeof(RenderPolyInfo));
+   rpi->bm = b;
+   rpi->bits = b->bits;
+   memcpy(rpi->tm_dat, tmap_data, sizeof(rpi->tm_dat));
+   rpi->y = start_y;
+   rpi->count = slist_count;
+   rpi->span_info = slist;
+
+   // if we're not transparent or translucent,
+   // we can render it right now!
+
+   if (opaque) {
+      render_rpi_unlit(rpi);
+      free_slist(rpi->span_info);
+      Free(rpi);
+   } else {
+      // add to head
+      if (slist == slist_buffer)
+         rpi->span_info = malloc_slist();
+      rpi->next = rpi_head;
+      rpi_head = rpi;
+   }
+   END_PROF;
+}
+
+void fake_render_linear_tri(grs_bitmap *b, r3s_phandle *vp)
+{  PROF
+   RenderPolyInfo *rpi;
+   bool opaque;
+   int i;
+
+   // no more memory for clipping, so punt
+   if (clip_alloc > clip_alloc_end) {
+      Warning(("fake_render_perspective: scene too complex for spanclip\n"));
+      return;
+   }
+
+   reset_scan_buffer();
+
+   compute_duv_tri_full(vp);
+
+   scan_convert_uv(vp[0], vp[2]);
+   scan_convert_uv(vp[1], vp[0]);
+   scan_convert_uv(vp[2], vp[1]);
+
+   // 0-height poly
+   if (y_min >= y_max)
+      return;
+
+#ifdef DBG_ON
+   if (y_min < 0) {
+      Warning(("Polygon off top of screen.\n"));
+      return;
+   }
+
+   if (y_max >= MAX_HEIGHT) {
+      Warning(("Polygon off bottom of max-sized screen.\n"));
+      return;
+   }
+#endif
+
+   // now clip it against the span tables
+   // and convert it to spans
+
+   opaque = TRUE;
+   if (b->type == BMT_TLUC8) opaque = FALSE;
+   else if (b->flags & BMF_TRANS) opaque = FALSE;
+
+   // at the moment, we can't handle non-opaque
+   if (!opaque)
+      return;
+
+   slist = 0;
+   slist_max = slist_count = 0;
+   grow();
+
+   if (opaque) {
+      for (i=y_min; i < y_max; ++i)
+         if (xdata[i][0] < xdata[i][1])
+            add_clipped_run(xdata[i][0], xdata[i][1], i);
+   } else {
+      for (i=y_min; i < y_max; ++i)
+         if (xdata[i][0] < xdata[i][1])
+            clipped_run(xdata[i][0], xdata[i][1], i);
+   }
+
+   // quick out if no spans
+   if (!slist_count) return;
+   
+   snext[-1].delta_y = 0;
+
+   // now allocate the drawing structure for it
+   rpi = Malloc(sizeof(RenderPolyInfo));
+   rpi->bm = b;
+   rpi->bits = b->bits;
+   memcpy(rpi->tm_dat, tmap_data, sizeof(rpi->tm_dat));
+   rpi->y = start_y;
+   rpi->count = slist_count;
+   rpi->span_info = slist;
+
+   // if we're not transparent or translucent,
+   // we can render it right now!
+
+   if (opaque) {
+      if (poly_lit)
+         render_rpi_linear(rpi);
+      else
+         render_rpi_linear_unlit(rpi);
+      free_slist(rpi->span_info);
+      Free(rpi);
+   } else {
+      // add to head
+      // we need to mark it as linear not perspective!
+      if (slist == slist_buffer)
+         rpi->span_info = malloc_slist();
+      rpi->next = rpi_head;
+      rpi_head = rpi;
+   }
+   END_PROF;
+}
+
+bool portal_clip = TRUE;
+extern bool use_non_per;
+
+// my clipper, which handles octagon clipping
+extern int clip2d_clip_polygon(int n, ClipData *c);
+
+bool write_combine;
+
+// render polygon of n vertices using texture info in tmdata
+// and polygon in poly
+
+void render_poly_perspective(grs_bitmap *b, int n, r3s_phandle *vp, bool lit)
+{  PROF
+   extern int pt_preload;
+   extern double u_offset, v_offset;
+
+   poly_lit = lit;
+
+   pt_preload = write_combine;
+
+   pt_tmap_ptr  = b->bits;
+   pt_tmap_mask = (b->h-1) * 256 + (b->w-1);
+
+   * (int *) &u_offset = fix_make(2, 0);
+   * (int *) &v_offset = fix_make(2, 0);
+
+   if (span_clip)
+      fake_render_perspective(b, n, vp);
+   else
+      do_perspective_poly(b, n, vp);
+   END_PROF;
+}
+
+// While the previous routine assumes that the given texture has an
+// unrendered 2-texel border, this one does not.
+void render_poly_perspective_uv(grs_bitmap *b, int n, r3s_phandle *vp,
+                                fix u, fix v, bool lit)
+{  PROF
+   extern int pt_preload;
+   extern double u_offset, v_offset;
+
+   poly_lit = lit;
+
+   pt_preload = write_combine;
+
+   pt_tmap_ptr  = b->bits;
+   pt_tmap_mask = (b->h-1) * 256 + (b->w-1);
+
+   * (int *) &u_offset = u;
+   * (int *) &v_offset = v;
+
+   if (span_clip)
+      fake_render_perspective(b, n, vp);
+   else
+      do_perspective_poly(b, n, vp);
+   END_PROF;
+}
+
+// must have valid (u,v) values!
+
+void render_poly_affine_core(grs_bitmap *b, int n, r3s_phandle *vp)
+{
+   r3s_phandle tri[3];
+   int i;
+
+   // trifan it
+
+   tri[0] = vp[0];
+   for (i=2; i < n; ++i) {
+      tri[1] = vp[i-1];
+      tri[2] = vp[i];
+      if (span_clip) {
+         fake_render_linear_tri(b, tri);
+      } else
+         do_linear_tri(b, tri);
+   }
+}
+
+void render_poly_affine(grs_bitmap *b, int n, r3s_phandle *vp, bool lit)
+{  PROF
+   poly_lit = lit;
+
+   pt_tmap_ptr  = b->bits;
+   pt_tmap_mask = (b->h-1) * 256 + (b->w-1);
+
+   render_poly_affine_core(b, n, vp);
+   END_PROF;
+}
+
+void render_poly_persp_affine(grs_bitmap *b, int n, r3s_phandle *vp, bool lit)
+{  PROF
+   int i;
+
+   // convert a perspective polygon to affine
+   for (i=0; i < n; ++i) {
+      double sx = vp[i]->grp.sx / 65536.0;
+      double sy = vp[i]->grp.sy / 65536.0;
+      double ic = 1/(tmap_data[2] + tmap_data[5]*sx + tmap_data[8]*sy);
+
+      vp[i]->grp.u = (tmap_data[0]+tmap_data[3]*sx + tmap_data[6]*sy)*ic/65536
+           + 2.0;
+      vp[i]->grp.v = (tmap_data[1]+tmap_data[4]*sx + tmap_data[7]*sy)*ic/65536
+           + 2.0;
+   }
+
+   fdc = 0;
+   gdc = 0;
+
+   render_poly_affine(b, n, vp, lit);
+   END_PROF;
+}
+#pragma once
+#ifndef _MAPPER_H
+#define _MAPPER_H
+
+typedef struct point {
+   fix x,y;
+   int code;
+   fix i;
+} my_goof;
+
+// portal clipping info
+typedef struct {
+   int l,t,r,b;
+   int tl,tr,bl,br;
+} ClipData;
+
+#endif
+// $Header: r:/t2repos/thief2/src/portal/wrtype.h,v 1.8 2000/01/29 13:37:46 adurant Exp $
+#pragma once
+
+// World Representation Types
+
+#ifndef __WRTYPE_H
+#define __WRTYPE_H
+
+#include <matrix.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+  // types
+
+typedef struct Location
+{
+   mxs_vector vec;
+
+     // private data
+   short cell; // internal data (cell this point is in)
+   short hint; // a nearby cell
+} Location;
+
+typedef mxs_angvec Facing;
+
+typedef struct Position
+{
+   Location loc;
+   Facing   fac;
+} Position;
+
+typedef mxs_vector Vertex;
+typedef mxs_vector Vector;
+
+  //
+  // constructors take pointers to both sides
+  //
+
+//
+// recommended constructors;  "src" is a Location ptr
+//
+
+#define MakeHintedLocationFromVector(dest, vec, src)  \
+        (MakeRawLocationFromVector(dest, vec),        \
+         SetHintFromLocation(dest, src))
+
+#define MakeHintedLocation(dest, nx,ny,nz, src)       \
+        (MakeRawLocation(dest, nx,ny,nz),             \
+         SetHintFromLocation(dest, src))
+
+#define MakeHintedPositionFromVectors(dest, vec, ang, src) \
+        (MakeRawPositionFromVectors(dest, vec, ang),       \
+         SetHintFromLocation(dest, src))
+
+//
+// you can change a location in place, but if you do, you
+// have to call this function to update the internal info
+//
+
+     // implementation note: just use the old location info
+     // as a hint for the new one; don't have the old x,y,z
+     // but that's ok
+
+#define UpdateChangedLocation(loc) SetHintFromLocation(loc, loc)
+#define UpdateChangedFacing(fac)   (0)
+
+#define UpdateChangedPosition(pos) \
+          UpdateChangedLocation(&(pos)->loc)
+
+#define CELL_INVALID  -1
+#define POLY_INVALID  -1
+#define PLANE_INVALID -1
+
+//
+// constructors to use if there's absolutely no useful hint
+//
+
+#define MakeLocationFromVector(a,b) \
+        ((a)->vec = *(b), (a)->cell=CELL_INVALID, (a)->hint=CELL_INVALID)
+
+#define MakeLocation(a,nx,ny,nz) \
+        ((a)->vec.x = (nx), (a)->vec.y = (ny), (a)->vec.z = (nz), (a)->cell=CELL_INVALID, (a)->hint=CELL_INVALID)
+
+#define MakeOrientationFromAngVec(a,b) \
+        (*(a) = *(b))
+
+#define MakePositionFromVectors(a,b,c) \
+        (MakeLocationFromVector(&((a)->loc), b), \
+         MakeOrientationFromAngVec(&((a)->fac), c))
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+  // internal use
+
+#define MakeRawLocationFromVector(a,b) \
+        ((a)->vec = *(b))
+
+#define MakeRawLocation(a,nx,ny,nz) \
+        ((a)->vec.x = (nx), (a)->vec.y = (ny), (a)->vec.z = (nz))
+
+#define MakeRawPositionFromVectors(a,b,c) \
+        (MakeRawLocationFromVector(&((a)->loc), b), \
+         MakeOrientationFromAngVec(&((a)->fac), c))
+
+
+#define HintFromLocation(loc)           \
+    ((loc)->cell == CELL_INVALID ? (loc)->hint : (loc)->cell)
+
+  // note order is very important here, in case src==dest
+#define SetHintFromLocation(dest, src)  \
+    ((dest)->hint = HintFromLocation(src), (dest)->cell = CELL_INVALID)
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+#pragma once
+#include <oracle_.h>
+
+#define OR_BACKFACE   1
+#define OR_3DMATH     2
+#define OR_SELECT     4
+#define OR_HAS_PORTAL 8
+
+#define ORACLE_ON
+// $Header: r:/t2repos/thief2/src/portal/oracle_.h,v 1.2 2000/01/29 13:37:16 adurant Exp $
+#pragma once
+
+// INTERFACE
+
+void OracleSmartStart(int answer_flags);
+//  Oracle start frame.  The oracle tries to answer questions
+//  indicated by answer flags.  Generally you need to do this
+//  two frames in a row before he starts doing it.
+
+void OracleStartFrame(int answer_flags, int memorize_flags);
+// during this frame, answer queries from answer_flags,
+// and memorize queries from memorize_flags
+// we can only answer queries if answer_flags == last non-zero
+//   memorize_flags)
+
+// The following functions are actually macros so don't have prototypes
+
+// bool OracleAnswer(int flags, void *data, int data_size)
+//   returns true if the oracle answered (in which case results are
+//   written into data)
+
+// bool OracleMemorize(int flags, void *data, int data_size)
+//   returns true if the oracle memorized the results
+
+// bool OracleBool(int flags, function-returning-bool)
+//   If the oracle is answering 'flags', then it returns
+//   an appropriate bool.  If the oracle is memorizing 'flags',
+//   then the function is called and the result memorized
+//   and returned.  Otherwise the function is called, and the 
+//   result returned out.
+
+// IMPLEMENTATION INNARDS
+
+extern int oracle_flags;
+extern int oracle_save;
+
+bool OracleFetch(int requeue, void *data, int datasize);
+bool OracleStore(void *data, int datasize);
+
+bool OracleFetchBool(int requeue);
+bool OracleStoreBool(bool result);  // returns the passed-in bool
+
+   // boolean function;
+   //    pass in data (pointer) and size of data pointed to
+   //    returns trye if the Oracle knew the result
+#define OracleAnswer(f,data,size) \
+     (oracle_flags & (f) ? OracleFetch(oracle_save & (f), data, size) : 0)
+
+   // always returns false:
+#define OracleMemorize(f,data,datasize) \
+    (oracle_save & (f) ? OracleStore(data, datasize) : 0)
+
+   // special convenient boolean oracle:
+
+#define OracleBool(flags, func)                   \
+     (oracle_flags & (flags)                      \
+         ? OracleFetchBool(oracle_save & (flags)) \
+         : (oracle_save & (flags))                \
+             ? OracleStoreBool(func)              \
+             : (func))
+// $Header: r:/t2repos/thief2/src/portal/ourobj.h,v 1.2 2000/01/29 13:37:17 adurant Exp $
+#pragma once
+
+// App-specific version of objects.h
+// which must be included before defining
+// any actualy object structs.
+
+#define NUM_REF_SYSTEMS 1
+#define POSITION        Position
+
+#include <objects.h>
+#pragma once
+extern void draw_scene(void);
+#pragma once
+typedef struct
+{
+   fix sx,sy;
+} point;
+// $Header: r:/t2repos/thief2/src/portal/port.h,v 1.51 2000/01/29 13:37:20 adurant Exp $
+//   Interface to portal
+#pragma once
+
+#ifndef _PORT_H_
+#define _PORT_H_
+
+#include <r3ds.h>
+#include <wrtype.h>
+#include <wrfunc.h>
+#include <wrdb.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+typedef int ObjID;  // can't include objtype.h 
+
+//////                                 Initialization
+
+
+  // Initialize, and set range of palette-based lighting; e.g.
+  // 0,7 means add 0 for darkest, add 7 for lightest; we use 11,0.
+extern void init_portal_renderer(int dark_color, int light_color);
+
+extern void portal_setup_water_hack(
+   int num_textures, r3s_texture *tex_list, float *alpha_list, int *rgb_list);
+
+extern void portal_cleanup_water_hack(void);
+
+
+//////                                 Render
+
+
+  // Render scene from this position&orientation
+extern void portal_render_scene(Position *pos, float zoom);
+
+  // function maps texture_id to mipmapped r3s_texture
+extern r3s_texture (*portal_get_texture)(int d);
+
+  // table maps clut_id to clut for portals
+extern uchar *pt_clut_list[256];
+
+  // tables map media to cluts; entry & exit are simulated
+  // translucent surfaces; haze is a watery haze which uses
+  // uses cluts haze_clut..haze_clut+15
+extern unsigned char pt_medium_entry_clut[256];
+extern unsigned char pt_medium_exit_clut[256];
+extern unsigned char pt_medium_haze_clut[256];
+extern ulong portal_fog_color[3];
+extern float portal_fog_dist;
+
+  // This flags controls whether Portal is using fog.  It's for option
+  // panels and config settings and such.
+extern BOOL portal_fog_on;
+
+  // Like medium-haze clut, except per motion index.  Overrides 
+  // medium haze if non-zero. 
+extern unsigned char pt_motion_haze_clut[256]; 
+
+   // Both of these expect results in milliseconds.
+extern long (*portal_get_time)(void);
+extern long (*portal_get_frame_time)(void);
+
+  // tell portal where the near/far clipping planes are
+extern void portal_set_znearfar(double z_near, double z_far);
+
+  // which texture id for the sky?
+extern void portal_setup_star_hack(int tex_id);
+
+  // This controls MIP levels.  It should be 0-1 and defaults to .9.
+extern mxs_real portal_detail_level;
+
+  // render your object through the passed-in clut;
+  // callback is in appropriate r3s state, outside of a block
+extern void (*portal_render_object)(ObjID o, uchar *clut, ulong fragment);
+extern BOOL (*portal_object_visible)(ObjID);
+extern BOOL (*portal_object_blocks)(ObjID blocker, ObjID blockee);
+extern void (*portal_pre_draw_callback)(void);
+extern Position* (*portal_object_pos)(ObjID obj);
+
+  // kinds of object fragments--OTHER means the object has been split
+  // and this fragment is not the first
+#define OBJ_NO_SPLIT      0
+#define OBJ_SPLIT_FIRST   1
+#define OBJ_SPLIT_OTHER   2
+
+  // tools for rendering objects
+
+  // push the r3s clip planes for the bounds of this cell;
+  // don't bother pushing ones which don't clip the passed in model
+extern void portal_push_clip_planes(
+     mxs_vector *bbox_min, mxs_vector *bbox_max,
+     mxs_vector *sphere_center, float radius);
+extern void portal_pop_clip_planes(void);
+
+
+  // bitfield telling us which cells have been in the visible set in
+  // portal_render_scene since the last call to portal_unmark_visible_cells
+extern uchar portal_cell_rendered[];
+
+  // was cell ThisCell in the visible set last frame?
+#define portal_cell_visible(ThisCell) \
+   ((portal_cell_rendered[(ThisCell) >> 3] & ((1 << ((ThisCell) & 7)))) ? \
+    TRUE : FALSE)
+
+
+  // clear portal_cell_visible
+void portal_unmark_visible_cells();
+
+//////                                 Lighting
+
+  // These flags apply to lights when we determine how they affect the
+  // world--when lighting a level, or in the dynamic case during gameplay.
+
+  // for moving lights--not part of world rep
+#define LIGHT_DYNAMIC           1
+
+  // separate lightmap, added in with a weighting
+#define LIGHT_ANIMATED          2
+
+  // not raycast lit, for prototype level lighting
+#define LIGHT_QUICK             4
+
+  // oversampled raycast
+#define LIGHT_QUAD              8
+
+  // raycast w/objects 
+#define LIGHT_OBJCAST          16
+
+extern int portal_add_omni_light(float br, float ambient,
+      Location *loc, uchar dynamic, float radius, float inner_radius);
+extern int portal_add_spotlight(float br,
+      Position *pos, float zoom, uchar dynamic);
+extern void portal_add_simple_dynamic_light(float br, float ambient,
+                                            Location *loc, float radius);
+EXTERN void portal_add_simple_dynamic_dark(float br, float ambient,
+                                           Location *loc, float radius);
+
+  // helper for portal_add_simple_dynamic_light--pares down cell list to
+  // cells which can be reached from a given cell
+EXTERN int portal_contiguous_cells(int *cell_list, int num_cells, int root_cell);
+
+
+  // call this once a frame (or however often you recompute dynamic lights)
+extern void reset_dynamic_lights(void);
+
+  // animated lights are controlled outside Portal--we call this once/frame
+  // to update animated_light_intensity.  num_animated_lights is static
+  // over a given level.
+extern void (*portal_anim_light_callback)(long time_change_millisec);
+extern uchar *portal_anim_light_intensity;
+extern int num_anim_lights;
+
+  // callbacks used when we light a level
+extern void (*failed_light_callback)(Location *hit, Location *dest);
+extern void (*lightmap_point_callback)(mxs_vector *loc, bool lit);
+extern void (*lightmap_callback)(PortalLightMap *lightmap);
+
+extern void clear_surface_cache(void);
+
+  // clear all texture cache entries for a given texture id
+extern void clear_surfaces_for_texture(uchar texture_id);
+
+  // This oversamples static lighting.  Dynamic lighting is not affected.
+extern bool portal_quadruple_lighting;
+
+  // Sometimes, you just want to see in shadows.
+extern bool portal_render_from_texture;
+
+  // This should be set for each level, 0-255.
+extern int portal_ambient_light_level;
+
+EXTERN void portal_set_normalized_color(int rm, int gm, int bm);
+EXTERN void portal_convert_hsb_to_rgb(int *rp, int *gp, int *bp, float hue, float saturation);
+EXTERN void portal_shine_omni_light(int light_index, Location *loc, 
+                                    uchar lighting_type);
+
+  // length of raycasts used to see if something is in sunlight
+#define kPortalSunlightCastLength 1000.0
+
+  // The length of this vector is the brightness of the sunlight.
+EXTERN mxs_vector portal_sunlight;
+
+  // This actually faces the opposite direction from portal_sunlight.
+EXTERN mxs_vector portal_sunlight_norm;
+
+  // apply a light source which has parallel rays rather than being
+  // a point source
+EXTERN int portal_shine_sunlight(const mxs_vector *pDirection,
+                                 float fBrightness, int light_index,
+                                 uchar perm);
+
+EXTERN BOOL portal_loc_has_sunlight(Location *point_being_lit);
+
+
+//////                                 World Rep
+
+
+  // hit_loc is returned; end_loc's cell is updated if reached
+  // Pass in something nonzero for the last parameter to cast sans
+  // epsilon.
+extern void PortalRaycastVector (Location *start_loc, mxs_vector *vec,
+                                 Location *hit_loc, int use_zero_epsilon);
+extern bool PortalRaycast(Location *start_loc, Location *end_loc,
+                          Location *hit_loc, int use_zero_epsilon);
+
+  // collects extra refs
+extern bool PortalRaycastRefs(Location *start_loc, Location *end_loc,
+                              Location *hit_loc, int use_zero_epsilon);
+
+  // This finds the polygon reached by the most recent raycast.
+  // It returns -1 if the most recent cast returned TRUE.
+extern int PortalRaycastFindPolygon(void);
+
+  // This function uses so much of the raycaster's internals that it's
+  // basically a wrapper for them.
+extern bool PortalPointInPolygon(mxs_vector *point, PortalCell *cell,
+                                 PortalPolygonCore *polygon,
+                                 int vertex_offset, bool set_hull_test);
+
+  // These are set by PortalRaycast() and PortalRaycastRefs().
+extern bool PortalRaycastResult;        // return value of most recent raycast
+extern int PortalRaycastPlane;          // -1 if we hit nothing
+extern int PortalRaycastCell;           // end cell of cast if we didn't hit
+extern float PortalRaycastTime;         // along total cast: 0-1
+extern mxs_vector PortalRaycastHit;     // undefined if we hit nothing
+
+#define RAYCAST_MAX_REFS 128
+  // These are set by PortalRaycastRefs().
+extern int PortalRaycastRefCount;
+extern int PortalRaycastRef[RAYCAST_MAX_REFS];
+
+  // returns cell*256+poly
+extern int PortalRenderPick(Position *pos, int x, int y, float zoom);
+
+extern int PortalCellsInArea(int *cell_list, int list_max,
+   mxs_vector *mn, mxs_vector *mx, Location *seed);
+
+extern void PortalComputeBoundingSphere(PortalCell *cell);
+
+
+//////                                 Memory management
+
+  // texture memory manager (allocate rectangles with row==ptmem_row)
+
+extern int     ptmem_row;
+extern uchar   ptmem_wlog;
+extern void portal_set_mem_rect_row(int row);
+extern void portal_free_all_mem_rects(void);
+extern unsigned char *portal_allocate_mem_rect(int x, int y);
+extern void portal_free_mem_rect(unsigned char *p, int x, int y);
+
+  // lightmap aggregation stuff
+extern void porthw_init(void);
+extern void porthw_shutdown(void);
+extern void porthw_start_frame(int frame);
+extern void porthw_end_frame(void);
+
+
+//////                         Moving Surfaces at Medium Boundaries
+
+  // The number of cell motion structures is fixed.
+#define MAX_CELL_MOTION 256
+extern PortalCellMotion portal_cell_motion[];
+extern void (*portal_anim_medium_callback)(long time_change_millisec);
+
+
+// This will move completely into the editor later, and not be here.
+extern int medium_motion_index;
+
+//////                                 Debugging tools
+
+
+  // get informative strings about last scene rendered;
+  // "vol" from 0..100 determines how much feedback;
+  // call over and over until you get null string
+extern char *portal_scene_info(int vol);
+
+extern bool render_backward;      // lets you see how far away it renders
+
+
+//////                                 Debugging flags
+// These are things which are be useful in the editor,
+// but would be kind of silly to include in the game.
+
+  // These are in portdraw.c, also referenced in portal.c.
+#ifndef SHIP
+   extern bool draw_solid_by_MIP_level;
+   extern bool draw_solid_by_cell;
+   extern bool draw_solid_wireframe;
+   extern bool draw_solid_by_poly_flags;
+   extern bool draw_solid_by_cell_flags;
+   extern bool draw_wireframe_around_tmap;
+   extern bool draw_wireframe_around_poly;
+#endif // SHIP
+
+
+/*
+Local Variables:
+typedefs:("Location" "ObjID" "Position" "uchar")
+End:
+*/
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+
+extern void (*portal_sfx_callback)(int cell);
+#pragma once
+#include <port.h>
+// $Header: r:/t2repos/thief2/src/portal/portal_.h,v 1.11 2000/01/29 13:37:23 adurant Exp $
+#pragma once
+
+#ifndef __PORTAL__H
+#define __PORTAL__H
+
+#include <r3d.h>
+#include <port.h>
+#include <portclip.h>
+#include <pt_clut.h>
+
+struct port_render_data
+{
+   ClipData *clip;     // portal clipping information for view into here
+   r3s_point *points;  // transformed points
+   float dist;         // average center point of this place
+   ClutChain clut;     // how do we clut this region, if at all?
+   float zwater;       // z depth at which we encountered water
+   uchar visit;        // have we already visited (traversed out of) this cell
+   uchar num_outgoing_portals;
+   uchar cell_flags;   // union of flags of cells used to reach this cell
+   uchar num_unexplored_entries;
+   int objs;
+   int outgoing_portal_offset;
+   int need_clip;
+   int sorted_index;
+};
+
+#define CLIP_DATA(x)   ((x)->render_data->clip)
+#define POINTS(x)      ((x)->render_data->points)
+#define VISIT(x)       ((x)->render_data->visit)
+#define DIST(x)        ((x)->render_data->dist)
+#define CLUT(x)        ((x)->render_data->clut)
+#define ZWATER(x)      ((x)->render_data->zwater)
+#define OBJECTS(x)     ((x)->render_data->objs)
+#define NUM_OUTGOING(x) ((x)->render_data->num_outgoing_portals)
+#define FIRST_OUTGOING(x)  ((x)->render_data->outgoing_portal_offset)
+#define NUM_INCOMING(x) ((x)->render_data->num_unexplored_entries)
+#define NEED_CLIP(x)   ((x)->render_data->need_clip)
+#define CELL_FLAGS(x)  ((x)->render_data->cell_flags)
+
+  // as we iterate over surfaces, we keep the
+  // following variables loaded up so we don't
+  // have to always pass them around
+extern r3s_point *cur_ph;
+extern Vector *cur_pool;
+extern uchar *r_vertex_list, *r_vertex_lighting;
+extern void *r_clip;
+
+// Here's the screen dimensions, stored in duv.c.
+extern float xsci, ysci;
+
+typedef short ObjVisibleID;
+
+typedef struct ObjVisible
+{
+   ObjID obj;
+   short next_visobj;
+   union {
+      ulong fragment;
+      void *cell;
+   };
+} ObjVisible;
+
+extern ObjVisible vis_objs[];
+
+#endif
+
+// $Header: r:/t2repos/thief2/src/portal/portclip.h,v 1.8 2000/01/29 13:37:24 adurant Exp $
+#pragma once
+#include <r3ds.h>
+
+#ifndef __PORTCLIP_H
+#define __PORTCLIP_H
+
+  // Clipping abstract data type--only portclip sees inside it
+typedef struct st_ClipData ClipData;
+
+  // get a clipping region the size of the screen
+extern ClipData *PortalClipRectangle(int l, int t, int r, int b);
+
+  // get a clipping region from a polygon and bounded by another clip region
+extern ClipData *PortalClipFromPolygon(int n, r3s_phandle *p, ClipData *clipsrc);
+
+  // check if a clipping region overlaps a bounding octagon
+extern bool PortalClipOverlap(ClipData *c, fix *min2d, fix *max2d);
+
+  // get a clipping region which is the union of two other clipping regions
+extern bool PortalClipUnion(ClipData *src, ClipData *s2);
+
+  // free a clipping region gotten from one of the above three functions
+extern void PortalClipFree(ClipData *c);
+
+  // test if a given point is unclipped
+extern bool PortClipTestPoint(ClipData *c, fix x, fix y);
+
+  // free all clipping regions, initialize for a new pass
+extern void PortalClipInit(void);
+
+  // clip a polygon to a portal
+extern int portclip_clip_polygon(int n, r3s_phandle *p, r3s_phandle **q, ClipData *c);
+
+extern bool clip_lighting;
+
+#define C_CLIP_UV_OFFSET  8
+extern int clip_uv;            // set to C_CLIP_UV_OFFSET if needed
+
+// probably should just provide a function
+//     set_clip_uv(bool)
+// which hides the details internally...
+
+#endif
+#pragma once
+#include <wrdb.h>
+#include <wrfunc.h>
+// $Header: r:/t2repos/thief2/src/portal/wrcast.c,v 1.42 2000/02/19 13:18:52 toml Exp $
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The raycaster returns TRUE if you can get from the start to the
+   end, and FALSE otherwise.
+
+   The comments on the earlier raycaster, which is still present as
+   OldPortalRaycast, follow these.  The two routines have enough in
+   common that I've skimped in places where the earlier description is
+   still valid (esp.: epsilon issues, coplanar surfaces).
+
+   We're working parametrically, with the ray going from 0 to 1.0.
+   For each plane we might exit through, we compute an exit time T.
+   The math is described the the earlier comments.
+
+   We eliminate some planes through backface culling, without finding
+   Ts.  The first step in finding a T is calculating the distance from
+   the plane to the starting point of the ray, so the culling is free.
+
+   Of those planes which face the right direction, our exit plane is
+   the one with the smallest T.  If it has no portals we stop, and if
+   it's all one portal we go through it.  For more complex cases we
+   use the plane's normal to identify its larger axes and check which
+   portal we've hit using a 2d convex-hull test.  There are six cases
+   for this: three axes x two winding directions.  There's a separate
+   goofy little tester function for each case.  If we haven't hit any
+   of the portals, we've hit a solid polygon, and we stop.
+
+   Optimizations...
+
+   Naturally, once things are optimized a bit, all explanation of
+   theory is turned into half-truths.  We do not, in fact, find our
+   times using our start and end points, because we wouldn't be able
+   to backface-cull in the first cell.  Instead we back up to T = -2
+   and perform all calculations from that point (for large cells with
+   short raycasts, this won't help; but doing it the right way, using
+   the diameter of the bounding sphere of our starting cell, requires
+   a divide, and turns out to be slower).
+
+   If a plane has more than one portal to test, but no nonportals, we
+   don't have to test the last portal.  We just enter it.
+
+   (Not done:) We're deriving a lot of static data on-the-fly,
+   including the major axes and directions of our plane normals and
+   which polygons are in which planes.  We could add fields for these
+   to the world rep, though if it were only used here the change
+   wouldn't gain us much.
+
+   (Not done:) In the exit time loop, we could accumulate distances to
+   divide in an array and run them two at a time so they overlapped.
+   This might be more of an ASM approach.  Unfortunately we don't have
+   any integer operations to stick in between.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+// So here's the comments on the earlier version.  Still good reading!
+
+// World-rep raycast
+
+// This routine casts an infinitely thin ray from one location to
+// another, and checks for intersecting terrain.  If the ray is
+// coplanar with a surface, that surface doesn't affect it.  If a ray
+// hits the edge of a surface, it is stopped.  (This prevents the ray
+// from passing through the crack between polygons, but lets us get
+// useful data comparing points on the surfaces of polygons.)
+
+// The function returns true if you can get from one point to the
+// other.  If it returns false, then you can call a query function to
+// determine what cell, what plane, and what polygon the ray was
+// stopped by.  (Determining what polygon is expensive; determining
+// the others is free once the ray has been cast.)
+
+// If the start point isn't in the database, no cell or plane or
+// polygon will be available.
+
+// If the function returns true, the cell cache for the endpoint will
+// be set.  Thus, for example, if you test for moving a thing from x
+// to y with a raycast, and it's valid, you should copy the entire
+// location y into the object's storage, so that its cell cache is
+// updated correctly
+
+// There's an extra parameter to raycast.  This is the flag value.
+// Any portal which has any bits in common with the flag value will
+// block the raycast.  (I suppose people might also want to check for
+// particular clutids to do things like "this raycast doesn't go
+// through water", but there are a few flag bits free still!)
+
+// IMPLEMENTATION
+
+// The basic approach is to find the cell that the start location is
+// in.  Then we explore through the series of cells the ray encounters
+// in order.
+//
+// We begin by considering the ray as parameterized
+//   start + t*(end-start)
+//
+// We will explore the range of t from 0..1.
+
+// Suppose that at time r we enter a particular cell.  (We enter the
+// first cell at some negative time t, but we don't actually need to
+// know it).
+
+// Then we can iterate over all the planes of the cell.  We compute
+// the point-to-plane distance for both the start and end point.  If
+// they're on opposite sides, we compute the time s at which they
+// intersect.
+
+// Then we know that we exit the cell through the plane which has the
+// least s greater than r.
+
+// Now we must deal with the fact that there may be multiple coplanar
+// surfaces along the exit plane.  We iterate over all of those
+// surfaces.  If none are portals, then we collided with a wall, and
+// are done.  If one of them is a portal, then we need to check
+// whether we enter that cell at the same time we exited this cell.
+// If we did, then we enter that cell, and if not, we're done.
+
+// If there's more than one coplanar portal, then we test whether the
+// entry time into each cell is identical to the exit time for this
+// cell.
+
+// COMPLICATIONS
+
+// First of all, we need to be able to have a "tolerance" for deciding
+// if two "times" are equal.  We'd like this tolerance to be based on
+// space, not time, so that two things are considered coplanar if
+// they're within e.g.  0.001 units; otherwise we get different
+// results for short raycasts and long raycasts.
+
+// Therefore we will actually do the following:
+//    delta = end - start
+//    len = || delta ||
+//    delta = delta / len
+//
+// Now t ranges from 0..len instead of 0..1
+
+// Second, when we try to decide if we make it through a portal, we
+// have to "look ahead" to the next cell.  Rather than looking ahead,
+// doing the math, and then coming back, we want to do it all in one
+// step.  So if there's only one portal, then we will "tentatively"
+// advance into the next cell.  When we check for a time s s.t. r < s,
+// we also check for an s s.t. s ~= r.  We can just do this in general
+// all the time, except in the first cell; but if we have to have a
+// boolean which is set in the first cell, we might as well do it all
+// the time.
+
+// In the case of multiple coplanar portals, this is more complicated;
+// we need to tentatively advance, but be able to back up and try
+// another.  Rather than write this potentially complicated code, we
+// note that this case probably occurs infrequently enough that we can
+// afford to test the cells redundantly.  Consider the costs:
+
+// Suppose we have n coplanar portals, and an equal chance of going
+// through any of the portals (ignore the possibility of hitting a
+// wall, which requires exploring all portals).  There are n cases.
+// For the ith case, we explore i portals before determining which one
+// we go through.
+
+// If we assume naive lookahead, then we will explore all of the cells
+// up to the ith, and then we will immediately reexplore that cell.
+// If we assume smart lookahead, we explore all of the cells up to the
+// ith, and then we're done and already have the information to
+// continue the next cell.  Thus, in every case, smart lookahead saves
+// one cell exploration every time there are coplanar portals.
+
+// However, if there are n coplanar portals, then on average we will
+// explore (n+1)/2 of them with smart, and (n+3)/2 of them with naive.
+// If there's only 1 coplanar portal, this is savings (1 vs. 2), and
+// the code is easy to do.  With 3 coplanar portals, the savings is
+// smaller (2 vs. 3), and it gets progressively smaller as n gets
+// larger.
+
+// Thirdly, we can optimize the last cell.  If we know what cell the
+// endpoint is in, then the moment we enter that cell, we can stop, as
+// long as we've truly entered it, not tentatively entered it.  I
+// think the old portal raycaster had bugs in this area because I
+// never worked the logic out formally.
+
+// Fourthly, we optimize for the cast where both end points are in the
+// same cell, but we don't know that the end point is in the cell when
+// we start.  The way we do this that when we check the distance of
+// points from each plane, we check the outside point first.  If it's
+// inside the plane, then we skip testing the inside point.  If we're
+// checking entry time, we can't skip it, but we never are in the
+// first cell.
+
+// Fifthly, if our raycast succeeds, we stuff the cell cache for the
+// destination, in case it actually gets reused.
+
+#include <math.h>    // fabs()
+#include <stdlib.h>  // exit()
+
+#include <lg.h>
+#include <dbg.h>
+#include <mprintf.h>
+#include <r3d.h>
+#include <matrix.h>
+
+#include <_portal.h>
+
+#include <port.h>
+#include <wrtype.h>
+#include <wrdb.h>
+#include <wrfunc.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+
+// These should really be in dbg.h.  If I need to use them more than
+// once, I'll put them there.
+
+#ifdef DBG_ON
+# define DbgSetDbgSlot(b,s)    dbgBank[b].gate[DG_DBG]  |=  (s)
+# define DbgClearDbgSlot(b,s)  dbgBank[b].gate[DG_DBG]  &= ~(s)
+# define DbgSetMonoSlot(b,s)   dbgBank[b].gate[DG_MONO] |=  (s)
+# define DbgClearMonoSlot(b,s) dbgBank[b].gate[DG_MONO] &= ~(s)
+#else
+# define DbgSetDbgSlot(b,s)
+# define DbgClearDbgSlot(b,s)
+# define DbgSetMonoSlot(b,s)
+# define DbgClearMonoSlot(b,s)
+#endif
+
+
+#ifndef _WIN32
+#define RAYCAST_ERROR
+#endif
+
+
+#define DBG_Raycast(x)   DBG(DSRC_PORTAL_Raycast, x)
+#define SpewRaycast(x)   Spew(DSRC_PORTAL_Raycast, x)
+
+
+bool debug_raycast;
+
+#ifdef WARN_ON
+# define Complain(x) Warning((x));
+#else
+# define Complain(x) mprintf(x);
+#endif
+
+#define RAYCAST_EPSILON 0.001
+#define EXTENDED_TIME_RAYCAST_EPSILON (RAYCAST_EPSILON / 3.0)
+#define HULL_TEST_EPSILON 0.00025
+
+
+// OPTIMIZE: use the dot product cache
+#define PlaneDist(vec,pln)   (mx_dot_vec(vec, &(pln)->normal) + (pln)->plane_constant)
+
+//////////////////////////////
+//
+// test if a given point lies along the surface of a cell
+//
+bool PortalPointOnCell(int cell, mxs_vector *pt)
+{
+   PortalCell *r = WR_CELL(cell);
+   mxs_real dist;
+   PortalPlane *p = r->plane_list;
+   int n = r->num_planes, i;
+   bool found_surface = FALSE;
+
+   SpewRaycast (("PortalPointOnCell: "));
+
+   for (i=0; i < n; ++i,++p) {
+      dist = PlaneDist(pt, p);
+      SpewRaycast (("!%g ", dist));
+
+      // if the point is behind the plane, we're not in this cell
+      if (dist < -RAYCAST_EPSILON * 2.0)
+         return FALSE;
+
+      if (fabs(dist) <= RAYCAST_EPSILON * 2.0) // OPTIMIZE: I don't think we need this fabs [DS]
+         found_surface = TRUE;
+   }
+
+   // this means we're inside the cell, which is also FALSE
+   return found_surface;
+}
+
+//////////////////////////////
+//
+// Raycast along a vector, instead of from start point to end point
+//
+void PortalRaycastVector (Location *start_loc, mxs_vector *vec, 
+                          Location *hit_loc, int use_zero_epsilon)
+{
+   // The way we do this is to do a bunch of finite raycasts, and keep
+   // projecting forward if we don't hit.
+
+   Location loc1, loc2;         // start and end of this raycast
+   mxs_vector next;             // used to construct loc2;
+
+   loc1 = *start_loc;
+
+   // We could make this faster with pointers switching back and forth
+   // so that we're not copying Locations around.  I'm sure it's not
+   // worth it; I'm just mentioning it here so Sean doesn't think I'm
+   // an idiot. (DS)
+
+   // I think we can afford one copy every 100 units, so long as
+   // people don't decide a unit is a millimeter.  (SB)
+
+   // Five bucks to the first person to make this code go into an
+   // infinite loop
+   for (;;)
+   {
+      mx_scale_add_vec (&next, &loc1.vec, vec, 100.0);
+      MakeLocationFromVector (&loc2, &next);
+      if (!PortalRaycast (&loc1, &loc2, hit_loc, use_zero_epsilon))
+         return;
+      loc1 = loc2;              // oh, the inefficiency
+   }
+}
+
+
+// These globals are used for passing values into the six routines
+// which follow, and are not guaranteed to have any particular value
+// at any time outside the raycaster since they're used by other
+// functions which borrow the raycaster's internals.  Say, do you
+// think these names are long enough?
+static PortalPolygonCore *_portal_raycast_cur_poly;
+static mxs_vector *_portal_raycast_cur_vectors;
+static uchar *_portal_raycast_point_indirection;
+static mxs_vector _portal_raycast_perp_edge;
+static mxs_vector _portal_raycast_contact;
+
+
+// These are set by PortalRaycast().
+int PortalRaycastPlane;                 // PLANE_INVALID if we hit nothing
+int PortalRaycastCell;                  // end cell of cast if we didn't hit
+float PortalRaycastTime;                // 0-1, if we hit anything
+mxs_vector PortalRaycastHit;            // undefined if we hit nothing
+
+bool PortalRaycastResult = TRUE;
+
+// These are set by PortalRaycastRefs().
+int PortalRaycastRefCount;
+int PortalRaycastRef[RAYCAST_MAX_REFS];
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The next six routines are used for convex hull tests on the larger
+   axes of a polygon.  We have a total of six since the standard for
+   right-sidedness depends on which direction the ray is coming from
+   (that is, it's a winding thing).  TRUE means our ray passes through
+   this polygon.
+
+   We check whether a point is within a polygon using a dot product.
+   But we're cheap.  We don't want to have to normalize the components.
+   So we use a quick and dirty Manhattan distance.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool _PortalConvexHullXYPosZ(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.x = end->y - start->y;
+      _portal_raycast_perp_edge.y = start->x - end->x;
+
+      if (_portal_raycast_perp_edge.x >= 0.0)
+         size1 = _portal_raycast_perp_edge.x;
+      else
+         size1 = -_portal_raycast_perp_edge.x;
+
+      if (_portal_raycast_perp_edge.y >= 0.0)
+         size2 = _portal_raycast_perp_edge.y;
+      else
+         size2 = -_portal_raycast_perp_edge.y;
+
+      // If we're to the left of any side, we're outside our polygon.
+      if ((_portal_raycast_perp_edge.x
+           * (_portal_raycast_contact.x - start->x)
+           + _portal_raycast_perp_edge.y
+           * (_portal_raycast_contact.y - start->y))
+       <= (-HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+// This is just like _PortalConvexHullXYPosZ, above.
+bool _PortalConvexHullXYNegZ(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.x = end->y - start->y;
+      _portal_raycast_perp_edge.y = start->x - end->x;
+
+      if (_portal_raycast_perp_edge.x >= 0.0)
+         size1 = _portal_raycast_perp_edge.x;
+      else
+         size1 = -_portal_raycast_perp_edge.x;
+
+      if (_portal_raycast_perp_edge.y >= 0.0)
+         size2 = _portal_raycast_perp_edge.y;
+      else
+         size2 = -_portal_raycast_perp_edge.y;
+
+      // If we're to the left of any side, we're outside our polygon.
+      if ((_portal_raycast_perp_edge.x
+           * (_portal_raycast_contact.x - start->x)
+           + _portal_raycast_perp_edge.y
+           * (_portal_raycast_contact.y - start->y))
+       >= (HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+// This is just like _PortalConvexHullXYPosZ, above.
+bool _PortalConvexHullYZPosX(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.y = end->z - start->z;
+      _portal_raycast_perp_edge.z = start->y - end->y;
+
+      if (_portal_raycast_perp_edge.y >= 0.0)
+         size1 = _portal_raycast_perp_edge.y;
+      else
+         size1 = -_portal_raycast_perp_edge.y;
+
+      if (_portal_raycast_perp_edge.z >= 0.0)
+         size2 = _portal_raycast_perp_edge.z;
+      else
+         size2 = -_portal_raycast_perp_edge.z;
+
+      if ((_portal_raycast_perp_edge.y
+           * (_portal_raycast_contact.y - start->y)
+           + _portal_raycast_perp_edge.z
+           * (_portal_raycast_contact.z - start->z))
+       <= (-HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+// This is just like _PortalConvexHullXYPosZ, above.
+bool _PortalConvexHullYZNegX(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.y = end->z - start->z;
+      _portal_raycast_perp_edge.z = start->y - end->y;
+
+      if (_portal_raycast_perp_edge.y >= 0.0)
+         size1 = _portal_raycast_perp_edge.y;
+      else
+         size1 = -_portal_raycast_perp_edge.y;
+
+      if (_portal_raycast_perp_edge.z >= 0.0)
+         size2 = _portal_raycast_perp_edge.z;
+      else
+         size2 = -_portal_raycast_perp_edge.z;
+
+      if ((_portal_raycast_perp_edge.y
+           * (_portal_raycast_contact.y - start->y)
+           + _portal_raycast_perp_edge.z
+           * (_portal_raycast_contact.z - start->z))
+       >= (HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+// This is just like _PortalConvexHullXYPosZ, above.
+bool _PortalConvexHullZXPosY(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.z = end->x - start->x;
+      _portal_raycast_perp_edge.x = start->z - end->z;
+
+      if (_portal_raycast_perp_edge.z >= 0.0)
+         size1 = _portal_raycast_perp_edge.z;
+      else
+         size1 = -_portal_raycast_perp_edge.z;
+
+      if (_portal_raycast_perp_edge.x >= 0.0)
+         size2 = _portal_raycast_perp_edge.x;
+      else
+         size2 = -_portal_raycast_perp_edge.x;
+
+      if ((_portal_raycast_perp_edge.z
+           * (_portal_raycast_contact.z - start->z)
+           + _portal_raycast_perp_edge.x
+           * (_portal_raycast_contact.x - start->x))
+       <= (-HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+// This is just like _PortalConvexHullXYPosZ, above.
+bool _PortalConvexHullZXNegY(void)
+{
+   mxs_vector *end;
+   uchar i;
+   float size1, size2;
+   uchar sides = _portal_raycast_cur_poly->num_vertices;
+   mxs_vector *start = _portal_raycast_cur_vectors
+                     + _portal_raycast_point_indirection[sides - 1];
+
+   for (i = 0; i < sides; i++) {
+      end = _portal_raycast_cur_vectors
+          + _portal_raycast_point_indirection[i];
+      _portal_raycast_perp_edge.z = end->x - start->x;
+      _portal_raycast_perp_edge.x = start->z - end->z;
+
+      if (_portal_raycast_perp_edge.z >= 0.0)
+         size1 = _portal_raycast_perp_edge.z;
+      else
+         size1 = -_portal_raycast_perp_edge.z;
+
+      if (_portal_raycast_perp_edge.x >= 0.0)
+         size2 = _portal_raycast_perp_edge.x;
+      else
+         size2 = -_portal_raycast_perp_edge.x;
+
+      if ((_portal_raycast_perp_edge.z
+           * (_portal_raycast_contact.z - start->z)
+           + _portal_raycast_perp_edge.x
+           * (_portal_raycast_contact.x - start->x))
+       >= (HULL_TEST_EPSILON * (size1 + size2)))
+         return FALSE;
+
+      start = end;
+   }
+
+   return TRUE;
+}
+
+
+bool OldPortalRaycast(Location *start_loc, Location *end_loc, 
+                      Location *hit_loc, int portal_block_flags);
+bool use_old_raycast = FALSE;
+bool (*_portal_raycast_hull_test)() = _PortalConvexHullXYPosZ;
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   We have six routines for convex hull tests.  Each projects the
+   polygon onto a major axis plane.  So we choose our test based on
+   the normal of the polygon's plane.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void _PortalRaycastSetHullTest(mxs_vector *norm)
+{
+   float x_size = fabs(norm->x);
+   float y_size = fabs(norm->y);
+   float z_size = fabs(norm->z);
+
+   if (x_size > y_size)
+      if (x_size > z_size)
+         if (norm->x < 0)
+            _portal_raycast_hull_test = _PortalConvexHullYZNegX;
+         else
+            _portal_raycast_hull_test = _PortalConvexHullYZPosX;
+      else
+         if (norm->z < 0)
+            _portal_raycast_hull_test = _PortalConvexHullXYNegZ;
+         else
+            _portal_raycast_hull_test = _PortalConvexHullXYPosZ;
+   else
+      if (y_size > z_size)
+         if (norm->y < 0)
+            _portal_raycast_hull_test = _PortalConvexHullZXNegY;
+         else
+            _portal_raycast_hull_test = _PortalConvexHullZXPosY;
+      else
+         if (norm->z < 0)
+            _portal_raycast_hull_test = _PortalConvexHullXYNegZ;
+         else
+            _portal_raycast_hull_test = _PortalConvexHullXYPosZ;
+}
+
+
+typedef struct {
+   PortalPolygonCore *poly;
+   uint vertex_offset;
+} _PortalRaycastExit;
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   Here's the latest raycaster.  It differs from the earlier one
+   mainly in that it does not calculate entry times, and decides where
+   to go next using convex hull tests.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool PortalRaycast(Location *start_loc, Location *end_loc, 
+                   Location *hit_loc, int use_zero_epsilon)
+{
+   int cur_cell;
+   int i;
+
+   // ray and associated error terms
+   mxs_vector *plane_norm, start_point, end_point;
+   mxs_vector ray_vector, early_point;
+   double time_epsilon, space_epsilon, ray_length, end_time;
+
+   // used in deciding what surface we've reached in a cell
+   int num_nonportals_in_cell;
+   PortalPolygonCore *cur_poly;
+   PortalPlane *cur_plane;
+   int plane_is_all_portals;
+   int num_portals_in_plane;
+   int num_portals_to_test;
+   _PortalRaycastExit possible_exit[256];
+
+#ifndef SHIP
+   if (start_loc->cell == CELL_INVALID && start_loc->hint == CELL_INVALID)
+      Warning(("raycast loc w/ no cell, no hint: (%g %g %g)\n",
+               start_loc->vec.x, start_loc->vec.y, start_loc->vec.z));
+#endif
+
+   cur_cell = CellFromLoc(start_loc);
+
+   // set our return value & contact info
+   PortalRaycastResult = TRUE;
+   PortalRaycastPlane = PLANE_INVALID;
+
+#ifndef SHIP
+if (use_old_raycast)
+   return OldPortalRaycast(start_loc, end_loc, 
+                           hit_loc, 0);
+
+   {
+      int start_cell = start_loc->cell;
+      int start_hint = start_loc->hint;
+
+      if (start_cell == CELL_INVALID)
+         if (start_hint != cur_cell)
+            mprintf("PortalRaycast: bad hint at (%g %g %g)\n",
+                    start_loc->vec.x, start_loc->vec.y, start_loc->vec.z);
+   }
+#endif
+
+   // check to make sure we're in the database
+   if (cur_cell == CELL_INVALID) {
+
+      // stuff our globals used for query functions and return FALSE
+      PortalRaycastCell = CELL_INVALID;
+      SpewRaycast (("Started outside.\n"));
+      *hit_loc = *start_loc;
+      PortalRaycastResult = FALSE;
+
+      goto finished;
+   }
+
+
+   start_point = start_loc->vec;
+   end_point = end_loc->vec;
+
+   // We want an error term proportional to the length of the segment
+   // we're casting along.  Along the way we find the length of our
+   // ray.  We have to account for the fact that we are really casting
+   // along a ray three times the length of the one passed in.
+   mx_sub_vec(&ray_vector, &end_point, &start_point);
+   ray_length = mx_mag_vec(&ray_vector);
+
+   if (use_zero_epsilon) {
+      time_epsilon = space_epsilon = 0.0;
+      end_time = 1.0;
+   } else {
+      space_epsilon = EXTENDED_TIME_RAYCAST_EPSILON;
+      time_epsilon = space_epsilon / ray_length;
+      end_time = 1.0 - time_epsilon;
+   }
+
+   // Instead of finding our times from the starting point, we'll find
+   // them from T = -2 to try and backface-cull some planes in our
+   // first cell.
+   mx_scale_add_vec(&early_point, &start_point, &ray_vector, -2.0);
+
+   // So now our ray runs from early_point to end_point.
+   mx_scaleeq_vec(&ray_vector, 3.0);
+
+   // We advance through the cells until the next plane ahead is at
+   // least as far along the ray as our endpoint.
+   while (1) {
+      double start_dist, end_dist, time;
+      int plane_index, vertex_offset;
+      int cur_plane_index;
+      PortalCell *cell = wr_cell[cur_cell];
+
+      // We want the plane which is in front of us, but closer to our
+      // starting point than the other planes in front of us.  We can
+      // backface cull the ones facing away from our ray.
+
+      PortalRaycastTime = 1000000.0;     // big enough for ya?
+      for (plane_index = 0, cur_plane = cell->plane_list;
+           plane_index < cell->num_planes;
+           plane_index++, cur_plane++) {
+         plane_norm = &(cur_plane->normal);
+
+         start_dist = plane_norm->x * early_point.x
+                    + plane_norm->y * early_point.y
+                    + plane_norm->z * early_point.z
+                    + cur_plane->plane_constant;
+
+         if (start_dist > space_epsilon) {
+            end_dist = plane_norm->x * end_point.x
+                     + plane_norm->y * end_point.y
+                     + plane_norm->z * end_point.z
+                     + cur_plane->plane_constant;
+
+            if (end_dist < 0) {
+               time = start_dist / (start_dist - end_dist);
+               if (time < PortalRaycastTime) {
+                  PortalRaycastTime = time;
+                  cur_plane_index = plane_index;
+               }
+            }
+         }
+      }
+
+      // If every plane we didn't backface cull is beyond our
+      // endpoint, we must have reached the end of our ray without
+      // colliding with anything.  We return TRUE.
+      if (PortalRaycastTime > end_time) {
+         PortalRaycastCell = cur_cell;
+         goto finished;
+      }
+
+      PortalRaycastPlane = cur_plane_index;
+
+      // If we have nonportals in our plane, we need to test our ray
+      // against all the portals; if we've hit none of them, we've hit
+      // a nonportal.  So this is the bookkeeping to find out what
+      // we've got in this plane.  Pity it's all deriving static info.
+      cur_poly = cell->poly_list;
+      num_nonportals_in_cell = cell->num_polys - cell->num_portal_polys;
+      plane_is_all_portals = 1;
+      vertex_offset = 0;
+      for (i = 0; i < num_nonportals_in_cell; i++) {
+         if (cur_poly->planeid == cur_plane_index)
+            plane_is_all_portals = 0;
+         vertex_offset += cur_poly->num_vertices;
+         cur_poly++;
+      }
+
+      // We may have more than one portal in the plane we're exiting.
+      // If so, we'll record which ones they are in an array.
+      num_portals_in_plane = 0;
+      for (; i < cell->num_polys; i++) {
+         if (cur_poly->planeid == cur_plane_index) {
+            possible_exit[num_portals_in_plane].poly = cur_poly;
+            possible_exit[num_portals_in_plane].vertex_offset = vertex_offset;
+            num_portals_in_plane++;
+         }
+         vertex_offset += cur_poly->num_vertices;
+         cur_poly++;
+      }
+
+
+      // If there's no cells we can reach through this plane, here we
+      // are, and we stop.
+      if (num_portals_in_plane == 0)
+         goto finished_with_collision;
+
+      // If this plane is nothing but one big portal, we go through it.
+      if (num_portals_in_plane == 1
+       && plane_is_all_portals) {
+         cur_cell = possible_exit[0].poly->destination;
+      } else {
+         // Here's the nasty case.  A surface with more than one
+         // portal or a mixture of portals and nonportals.  We'll test
+         // our intersection point against the portals, in 2d, using
+         // the larger axes of the plane.
+         _PortalRaycastSetHullTest(&(cell->plane_list + cur_plane_index)
+                                   ->normal);
+         {
+            // Here's the point we've hit on the plane.
+            mx_scale_add_vec(&_portal_raycast_contact,
+                             &early_point, &ray_vector, PortalRaycastTime);
+
+            // If one of these portals has our intersection point then
+            // we head into its cell.  If not, we've hit a regular
+            // poly and we're done.  We can skip the last portal if
+            // there's no nonportals to hit.
+            num_portals_to_test = num_portals_in_plane
+                                - plane_is_all_portals;
+
+            _portal_raycast_cur_vectors = cell->vpool;
+
+            for (i = 0; i < num_portals_to_test; i++) {
+               _portal_raycast_cur_poly = possible_exit[i].poly;
+               _portal_raycast_point_indirection
+                  = cell->vertex_list + possible_exit[i].vertex_offset;
+
+               if ((*_portal_raycast_hull_test)())
+                  break;
+            }
+
+            if (i == num_portals_to_test && !plane_is_all_portals)
+               goto finished_with_collision;
+
+            cur_cell = possible_exit[i].poly->destination;
+         }
+      }
+   }
+
+   // We set a few globals before we leave, for anyone who wants to
+   // know more about what we hit and where.
+finished_with_collision:
+   PortalRaycastResult = FALSE;
+   PortalRaycastCell = cur_cell;
+   mx_scale_add_vec(&PortalRaycastHit, &early_point, &ray_vector,
+                    PortalRaycastTime);
+
+   hit_loc->vec = PortalRaycastHit;
+
+finished:
+   return PortalRaycastResult;
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This is just like the above--literally--except that it leaves a
+   list of the cells it encounters in PortalRaycastRefCount and
+   PortalRaycastRef[], and stops and spews if it reaches
+   RAYCAST_MAX_REFS.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool PortalRaycastRefs(Location *start_loc, Location *end_loc, 
+                       Location *hit_loc, int use_zero_epsilon)
+{
+   int cur_cell;
+   int i;
+
+   // ray and associated error terms
+   mxs_vector *plane_norm, start_point, end_point;
+   mxs_vector ray_vector, early_point;
+   double time_epsilon, space_epsilon, ray_length, end_time;
+
+   // used in deciding what surface we've reached in a cell
+   int num_nonportals_in_cell;
+   PortalPolygonCore *cur_poly;
+   PortalPlane *cur_plane;
+   int plane_is_all_portals;
+   int num_portals_in_plane;
+   int num_portals_to_test;
+   _PortalRaycastExit possible_exit[256];
+   PortalRaycastRefCount = 0;
+
+#ifndef SHIP
+   if (start_loc->cell == CELL_INVALID && start_loc->hint == CELL_INVALID)
+      Warning(("ref raycast loc w/ no cell, no hint: (%g %g %g)\n",
+               start_loc->vec.x, start_loc->vec.y, start_loc->vec.z));
+#endif
+
+   cur_cell = CellFromLoc(start_loc);
+
+   // set our return value & contact info
+   PortalRaycastResult = TRUE;
+   PortalRaycastPlane = PLANE_INVALID;
+
+   // check to make sure we're in the database
+   if (cur_cell == CELL_INVALID) {
+
+      // stuff our globals used for query functions and return FALSE
+      PortalRaycastCell = CELL_INVALID;
+      SpewRaycast (("Started outside.\n"));
+      *hit_loc = *start_loc;
+      PortalRaycastResult = FALSE;
+
+      goto finished;
+   }
+
+
+   start_point = start_loc->vec;
+   end_point = end_loc->vec;
+
+   // We want an error term proportional to the length of the segment
+   // we're casting along.  Along the way we find the length of our
+   // ray.  We have to account for the fact that we are really casting
+   // along a ray three times the length of the one passed in.
+   mx_sub_vec(&ray_vector, &end_point, &start_point);
+   ray_length = mx_mag_vec(&ray_vector);
+
+   if (use_zero_epsilon) {
+      time_epsilon = space_epsilon = 0.0;
+      end_time = 1.0;
+   } else {
+      space_epsilon = EXTENDED_TIME_RAYCAST_EPSILON;
+      time_epsilon = space_epsilon / ray_length;
+      end_time = 1.0 - time_epsilon;
+   }
+
+   // Instead of finding our times from the starting point, we'll find
+   // them from T = -2 to try and backface-cull some planes in our
+   // first cell.
+   mx_scale_add_vec(&early_point, &start_point, &ray_vector, -2.0);
+
+   // So now our ray runs from early_point to end_point.
+   mx_scaleeq_vec(&ray_vector, 3.0);
+
+   // We advance through the cells until the next plane ahead is at
+   // least as far along the ray as our endpoint.
+   while (1) {
+      double start_dist, end_dist, time;
+      int plane_index, vertex_offset;
+      int cur_plane_index;
+      PortalCell *cell = wr_cell[cur_cell];
+
+      PortalRaycastRef[PortalRaycastRefCount++] = cur_cell;
+
+#ifndef SHIP
+      if (PortalRaycastRefCount == RAYCAST_MAX_REFS) {
+         mprintf("PortalRaycastRefs: ran out of refs!\n");
+         goto finished;
+      }
+#endif // ~SHIP
+
+      // We want the plane which is in front of us, but closer to our
+      // starting point than the other planes in front of us.  We can
+      // backface cull the ones facing away from our ray.
+
+      PortalRaycastTime = 1000000.0;     // big enough for ya?
+      for (plane_index = 0, cur_plane = cell->plane_list;
+           plane_index < cell->num_planes;
+           plane_index++, cur_plane++) {
+         plane_norm = &(cur_plane->normal);
+
+         start_dist = plane_norm->x * early_point.x
+                    + plane_norm->y * early_point.y
+                    + plane_norm->z * early_point.z
+                    + cur_plane->plane_constant;
+
+         if (start_dist > space_epsilon) {
+            end_dist = plane_norm->x * end_point.x
+                     + plane_norm->y * end_point.y
+                     + plane_norm->z * end_point.z
+                     + cur_plane->plane_constant;
+
+            if (end_dist < 0) {
+               time = start_dist / (start_dist - end_dist);
+               if (time < PortalRaycastTime) {
+                  PortalRaycastTime = time;
+                  cur_plane_index = plane_index;
+               }
+            }
+         }
+      }
+
+      // If every plane we didn't backface cull is beyond our
+      // endpoint, we must have reached the end of our ray without
+      // colliding with anything.  We return TRUE.
+      if (PortalRaycastTime > end_time) {
+         PortalRaycastCell = cur_cell;
+         goto finished;
+      }
+
+      PortalRaycastPlane = cur_plane_index;
+
+      // If we have nonportals in our plane, we need to test our ray
+      // against all the portals; if we've hit none of them, we've hit
+      // a nonportal.  So this is the bookkeeping to find out what
+      // we've got in this plane.  Pity it's all deriving static info.
+      cur_poly = cell->poly_list;
+      num_nonportals_in_cell = cell->num_polys - cell->num_portal_polys;
+      plane_is_all_portals = 1;
+      vertex_offset = 0;
+      for (i = 0; i < num_nonportals_in_cell; i++) {
+         if (cur_poly->planeid == cur_plane_index)
+            plane_is_all_portals = 0;
+         vertex_offset += cur_poly->num_vertices;
+         cur_poly++;
+      }
+
+      // We may have more than one portal in the plane we're exiting.
+      // If so, we'll record which ones they are in an array.
+      num_portals_in_plane = 0;
+      for (; i < cell->num_polys; i++) {
+         if (cur_poly->planeid == cur_plane_index) {
+            possible_exit[num_portals_in_plane].poly = cur_poly;
+            possible_exit[num_portals_in_plane].vertex_offset = vertex_offset;
+            num_portals_in_plane++;
+         }
+         vertex_offset += cur_poly->num_vertices;
+         cur_poly++;
+      }
+
+
+      // If there's no cells we can reach through this plane, here we
+      // are, and we stop.
+      if (num_portals_in_plane == 0)
+         goto finished_with_collision;
+
+      // If this plane is nothing but one big portal, we go through it.
+      if (num_portals_in_plane == 1
+       && plane_is_all_portals) {
+         cur_cell = possible_exit[0].poly->destination;
+      } else {
+         // Here's the nasty case.  A surface with more than one
+         // portal or a mixture of portals and nonportals.  We'll test
+         // our intersection point against the portals, in 2d, using
+         // the larger axes of the plane.
+         _PortalRaycastSetHullTest(&(cell->plane_list + cur_plane_index)
+                                   ->normal);
+         {
+            // Here's the point we've hit on the plane.
+            mx_scale_add_vec(&_portal_raycast_contact,
+                             &early_point, &ray_vector, PortalRaycastTime);
+
+            // If one of these portals has our intersection point then
+            // we head into its cell.  If not, we've hit a regular
+            // poly and we're done.  We can skip the last portal if
+            // there's no nonportals to hit.
+            num_portals_to_test = num_portals_in_plane
+                                - plane_is_all_portals;
+
+            _portal_raycast_cur_vectors = cell->vpool;
+
+            for (i = 0; i < num_portals_to_test; i++) {
+               _portal_raycast_cur_poly = possible_exit[i].poly;
+               _portal_raycast_point_indirection
+                  = cell->vertex_list + possible_exit[i].vertex_offset;
+
+               if ((*_portal_raycast_hull_test)())
+                  break;
+            }
+
+            if (i == num_portals_to_test && !plane_is_all_portals)
+               goto finished_with_collision;
+
+            cur_cell = possible_exit[i].poly->destination;
+         }
+      }
+   }
+
+   // We set a few globals before we leave, for anyone who wants to
+   // know more about what we hit and where.
+finished_with_collision:
+   PortalRaycastResult = FALSE;
+   PortalRaycastCell = cur_cell;
+   mx_scale_add_vec(&PortalRaycastHit, &early_point, &ray_vector, PortalRaycastTime);
+
+   hit_loc->vec = PortalRaycastHit;
+
+finished:
+   return PortalRaycastResult;
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The raycaster only deals with planes and portals.  If we hit
+   something, and we want to know which plane, we call this.  A return
+   value of -1 means that either the most recent raycast had a clear path
+   or it started outside the world rep.  Either way, there's no result we
+   can sensibly return.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalRaycastFindPolygon(void)
+{
+   int i;
+   PortalCell *cell;
+
+   if (PortalRaycastResult || PortalRaycastCell == CELL_INVALID)
+      return -1;
+
+   cell = WR_CELL(PortalRaycastCell);
+
+   _portal_raycast_point_indirection = cell->vertex_list;
+   _portal_raycast_cur_vectors = cell->vpool;
+   _PortalRaycastSetHullTest(&(cell->plane_list + PortalRaycastPlane)
+                                   ->normal);
+   _portal_raycast_contact = PortalRaycastHit;
+
+   // We don't test the last poly since we know we hit _something_.
+   for (i = 0; i < cell->num_render_polys - 1; i++) {
+      _portal_raycast_cur_poly = &cell->poly_list[i];
+      if (_portal_raycast_cur_poly->planeid == PortalRaycastPlane
+       && (*_portal_raycast_hull_test)())
+            break;
+
+      _portal_raycast_point_indirection
+         += _portal_raycast_cur_poly->num_vertices;
+   }
+   return i;
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This wrapper for testing a point against a polygon insulates the
+   outside world from the gawdawfulness of it all.  It trashes some of
+   the raycaster's internal globals.
+
+   We allow the client to specify not setting the hull test because
+   it's cheaper if we have many coplanar polygons.
+
+   This does not check whether the point is actually in the plane of
+   the polygon.  The test is basically 2D.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool PortalPointInPolygon(mxs_vector *point, PortalCell *cell,
+                          PortalPolygonCore *polygon, 
+                          int vertex_offset, bool set_hull_test)
+{
+   _portal_raycast_point_indirection = cell->vertex_list + vertex_offset;
+   _portal_raycast_cur_vectors = cell->vpool;
+   _portal_raycast_cur_poly = polygon;
+   _portal_raycast_contact = *point;
+
+   if (set_hull_test)
+      _PortalRaycastSetHullTest(&(cell->plane_list + polygon->planeid)
+                                ->normal);
+
+   return (*_portal_raycast_hull_test)();
+}
+
+
+
+/* ##################################################################
+
+   Here's the original slow, temporary raycaster.  We'll retire it
+   soon.
+
+*/
+
+void compute_raycast_times(int cell, mxs_vector *start, mxs_vector *end,
+         double *enter, double *exit)
+{
+   PortalCell *r = WR_CELL(cell);
+   double start_dist, end_dist;
+   double enter_time, exit_time;
+   int i, n;
+
+   n = r->num_planes;
+
+      // time is on scale of 0..1
+   enter_time = -1;
+   exit_time = 2;
+
+   for (i=0; i < n; ++i) {
+      double time;
+
+#define PlaneDist(vec,pln)   (mx_dot_vec(vec, &(pln)->normal) + (pln)->plane_constant)
+#if 0
+      start_dist = PlaneDist(start, &r->plane_list[i]);
+      end_dist   = PlaneDist(end  , &r->plane_list[i]);
+#else
+      {
+         mxs_vector *norm = &r->plane_list[i].normal;
+         start_dist = norm->x * start->x + norm->y * start->y
+                    + norm->z * start->z + r->plane_list[i].plane_constant;
+           end_dist = norm->x *   end->x + norm->y *   end->y
+                    + norm->z *   end->z + r->plane_list[i].plane_constant;
+       }    
+#endif
+
+      // now, there are icky cases if start_dist ~= 0 or if end_dist ~= 0.
+      // we assume we fixup start_dist cases by displacing start location
+      // away from cell boundary.
+
+      if (start_dist < -RAYCAST_EPSILON) {
+         // we're currently outside.  if end_dist > RAYCAST_EPSILON, then we end
+         // inside.  otherwise, we never make it inside
+
+         if (end_dist > 0) {
+            time = - start_dist / ((double) end_dist - start_dist);
+            if (time > enter_time)
+               enter_time = time;
+         } else {
+            *enter = 3;
+            *exit = 2;
+            return;
+         }
+      } else if (start_dist > RAYCAST_EPSILON) {
+         // we're currently inside.  end_dist < 0, we make it out 
+         // otherwise, we don't get out, so we ignore it
+
+         if (end_dist < 0) {
+            time = - start_dist / ((double) end_dist - start_dist);
+            if (time < exit_time) 
+               exit_time = time;
+         }
+      }
+   }
+
+   *enter = enter_time;
+   *exit = exit_time;
+}
+
+
+#define RAYCAST_SLOW_EPSILON 0.0001
+
+// We mark those cells which we have determined do not intersect our
+// ray, so we can avoid revisiting them.
+PortalCell *_portal_outside_cell[2000];
+int _portal_outside_cell_count = 0;
+
+
+//////////////////////////////
+//
+// Do a raycast from start_loc to end_loc.
+// Returns whether the raycast was clear (not blocked).
+// If it returns FALSE, the point where it was blocked is stuffed into
+// hit_loc.
+//
+// portal_block_flags is a bitfield of what kinds of portals block
+// this raycast.  See wr.h.
+//
+bool OldPortalRaycast(Location *start_loc, Location *end_loc, 
+                      Location *hit_loc, int portal_block_flags)
+{
+#ifndef SHIP
+   int old_cell = start_loc->cell, old_hint = start_loc->hint;
+#endif
+   int cur_cell = CellFromLoc(start_loc);
+   int adjacent_cell;
+   double current_enter, current_exit, epsilon;
+   int i;
+   bool clear_path = FALSE;
+
+#ifndef SHIP
+   if (old_cell==CELL_INVALID)
+      if (old_hint!=cur_cell)
+         mprintf("Warning: PortalRaycast called with bad hint\n");
+#endif
+
+   // check to make sure we're in the database
+   if (cur_cell == CELL_INVALID)
+   {
+      // stuff our globals used for query functions
+      PortalRaycastCell = CELL_INVALID;
+      SpewRaycast (("Started outside.\n"));
+      *hit_loc = *start_loc;
+      goto finished;
+   }
+
+   {
+      mxs_vector delta;
+      mx_sub_vec(&delta, &start_loc->vec, &end_loc->vec);
+      epsilon = RAYCAST_SLOW_EPSILON / mx_mag_vec(&delta);
+   }
+
+   compute_raycast_times(cur_cell, &start_loc->vec, &end_loc->vec,
+                         &current_enter, &current_exit);
+
+   if (current_enter >= 1.0 - epsilon) {
+      Warning(("PortalRaycast: Raycast starts outside cell or something.\n"));
+      *hit_loc = *start_loc;
+      goto finished;
+   }
+
+   _portal_outside_cell_count = 0;
+   for (;;) {
+      double this_enter, this_exit;
+      double best_enter, best_exit;
+      int best_cell = -1, n;
+      PortalCell *r = WR_CELL(cur_cell);
+
+      if (current_exit >= 1.0 - epsilon) {
+         clear_path = TRUE;
+         goto finished;
+      }
+
+      // iterate over all portals out of this cell
+
+      best_enter = 2.0;
+
+      n = r->num_portal_polys;
+      for (i=0; i < n; ++i) {
+         adjacent_cell = r->portal_poly_list[i].destination;
+
+         // If we've already been to the chosen cell and decided it
+         // doesn't touch our ray, we can decide it again much faster.
+         if (wr_cell[adjacent_cell]->flags & CELL_TRAVERSED)
+            continue;
+
+         compute_raycast_times(adjacent_cell,
+                               &start_loc->vec, &end_loc->vec, 
+                               &this_enter, &this_exit);
+
+         if (this_enter < this_exit) {  // non-empty intersection
+            if (this_enter >= current_exit - epsilon // next in raycast chain?
+             && this_exit > current_exit) {
+               if (this_enter < best_enter) {  // first intersection?
+                  best_enter = this_enter;
+                  best_exit  = this_exit;
+                  best_cell  = r->portal_poly_list[i].destination;
+               }
+            }
+         } else {
+            wr_cell[adjacent_cell]->flags |= CELL_TRAVERSED;
+            _portal_outside_cell[_portal_outside_cell_count++]
+            = wr_cell[adjacent_cell];
+         }
+      }
+
+      if (best_enter > current_exit + epsilon) {
+         if (hit_loc)
+            mx_interpolate_vec(&hit_loc->vec, &start_loc->vec, 
+                               &end_loc->vec, current_exit);
+         goto finished;
+      }
+
+      if (best_enter < current_exit - epsilon) {
+         if (best_exit < current_exit) {
+#ifdef RAYCAST_ERROR
+            Error(1, "PortalRaycast: raycast went backwards; failing.\n");
+#else
+            Warning(("PortalRaycast: raycast went backwards; failing.\n"));
+            if (hit_loc)
+               mx_interpolate_vec(&hit_loc->vec, &start_loc->vec, 
+                                  &end_loc->vec, current_exit);
+            goto finished;
+#endif
+         }
+ 
+         Warning(("PortalRaycast: raycast went backwards.\n")); 
+      }
+
+      cur_cell = best_cell;
+      current_enter = best_enter;
+      current_exit  = best_exit;
+   }
+
+finished:
+   // clear our visitation flags
+   for (i = 0; i < _portal_outside_cell_count; i++)
+      _portal_outside_cell[i]->flags &= ~CELL_TRAVERSED;
+   return clear_path;
+}
+
+
+/* ##################################################################
+
+   The old fast raycaster is still here for reference, but
+   preprocessed out.  Apparently it still has a bug somewhere.
+   For that matter, later changes have overtaken it.  */
+
+//#define INCLUDE_OLD_FAST
+#ifdef INCLUDE_OLD_FAST
+
+bool PortalRaycastFast(Location *start_loc, Location *end_loc, Location *hit_loc, int portal_block_flags)
+{
+   int cur_cell = CellFromLoc(start_loc);
+   int end_cell = IS_CELLFROMLOC_FAST(end_loc) ? CellFromLoc(end_loc) : -1;
+
+#ifdef DBG_ON
+   int prev_cell = -1;
+#endif
+
+   mxs_vector *start;           // beginning pos
+   mxs_vector *end;             // ending pos
+   mxs_vector delta;            // unit vector from start to end
+
+   mxs_real max_time;           // number of delta's to get from start to end
+   mxs_real time;               // time of collision
+
+   bool check_entry_time;       // need to make sure this is the right cell?
+   mxs_vector entry_point;      // where we enter the new cell
+
+   // Set debug/spew flags by hand
+   if (debug_raycast)
+   {
+      DbgSetDbgSlot  (DB_PORTAL, DS_PORTAL_Raycast);
+      DbgSetMonoSlot (DB_PORTAL, DS_PORTAL_Raycast);
+   }
+// else
+// {
+//    DbgClearDbgSlot  (DB_PORTAL, DS_PORTAL_Raycast);
+//    DbgClearMonoSlot (DB_PORTAL, DS_PORTAL_Raycast);
+// }
+
+   // If check_entry_time is true, then we will check every
+   // plane to see if we entered on that plane.  If we did,
+   // then we will clear check_entry_time to false.
+   // This is really combining two different booleans (whether
+   // we should be checking, and the results of that check),
+   // but it allows us to short circuit the checking, and actually
+   // makes the code a little shorter.
+#define FP(x)  ((int) ((x) * 65536.0))
+
+   SpewRaycast (("From %g %g %g (%d) to %g %g %g (%d).\n",
+                 start_loc->vec.x, start_loc->vec.y, start_loc->vec.z, cur_cell,
+                 end_loc->vec.x, end_loc->vec.y, end_loc->vec.z, end_cell));
+
+   // check to make sure we're in the database
+   if (cur_cell == CELL_INVALID) {
+      // stuff our globals used for query functions
+      PoeralRaycastCell = CELL_INVALID;
+      SpewRaycast (("Started outside.\n"));
+      *hit_loc = *start_loc;
+      return FALSE;
+   }
+
+   // quick exit if we didn't leave this cell
+
+   if (cur_cell == end_cell) {
+      SpewRaycast (("Started together.\n"));
+      return TRUE;
+   }
+
+   start = &start_loc->vec;
+   end = &end_loc->vec;
+
+   // compute length of line
+   mx_sub_vec(&delta, end, start);
+   max_time = mx_normeq_vec(&delta); // delta now a unit vector
+
+   check_entry_time = FALSE;
+
+end_cell = -1; // disable optimization
+
+   for(;;) {
+      PortalCell *r;            // current cell
+      PortalPlane *p;           // plane we're checking
+      mxs_real inside_dist;     // distance from start point to this plane
+      mxs_real outside_dist;    // distance from end point to this plane,
+                                // negative if point is "behind" plane (not in cell)
+
+        // if the end point is on a polygon, allow it:
+      mxs_real best_time = max_time - RAYCAST_EPSILON; // nearest collision
+      int best_plane = -1;      // plane of nearest collision
+      int i, n;
+
+      DBG_Raycast ({
+         if (check_entry_time)
+            SpewRaycast (("Tentatively enter cell %d\n", cur_cell));
+         else
+            SpewRaycast (("Enter cell %d\n", cur_cell));
+      })
+
+      r = WR_CELL(cur_cell);
+      p = r->plane_list;
+      n = r->num_planes;
+
+      // iterate through all the planes
+      for (i=0; i < n; ++i,++p) {
+         outside_dist = PlaneDist(end, p);
+
+         DBG_Raycast ({
+            inside_dist = -PlaneDist(start, p) / (outside_dist - PlaneDist(start,p));
+            SpewRaycast (("%g:%g ", PlaneDist(start,p),
+                                    inside_dist));
+         })
+
+         if (outside_dist < -RAYCAST_EPSILON) {     // < 0
+            // the end point is behind this plane
+
+            inside_dist = PlaneDist(start, p);
+
+            if (inside_dist > -RAYCAST_EPSILON) {   // >= 0
+
+               if (inside_dist < RAYCAST_EPSILON)
+                  inside_dist = RAYCAST_EPSILON; // math depends on positive
+
+               // the start point is in front of the plane
+               //   compute  inside + (outside-inside)*time = 0
+               time = inside_dist / (inside_dist - outside_dist);
+
+               // rescale it into true distance
+
+               // OPTIMIZE: Maybe we can do the rescale just once, after we've
+               // found the smallest value of time? [DS]
+               time *= max_time;
+
+               // if (time > RAYCAST_EPSILON && time < best_time)
+               if (time < best_time) {
+                  best_time = time;
+                  best_plane = i;
+               }
+
+               // we don't bother with check entry time,
+               // since this plane faces the start point
+
+            }
+         } else {               // this plane faces the end point
+            // BUG: To check entry time, we have to check that the
+            // _MAXIMAL_ entry time is equal to our expected time...
+            
+            // the end point is inside the plane, so we can't
+            // hit it on the way out... but we may need to check
+            // the entry time
+            
+            if (check_entry_time) {
+               time = PlaneDist(&entry_point, p);
+               if (time < -RAYCAST_EPSILON)  // < 0
+               {
+                  // entry point is behind all planes in cell, so our
+                  // assumption that we got into this cell was
+                  // wrong... fortunately, we'll have already stuffed
+                  // the collision globals before we got here, since
+                  // we don't know the values any more
+
+                  SpewRaycast (("Failed to pass through portal coplanar with wall.\n"));
+
+                  collide_loc = entry_point;
+                  MakeLocationFromVector (hit_loc, &collide_loc);
+                  return FALSE;
+               }
+            }
+         }
+      }
+
+      // If best_plane == -1, then we didn't find any exit times
+      // that were sooner than max_time.  That means that all of
+      // the outside_dists were in front of the plane (proof?),
+      // and thus the end point was inside this cell.
+
+      if (best_plane == -1) {
+         // update the cell cache for the end point
+         // this will speed up successive raycasts to the same point
+         SpewRaycast (("We made it!\n"));
+         end_loc->cell = cur_cell;  // HACK: reaching inside a data structure!
+         return TRUE;
+      }
+
+      SpewRaycast (("(plane %d) ", best_plane));
+
+      // Check that we're really exiting this cell at a cell boundary.
+      // Call the debug version of ourself if we failed.
+      {
+         mxs_vector pt;
+         mx_scale_add_vec(&pt, start, &delta, best_time);
+         if (!PortalPointOnCell(cur_cell, &pt)) {
+#ifdef RAYCAST_ERROR
+            if (!debug_raycast) {
+               debug_raycast = TRUE;
+               PortalRaycast(start_loc, end_loc, hit_loc, portal_block_flags);
+            }
+            SpewRaycast(("\ntime was %g; max_time %g; unscaled %g\n", best_time, max_time, best_time/max_time));
+            Error (1, "PortalRaycast: PortalPointOnCell failed.\n");
+#else
+            Complain ("PortalRaycast: PortalPointOnCell failed!\n");
+            goto hit_wall;
+#endif            
+         }
+      }
+
+      // update our collision values in case we collide
+      PortalRaycastCell = cur_cell;
+      PortalRaycastPlane = best_plane;
+
+      // Now that we know what plane we exit through, we have to look
+      // at all of the polygons for this plane.
+
+      // OPTIMIZE: add a next-with-same-plane link field to PortalPolygonCore,
+      //    and a first-poly-in-this-plane field to PortalPlane (or a parallel array)
+
+      // OPTIMIZE: special case if there's only one polygon which lies in this plane
+
+      {
+         PortalPolygonCore *p = r->poly_list;
+           // put the plane # back into an unsigned char for fast compare
+         unsigned char plane = best_plane;  // plane we hit
+         int num_walls;                     // number of walls in this cell
+         int new_cell;                      // cell we're moving into
+         unsigned char seen_wall = FALSE;   // have we examined any walls?
+         unsigned char seen_portal = FALSE; // have we encountered any portals?
+
+         n = r->num_polys;
+         num_walls = n - r->num_portal_polys;
+
+         // now, we need a flag to indicate whether or not
+         // we've seen a wall or not, and another to indicate
+         // whether or not we've seen a valid poly.
+
+         for (i=0; i < n; ++i,++p) {
+            if (p->planeid == plane) { // on the plane we hit?
+               if (i < num_walls)
+                  seen_wall = TRUE;
+               else if (p->flags & portal_block_flags)
+                  seen_wall = TRUE;
+               else {
+#if 0 // not working yet
+                  if (!seen_portal) {
+                     seen_portal = TRUE;
+                     new_cell = p->destination;
+                  } else {
+                     // we've seen more than one portal, so
+                     // check the last one (new_cell) to see if it was THE one
+  
+                     mxs_vector pt;
+                     mx_scale_add_vec(&pt, start, &delta, best_time);
+
+                     if (PortalPointOnCell(new_cell, &pt)) {
+                        SpewRaycast (("Went through parallel portal.\n"));
+                        // ok, this was the one!
+                        #ifdef DBG_ON
+                        if (prev_cell == new_cell)
+                           goto infinite_raycast;
+                        prev_cell = cur_cell;
+                        #endif
+                        seen_wall = FALSE;  // we don't need to check entry time
+                        seen_portal = TRUE; // a redundant assignment, but slightly clearer
+                        break;
+                     }
+                     else
+                        SpewRaycast(("Didn't go through parallel portal.\n"));
+                     new_cell = p->destination;
+                  }
+#else
+                  // it's a portal
+                  mxs_vector pt; // OPTIMIZE: Haven't we computed this
+                                 // point already?  Maybe [DS]
+                  mx_scale_add_vec(&pt, start, &delta, best_time);
+                  if (PortalPointOnCell(p->destination, &pt)) {
+                     new_cell = p->destination;
+                     seen_wall = FALSE;  // we don't need to check entry time
+                     seen_portal = TRUE; // a redundant assignment, but slightly clearer
+                     break;
+                  }
+                  else
+                     SpewRaycast (("(not %d) ", p->destination));
+#endif
+               }
+            }
+         }
+
+         if (!seen_portal) {
+            if (!seen_wall) {
+#ifdef RAYCAST_ERROR
+               if (!debug_raycast) {
+                  debug_raycast = TRUE;
+                  PortalRaycast(start_loc, end_loc, hit_loc, portal_block_flags);
+               }
+               Error (1,"PortalRaycast: Didn't hit either a wall or a portal.\n");
+#else
+               Complain (("PortalRaycast: Didn't hit either a wall or a portal!\n"));
+#endif
+            }
+
+            SpewRaycast (("Hit a wall.\n"));
+            time = best_time;
+            goto hit_wall;
+         }
+
+#ifdef DBG_ON
+         if (prev_cell == new_cell)
+            goto infinite_raycast;
+
+         prev_cell = cur_cell;
+#endif
+
+         // update our current cell and go around again
+         cur_cell = new_cell;
+
+         // if there was a wall, we need to check our entry time
+         check_entry_time = seen_wall;
+         if (check_entry_time)
+            mx_scale_add_vec(&entry_point, start, &delta, best_time);
+
+         // (the following comment only applies to the #if 0 code)
+
+         // note that if there are several coplanar portals and
+         // no walls, we don't call PortalPointOnCell() for the
+         // very last portal.  If we didn't enter any of the others
+         // we assume we went through the last one.  But we don't
+         // bother setting check_entry_time (which is only set if
+         // we saw a wall).  So that means we never bother verifying
+         // that we went through that portal.  But that's ok; we must
+         // have gone through it; there is no other option, except
+         // for EPSILON failures.  But EPSILON failures always favor
+         // us going through portals, not missing them, so if we didn't
+         // make it through any of the others, regardless of tolerance,
+         // then we must have made it through this one.
+      }
+
+      // if we've truly reached the exit cell, we're done
+      if (cur_cell == end_cell && !check_entry_time) {
+         SpewRaycast (("Made it to exit cell %d.\n", end_cell));
+         return TRUE;
+      }
+   }
+   // above is an infinite loop so we don't fall off it
+
+hit_wall:   // jump here with time==dist along the line we hit
+
+   // collide_loc = start + time*delta
+   mx_scale_add_vec(&collide_loc, start, &delta, time);
+   MakeLocationFromVector (hit_loc, &collide_loc);
+   return FALSE;
+
+#ifdef DBG_ON
+infinite_raycast:
+   // There's either a bug in the code or in the database
+   // (e.g. a concave cell, or an incorrect connectivity)
+   Warning(("PortalRaycast: infinite loop: %d-%d\n", prev_cell, cur_cell));
+   return FALSE;
+#endif
+}
+
+#endif
+
+/*
+Local Variables:
+typedefs:("Location" "PortalCell" "PortalPlane" "PortalPolygonCore" "mxs_real" "mxs_vector")
+End:
+*/
+// $Header: r:/t2repos/thief2/src/portal/wrcast_.h,v 1.3 2000/01/29 13:37:40 adurant Exp $
+#pragma once
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   wrcast_.h
+
+   We're exporting some bits and pieces of the raycaster so the
+   spherecaster can use them.
+
+   THIS IS NO LONGER USED.  The bits we're exporting these days
+   are more encapsulated, and are in port.h.  This is still in
+   the backing tree in case we need to pull some really old code.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+#ifndef _WRCAST__H_
+#define _WRCAST__H_
+
+#include <wrdb.h>
+
+extern PortalPolygonCore *_portal_raycast_cur_poly;
+extern mxs_vector *_portal_raycast_cur_vectors;
+extern uchar *_portal_raycast_point_indirection;
+extern mxs_vector _portal_raycast_perp_edge;
+
+extern bool _PortalConvexHullXYPosZ(void);
+extern bool _PortalConvexHullXYNegZ(void);
+extern bool _PortalConvexHullYZPosX(void);
+extern bool _PortalConvexHullYZNegX(void);
+extern bool _PortalConvexHullZXPosY(void);
+extern bool _PortalConvexHullZXNegY(void);
+
+typedef struct {
+   PortalPolygonCore *poly;
+   uint vertex_offset;
+} _PortalRaycastExit;
+
+#endif
+// $Header: r:/t2repos/thief2/src/portal/wrdb.c,v 1.17 2000/02/19 13:18:53 toml Exp $
+
+// World representation save/load
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+#include <lg.h>
+#include <mprintf.h>
+
+#include <wrfunc.h>
+#include <wrlimit.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+PortalCell *wr_cell[MAX_REGIONS];
+int wr_num_cells;
+
+//#define HACK_PORTAL
+
+int poly_number, plane_count;
+CachedVector *cv;
+
+void WorldRepLoadPolygon(FILE *f, PortalCell *cell, PortalPolygonCore *pcore, PortalPlane *plane, int *vcount)
+{
+   int color, num_v, i, v, vc = *vcount, base = 64, j;
+
+   fscanf(f, "%d%d", &color, &num_v);
+
+   pcore->flags = 0;
+   pcore->num_vertices = num_v;
+   pcore->destination = color;
+   pcore->clut_id = 0;
+
+   for (i=0; i < num_v; ++i) {
+      fscanf(f, "%d", &v);
+      cell->vertex_list[vc] = v;
+      cell->vertex_list_lighting[vc] = base;
+      ++vc;
+   }
+
+   // load index of first vertex into v, then update count
+
+   v = *vcount;
+   *vcount = vc;
+
+   // check if we lie along any of the existing planes
+   for (i=0; i < plane_count; ++i) {
+      plane = &cell->plane_list[i];
+      for (j=0; j < num_v; ++j) {
+         if (fabs(mx_dot_vec(&cell->vpool[cell->vertex_list[v+j]], &plane->norm->raw)+plane->plane_constant) > 0.10)
+            break;
+      }
+      if (j == num_v) {
+         cell->poly_list[poly_number].planeid = i;
+         return;
+      }
+   }
+
+   // we're not a new plane
+   cell->plane_list[plane_count].norm = &cv[plane_count];
+   cell->poly_list[poly_number].planeid = plane_count;
+
+   // now compute the plane
+   {
+      // stick some values in local so the code is readable
+      mxs_vector a,b;
+
+      Vertex *pool = cell->vpool;          // all the vertices for this cell
+      uchar *vlist = cell->vertex_list + v;  // the vertex list for this poly
+
+      plane = &cell->plane_list[plane_count];
+
+      mx_sub_vec(&a, &pool[vlist[1]], &pool[vlist[0]]);
+      mx_sub_vec(&b, &pool[vlist[2]], &pool[vlist[1]]);
+      mx_cross_norm_vec(&plane->norm->raw, &b, &a);
+
+      // for a vertex, ax + by + cz + d = 0, so d = -(ax + by + cz)
+      plane->plane_constant = -mx_dot_vec(&plane->norm->raw, &pool[vlist[0]]);
+   }
+
+   ++plane_count;
+}
+
+extern void wr_alloc_light_map(PortalCell *p, int surface, int vc);
+void WorldRepLoadGodCell(FILE *f, int n, Vertex *vlist)
+{
+   // read the vertex palette
+   int num_v, num_s, num_p, i, v, vcount;
+   CachedVector *cv2;
+   PortalCell *p;
+   fscanf(f, "%d%d%d", &num_v, &num_s, &num_p);
+
+   p = wr_cell[n] = Malloc(sizeof(PortalCell));
+   p->num_vertices = num_v;
+   p->num_polys = num_s + num_p;
+
+#ifdef HACK_PORTAL
+   ++num_s;
+#endif
+
+   p->num_render_polys = num_s;
+   p->num_portal_polys = num_p;
+
+   p->medium = 1;
+   p->flags = 0;
+  
+   p->vpool = Malloc(sizeof(Vertex) * num_v);
+   p->poly_list = Malloc(sizeof(PortalPolygonCore) * p->num_polys);
+   p->portal_poly_list = p->poly_list + p->num_polys - num_p;
+   p->render_list = Malloc(sizeof(PortalPolygonRenderInfo) * num_s);
+   p->light_list = Malloc(sizeof(PortalLightMap) * num_s);
+
+   // don't know how big vertex list is yet
+
+   p->vertex_list = Malloc(256);
+   p->vertex_list_lighting = Malloc(256);
+   p->vertex_list_dynamic = 0;
+   p->portal_vertex_list = 0;
+
+   p->plane_list = Malloc(sizeof(PortalPlane) * (p->num_polys));
+   p->num_planes = p->num_polys;
+   p->render_data = 0;
+   p->refs = 0;
+
+   cv = Malloc(sizeof(CachedVector) * (p->num_polys));
+   cv2 = Malloc(sizeof(CachedVector) * (num_s * 2));
+
+   for (i=0; i < num_v; ++i) {
+      fscanf(f, "%d", &v);      // convert vertex palette indexing global table
+      p->vpool[i] = vlist[v];   //   into local palette per cell
+   }
+
+   vcount = 0;
+   plane_count = 0;
+
+      // read rendered surfaces
+   for (i=0; i < num_s; ++i) {
+      int vc = vcount;
+      poly_number = i;
+      WorldRepLoadPolygon(f, p, &p->poly_list[i], &p->plane_list[i], &vcount);
+      p->render_list[i].texture_id = (i >= p->num_polys - num_p);
+
+      p->render_list[i].u_base = p->render_list[i].v_base = 0;
+      p->render_list[i].texture_anchor = 0;
+
+      p->render_list[i].u = &cv2[i*2];
+      p->render_list[i].v = &cv2[i*2+1];
+
+      p->render_list[i].cached_surface = 0;
+
+      mx_sub_vec(&p->render_list[i].u->raw, &p->vpool[p->vertex_list[vc+1]], &p->vpool[p->vertex_list[vc]]);
+      mx_sub_vec(&p->render_list[i].v->raw, &p->vpool[p->vertex_list[vc+2]], &p->vpool[p->vertex_list[vc+1]]);
+      mx_normeq_vec(&p->render_list[i].u->raw);
+      mx_normeq_vec(&p->render_list[i].v->raw);
+      mx_scaleeq_vec(&p->render_list[i].u->raw, 16.0);
+      mx_scaleeq_vec(&p->render_list[i].v->raw, 16.0);
+      if (i == p->num_polys-num_p - 1)
+         p->portal_vertex_list = vcount;
+      wr_alloc_light_map(p, i, vc);
+   }
+
+      // read portals
+   for (i; i < p->num_polys; ++i) {
+      poly_number = i;
+      WorldRepLoadPolygon(f, p, &p->poly_list[i], &p->plane_list[i], &vcount);
+   }
+
+   p->num_planes = plane_count;
+
+   p->num_vlist = vcount;
+}
+
+#define EPS  0.01
+
+int src_portal, dest_cell;
+
+void FindMatchingPortal(int src, PortalCell *r, PortalPlane *plane)
+{
+   PortalPolygonCore *p = r->portal_poly_list;
+   int i,n = r->num_portal_polys;
+
+   for (i=0; i < n; ++i) {
+      if (p->destination == src) {
+         PortalPlane *plane2 = &r->plane_list[p->planeid];
+         mxs_vector *n1 = &plane->norm->raw, *n2 = &plane2->norm->raw;
+         if (fabs(n1->x+n2->x) > EPS || fabs(n1->y+n2->y) > EPS || fabs(n1->z+n2->z) > EPS) {
+            mprintf("Bad portal from cell %d portal %d\n", src, src_portal);
+            mprintf("to cell %d portal %d\n", dest_cell, i);
+            mprintf("Source normal: %f %f %f\n", (int) (65536.0 * n1->x), (int) (65536.0 * n1->y), (int) (65536.0 * n1->z));
+            mprintf("Dest   normal: %f %f %f\n", (int) (65536.0 * n2->x), (int) (65536.0 * n2->y), (int) (65536.0 * n2->z));
+            exit(1);
+         }
+         break;
+      }
+      ++p;
+   }
+   if (i == n) {
+      mprintf("Bad portal from %d: no back-portal!\n");
+      exit(1);
+   }
+}
+
+void ValidateCellPointers(int s, PortalCell *r)
+{
+   PortalPolygonCore *p = r->portal_poly_list;
+   int i,n = r->num_portal_polys;
+
+   if (n > 128) Error(1, "Bad cell: %d portal polys.\n");
+
+   for (i=0; i < n; ++i) {
+      src_portal = i;
+      dest_cell = p->destination;
+      FindMatchingPortal(s, wr_cell[p->destination], &r->plane_list[p->planeid]);
+      ++p;
+   }
+}
+
+void WorldRepLoadGodFile(char *name)
+{
+   Vertex *v;
+   int num,i;
+
+   FILE *f = fopen(name, "r");
+   if (!f)
+      Error(1, "Couldn't open file %s\n", name);
+
+     // let num = number of unique vertices
+   fscanf(f, "%d", &num);
+   
+   v = Malloc(sizeof(Vertex) * num);
+   for (i=0; i < num; ++i)
+      fscanf(f, "%f%f%f", &v[i].x, &v[i].y, &v[i].z);
+
+   fscanf(f, "%d", &num);
+   wr_num_cells = num;
+
+mprintf("%d cells\n", num);
+
+   for (i=0; i < num; ++i)
+      WorldRepLoadGodCell(f, i, v);
+
+   fclose(f);
+
+   for (i=0; i < num; ++i) {
+      ValidateCellPointers(i, wr_cell[i]);
+   }
+}
+
+void *MallocSafe(size_t sz)
+{
+   void *p = Malloc(sz);
+   if (sz == 0) { mprintf("Allocated 0.\n"); return 0; }
+   if (!p) Error(1, "Out of memory.\n");
+   return p;
+}
+
+char *read_into(FILE *f, void **data, char *mem, int sz, int count)
+{
+   *data = mem;
+   fread(mem, count, sz, f);
+   return mem + count*sz;   
+}
+
+void bad_cell(PortalCell *p)
+{
+   mprintf("Bad cell:\n");
+   mprintf("Num verts: %d\n", p->num_vertices);
+   mprintf("Num polys; %d\n", p->num_polys);
+   mprintf("Num render polys: %d\n", p->num_render_polys);
+   mprintf("Num planes: %d\n", p->num_planes);
+   Error(1, "Bad cell\n");
+}
+
+void WorldRepLoadWrCell(FILE *f, int s)
+{
+   PortalCell p, *q;
+   CachedVector *cv;
+   char *mem;
+   int vl, sz, i;
+
+   fread(&vl, 1, sizeof(vl), f);
+   fread(&p, 1, sizeof(p), f);
+
+   if ( // p.num_vertices > 128 || p.num_polys > 64 ||
+       p.num_polys > 128 || 
+       p.num_render_polys > p.num_polys || p.num_planes > p.num_polys)
+       bad_cell(&p);
+
+   // now figure out how much memory we need
+   sz = sizeof(p) +
+        p.num_vertices * sizeof(Vertex) +
+        p.num_polys * sizeof(PortalPolygonCore) +
+        p.num_render_polys * sizeof(PortalPolygonRenderInfo) +
+        p.num_planes * sizeof(PortalPlane) +
+        p.num_planes * sizeof(CachedVector) +
+        p.num_render_polys * 2 * sizeof(CachedVector) +
+        vl + p.num_vlist +
+        p.num_render_polys * sizeof(PortalLightMap);
+
+   mem = MallocSafe(sz);
+
+   q = (PortalCell *) mem;
+   *q = p;
+
+   mem += sizeof(p);
+   mem = read_into(f, &q->vpool, mem, sizeof(Vertex), p.num_vertices);
+   mem = read_into(f, &q->poly_list, mem,
+           sizeof(PortalPolygonCore), p.num_polys);
+   mem = read_into(f, &q->render_list, mem,
+           sizeof(PortalPolygonRenderInfo), p.num_render_polys);
+   mem = read_into(f, &q->plane_list, mem, sizeof(PortalPlane), p.num_planes);
+   mem = read_into(f, &q->vertex_list, mem, 1, vl);
+   mem = read_into(f, &q->vertex_list_lighting, mem, 1, p.num_vlist);
+
+   q->portal_poly_list = q->poly_list + q->num_polys - q->num_portal_polys;
+
+   cv = (CachedVector *) mem;
+   mem += sizeof(CachedVector) * 2 * p.num_render_polys;
+
+   for (i=0; i < p.num_render_polys; ++i) {
+      q->render_list[i].u = &cv[i*2+0];
+      q->render_list[i].v = &cv[i*2+1];
+      q->render_list[i].cached_surface = 0;
+      fread(&q->render_list[i].u->raw, sizeof(Vector), 1, f);
+      fread(&q->render_list[i].v->raw, sizeof(Vector), 1, f);
+   }
+
+   cv = (CachedVector *) mem;
+   mem += sizeof(CachedVector) * p.num_planes;
+
+   for (i=0; i < p.num_planes; ++i) {
+      q->plane_list[i].norm = &cv[i];
+      fread(&q->plane_list[i].norm->raw, sizeof(Vector), 1, f);
+   }
+
+   mem = read_into(f, &q->light_list, mem, sizeof(PortalLightMap),
+               p.num_render_polys);
+
+   if ((char *) q + sz != mem)
+      Error(1, "read_cell: buffer size different from read amount.");
+
+   // now read light maps
+
+   for (i=0; i < p.num_render_polys; ++i) {
+      int len = q->light_list[i].h * q->light_list[i].w;
+      if (len > 60*60 || len < 0) bad_cell(&p);
+      q->light_list[i].bits = Malloc(len);
+      fread(q->light_list[i].bits, 1, len, f);
+   }
+
+   wr_cell[s] = q;
+}
+
+void WorldRepLoadWrFile(char *name)
+{
+   int i;
+   FILE *f = fopen(name, "rb");
+
+   if (!f)
+      Error(1, "Couldn't open file %s\n", name);
+
+   fread(&wr_num_cells, sizeof(wr_num_cells), 1, f);
+
+mprintf("%d cells\n", wr_num_cells);
+
+   for (i=0; i < wr_num_cells; ++i)
+      WorldRepLoadWrCell(f, i);
+
+   fclose(f);
+
+   for (i=0; i < wr_num_cells; ++i) 
+      ValidateCellPointers(i, wr_cell[i]);
+}
+
+#if 0
+
+#define vector_scale  (2 * FIX_UNIT)
+
+void compute_normal(g3s_vector *norm, g3s_vector *p0, g3s_vector *p1, g3s_vector *p2)
+{
+   g3s_vector delta1, delta2, result;
+
+   delta1.x = p1->x - p0->x;
+   delta1.y = p1->y - p0->y;
+   delta1.z = p1->z - p0->z;
+
+   delta2.x = p2->x - p1->x;
+   delta2.y = p2->y - p1->y;
+   delta2.z = p2->z - p1->z;
+
+   result.x = fix_mul(delta1.z, delta2.y) - fix_mul(delta1.y, delta2.z);
+   result.y = fix_mul(delta1.x, delta2.z) - fix_mul(delta1.z, delta2.x);
+   result.z = fix_mul(delta1.y, delta2.x) - fix_mul(delta1.x, delta2.y);
+
+   *norm = result;
+}
+
+void compute_surface_tmapping(int r, int n)
+{
+   int a,b,c,i;
+   int p = region[r].vertex_palette;
+   fix len;
+   g3s_vector temp;
+
+   a = v_palette[p + surf_v[surface[n].vlist_offset + 0]];
+   b = v_palette[p + surf_v[surface[n].vlist_offset + 1]];
+   c = v_palette[p + surf_v[surface[n].vlist_offset + 2]];
+
+   compute_texture_vertex(&surface[n].u_vect, &vertex[a].point, a, b);
+   compute_texture_vertex(&surface[n].v_vect, &surface[n].u_vect, b, c);
+
+   // now compute normal to surface
+
+   for(i=2; i < surface[n].num_vertices; ++i) {
+      c = v_palette[p + surf_v[surface[n].vlist_offset + i]];
+      compute_normal(&temp, &vertex[a].point, &vertex[b].point, &vertex[c].point);
+      len = fix_mul(temp.x, temp.x) + fix_mul(temp.y,temp.y) + fix_mul(temp.z,temp.z);
+      if (len > 64) break;
+      // probably colinear, so try next point
+   }
+     
+   g3_vec_normalize(&temp);
+   surface[n].normal = temp;
+}
+
+#endif
+// $Header: r:/t2repos/thief2/src/portal/wrdb.h,v 1.28 2000/01/29 13:37:41 adurant Exp $
+//
+// World Representation Database
+#pragma once
+
+#ifndef __WRDB_H
+#define __WRDB_H
+
+#include <lg.h>
+#include <matrix.h>
+#include <r3ds.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+
+typedef mxs_vector Vertex;
+typedef mxs_vector Vector;
+
+#if 0
+//   A cached relative vector
+typedef struct st_CachedVector
+{
+   // 16 bytes
+   Vector raw;
+   struct st_CachedData *cached;
+} CachedVector;
+
+
+typedef struct st_CachedData
+{
+   // 32 bytes
+   Vector viewspace;
+   float dot1, dot2;
+   struct st_CachedVector *next;  // list of cached ones
+   CachedVector *back;
+   int dummy1;
+} CachedData;
+#endif
+
+///////////////////////////////////////////
+//
+//   Polygon structures
+//
+//     Polygons can be either walls or portals.
+//     The core polygon structure holds data common
+//     to both, and an additional structure holds
+//     the rest of the wall information.
+//
+//     Portals also have some specialized information.
+//     So we use a union to overlap storage required
+//     for portals.
+//     Well, they don't yet, but maybe they will.
+//
+//     Also, since there are sometimes coplanar planes,
+//     we separate out those planes into a separate list.
+//     This saves storage; even if all planes are unique,
+//     we only use one byte per polygon to index the plane,
+//     and that would have been a byte of padding anyway.
+
+typedef struct
+{
+   mxs_vector normal;
+   float plane_constant;
+} PortalPlane;
+
+
+//  Polygon data that all polygons (including portals) have
+typedef struct
+{
+   uchar flags;
+   uchar num_vertices;
+   uchar planeid;
+   uchar clut_id;       // for portals, the clut to draw with, 0 means none
+   ushort destination;  // for portals, the destination cell
+   uchar motion_index;  // index into position array for moving polygons
+   uchar padding;
+} PortalPolygonCore;         // 8 bytes
+
+
+//  Polygon data necessary for rendering
+typedef struct st_PortalPolygonRenderInfo PortalPolygonRenderInfo;
+
+typedef struct
+{
+   r3s_texture decal;
+   uint offset;
+} PortalDecal;
+
+///////////////////////////////////////////
+//
+//   WorldRep BSP tree structure
+//   
+//     This BSP tree is generated from the CSG BSP tree just before 
+//     it emits cells.  It keeps track of cells split during emission 
+//     (caused by too many polys).  It is the BSP tree used at runtime.
+
+// Use the accessor macros in wrbsp.h to get at these fields properly!
+
+typedef struct wrBspNode
+{
+   union
+   {
+      struct
+      {
+         uchar pad1;
+         uchar pad2;
+         uchar pad3;
+
+         uchar flags; // defined in wrbsp.h
+      };
+      struct
+      {
+         uint parent_index;
+      };
+   };
+
+   PortalPlane *plane;
+
+   union
+   {
+      struct 
+      {
+         uint cell_id;        // Cell index (if a leaf)
+         uint pad4;
+      };
+      struct
+      {
+         uint inside_index;   // Children indices (if an internal node)
+         uint outside_index;
+      };
+   };
+} wrBspNode;
+// 16 bytes
+
+
+// basic light map storage
+typedef struct st_PortalLightMap PortalLightMap;
+
+
+
+////
+//
+//  POLYGON FLAGS
+//
+//    PORTAL_  is only paid attention to for portals
+//    RENDER_  is only paid attention to by the renderer
+//    POLYGON_ applies to all polygons
+
+#define PORTAL_BLOCKS_VISION     1
+#define PORTAL_BLOCKS_PHYSICS    2
+#define RENDER_DOESNT_LIGHT      4   // generally self-lit
+#define RENDER_NO_PHYSICS        8   // ignore for physics, typically a decal
+#define PORTAL_SPLITS_OBJECT    16
+#define RENDER_REBUILD_SURFACE  32   // when lighting or texture has changed
+                                     // (not used for one-frame dynamic light)
+#define RENDER_CALLBACK         64   // called after poly is drawn, so the
+                                     // game can overlay extra layers
+
+
+////
+//
+//  CELL FLAGS
+//
+
+#define CELL_RENDER_WIREFRAME       1
+#define CELL_RENDER_WIREFRAME_ONCE  2
+
+// This is for any function traversing the cell database--and it
+// should clear it when it's done!
+#define CELL_TRAVERSED              4
+
+// Cells which are part of doorways should be in small, contiguous
+// clusters, and wear funny little hats, like fezzes with earflaps.
+// The flags for such groups of cells are altered using
+// PortalBlockVision() and PortalUnblockVision() and such in wrfunc.
+#define CELL_BLOCKS_VISION          8
+#define CELL_CAN_BLOCK_VISION       16
+#define CELL_FOGGED_OUT             32
+
+#define CELL_OBSCURED (CELL_BLOCKS_VISION | CELL_FOGGED_OUT)
+
+// We handle fog separately from clutting because there's no obvious
+// way to combine them when you're looking at both: cluts are based
+// on medium boundaries while fog varies with depth.
+#define CELL_FOG                    64
+
+
+///////////////////////////////////////////
+//
+//   Cell structures
+//
+// For each cell, the polygon data is arranged in the following order:
+//
+//   polygons which are opaque (not portals) and solid (to physics)
+//   polygons which are either transparent or not solid (rendered portals)
+//   polygons which are non-rendered portals
+//
+// The first class of polygons can never be treated differently, because
+// they have no portal information.  The exact rendering behavior of a
+// given polygon in the second class is determined by its texture id;
+// if it is opaque, then the wall is opaque.  The flags field indicates
+// the exact physics behavior, which allows portals to be invisible walls.
+
+typedef struct port_render_data PortalCellRenderData;
+
+typedef struct
+{
+   // 4
+   uchar num_vertices;              // size of vertex pool for this cell
+   uchar num_polys;                 // total number of all polygons here
+   uchar num_render_polys;          // number of renderable polygons
+   uchar num_portal_polys;          // number of portals
+             // since some portals are rendered, it's allowable
+             // for   num_render + num_portal != num_polys
+
+   // 4
+   uchar num_planes;
+   uchar medium;
+   uchar flags;
+   uchar num_full_bright;
+
+   // 16
+   Vertex *vpool;
+   PortalPolygonCore *poly_list;          // beginning of all polygons
+   PortalPolygonCore *portal_poly_list;   // beginning of second type of polygons
+   PortalPolygonRenderInfo *render_list;  // beginning of renderable polygon data
+
+   // 8
+   uchar *vertex_list;              // beginning of all polygons per-poly vertex data
+   int portal_vertex_list;          // offset of second type of polygons per-poly vertex list
+
+   // 20
+   uint leaf_index;              // ptr to leaf of worldrep BSP tree
+   PortalPlane *plane_list;         // plane equations for all unique planes
+   PortalCellRenderData *render_data;// data used by renderer while rendering
+   void *refs;
+   ushort num_vlist;                // number of vertices/polygon
+   uchar num_anim_lights;
+   uchar motion_index;
+
+   // 16
+   uint changed_anim_light_bitmask; // bitfield--which lights have changed
+   ushort *anim_light_index_list;   // palette of anim lights
+   PortalLightMap *light_list;      // num_render_polys worth of light maps
+   ushort *light_indices;           // which lights shine on this cell
+
+   // 16
+   Vertex sphere_center;
+   mxs_real sphere_radius;
+
+} PortalCell;   // 84 bytes
+
+
+// for that axis field, below--gives the axis not considered
+#define MEDIUM_AXIS_X 0
+#define MEDIUM_AXIS_Y 1
+#define MEDIUM_AXIS_Z 2 // for water
+
+// This "motion" structure really only tells us how to draw the
+// texture on the medium boundary in the current frame.  Moving with
+// time is handled through a callback.
+typedef struct {
+   // This is the point around which the water rotates, in world space.
+   // The z is ignored since we're projecting the texture in (x, y).
+   mxs_vector center;
+
+   // The water is turning.  Or it can be.
+   mxs_ang angle;
+
+   // If this is 0, a medium boundary with this index is rendered
+   // normally, with none of this motion shit.
+   BOOL in_motion;
+   uchar major_axis;
+   uchar pad_1;
+   uchar pad_2;
+} PortalCellMotion;
+
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+//  $Header: r:/t2repos/thief2/src/portal/wrdbg.c,v 1.4 2000/02/19 13:18:55 toml Exp $
+//
+//  wrdbg.c
+//
+//  Debugging stuff
+
+#include <fix.h>
+#include <lgsprntf.h>
+#include <port.h>
+#include <stdio.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+void PortalDumpCell (FILE *out, int cell)
+{
+   int i, j, v;
+   PortalCell *pc = wr_cell[cell];
+   char argh[100];
+
+   fprintf (out, "CELL %d\n", cell);
+   
+   for (i = 0; i < pc->num_vertices; i++)
+   {
+      Vertex *v = &pc->vpool[i];
+
+      lg_sprintf (argh, "  vertex %3d : %q %q %q\n", i, fix_from_float (v->x),
+               fix_from_float (v->y), fix_from_float (v->z));
+
+      fprintf (out, argh);
+   }
+
+   fprintf (out, " poly %d-%d are rendered, %d-%d are portals\n", 0,
+            pc->num_render_polys - 1, pc->num_polys - pc->num_portal_polys,
+            pc->num_polys - 1);
+
+   v = 0;
+   for (i = 0; i < pc->num_polys; i++)
+   {
+      PortalPolygonCore *poly = &pc->poly_list[i];
+      if (i < pc->num_polys - pc->num_portal_polys)
+         fprintf (out, "  poly %3d : plane %3d, solid, vertices",
+                  i, poly->planeid); 
+      else
+         fprintf (out, "  poly %3d : plane %3d, dest %3d, vertices",
+                  i, poly->planeid, poly->destination);
+      for (j = 0; j < poly->num_vertices; j++, v++)
+      {
+         fprintf (out, " %d", pc->vertex_list[v]);
+      }
+      fprintf (out, "\n");
+   }
+
+   for (i = 0; i < pc->num_planes; i++)
+   {
+      PortalPlane *plane = &pc->plane_list[i];
+
+      lg_sprintf (argh, "  plane %3d:  [%q %q %q %q]\n", i, fix_from_float (plane->normal.x),
+                  fix_from_float (plane->normal.y), fix_from_float (plane->normal.z),
+                  fix_from_float (plane->plane_constant));
+      fprintf (out, argh);
+   }
+}
+
+void PortalDumpWorld (FILE *out)
+{
+   int i;
+
+   for (i = 0; i < wr_num_cells; ++i)
+      PortalDumpCell (out, i);
+
+}
+
+/*
+Local Variables:
+typedefs:("FILE" "PortalCell" "Vertex")
+End:
+*/
+// $Header: r:/t2repos/thief2/src/portal/wrdbrend.h,v 1.5 2000/01/29 13:37:42 adurant Exp $
+#pragma once
+
+#ifndef __WRDBREND_H
+#define __WRDBREND_H
+
+#ifdef RGB_LIGHTING
+
+#ifdef RGB_888
+typedef struct LightmapEntry {
+   union {
+      uint I;
+      uchar A[4];
+   };
+} LightmapEntry;
+#else
+typedef ushort LightmapEntry;
+#endif
+
+#else
+typedef uchar LightmapEntry;
+#endif
+
+struct st_PortalPolygonRenderInfo
+{
+   mxs_vector tex_u, tex_v;
+   ushort u_base,v_base;    // SFIX u&v values at the anchor vertex
+   uchar texture_id;        // which texture to paint
+   uchar texture_anchor;    // which vertex to anchor the texture to
+   short cached_surface;
+
+   mxs_real texture_mag;    // used in finding MIP level
+   mxs_vector center;       // also used in finding MIP level
+};  // 48 bytes
+
+struct st_PortalLightMap {
+   short base_u, base_v; // these can be negative, they indicate top
+                         // left of rectangle
+   short pixel_row;      // bitmapesque data, hey, this is in pixels not bytes!
+   uchar h, w;
+
+// i changed these names to make sure I found all places that referenced
+// them when doing RGB support
+   LightmapEntry *data;  // the actual data--the static lightmap comes first,
+                         // and then the bits for all the animated lightmaps,
+                         // in the order in which they appear in the cell's
+                         // palette
+   LightmapEntry *dynamic_light;
+                         // if it's dynamically lit, this has the new data
+
+   uint anim_light_bitmask; // Which animated lights reaching this cell
+                         // affect this polygon?  The bits match the
+                         // anim light palette of the cell.
+}; // 20 bytes
+
+#endif
+// $Header: r:/t2repos/thief2/src/portal/wrfunc.c,v 1.26 2000/02/19 13:18:56 toml Exp $
+
+// World Representation Functions
+
+#include <wrtype.h>
+#include <wrdb.h>
+#include <wrfunc.h>
+#include <wrbsp.h>
+#include <matrix.h>
+#include <math.h>
+#include <mprintf.h>
+#include <cfgdbg.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+
+static int FindLeaf(Location *loc)
+{
+   mxs_real distance;
+   mxs_vector *point = &loc->vec;
+
+   wrBspNode *pCurNode = g_wrBspTree;
+
+   while (!wrBspIsLeaf(pCurNode)) 
+   {
+      if (wrBspIsReversed(pCurNode))
+         distance = -mx_dot_vec(point, &pCurNode->plane->normal) - pCurNode->plane->plane_constant;
+      else
+         distance = mx_dot_vec(point, &pCurNode->plane->normal) + pCurNode->plane->plane_constant;
+
+      if (distance < 0.0)
+      {
+         if (wrOutsideIndex(pCurNode) == WRBSP_INVALID)
+            return CELL_INVALID;
+
+         pCurNode = &g_wrBspTree[wrOutsideIndex(pCurNode)];
+      }
+      else
+      {
+         if (wrInsideIndex(pCurNode) == WRBSP_INVALID)
+            return CELL_INVALID;
+
+         pCurNode = &g_wrBspTree[wrInsideIndex(pCurNode)];
+      }
+   }
+   return pCurNode->cell_id;
+}
+
+  // Cache the current cell
+int ComputeCellForLocation(Location *loc)
+{
+   int cell_id;
+
+   if (!wr_num_cells) {
+#ifndef SHIP
+      ConfigSpew("LocSpew",
+                 ("You can't find a Location when there's no world rep!\n"));
+#endif // ~SHIP
+      return (loc->cell = CELL_INVALID);
+   }
+
+   if (loc->hint != CELL_INVALID) {
+
+      // test if we're still in the hinted cell
+
+      // make sure this is DB valid in case we're in editor and just
+      // rebuilt the level
+
+      if (loc->hint < wr_num_cells && loc->hint >= 0) {
+         if (PortalTestInCell(loc->hint, loc))
+            return (loc->cell = loc->hint);   // put in cache and return
+      }
+   }
+
+   cell_id = FindLeaf(loc);
+   loc->hint = cell_id;
+
+   if (cell_id != CELL_INVALID && PortalTestInCell(cell_id, loc))
+      return (loc->cell = cell_id);
+   else
+      return (loc->cell = CELL_INVALID);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This is a wrapper for ComputeCellForLocation(), above, for when we
+   want to pass in a vector instead of a location.  It returns an
+   index into wr_cell[].
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalComputeCellFromPoint(mxs_vector *seed_pos)
+{
+   Location loc;
+
+   loc.vec.x = seed_pos->x;
+   loc.vec.y = seed_pos->y;
+   loc.vec.z = seed_pos->z;
+   loc.cell = CELL_INVALID;
+   loc.hint = CELL_INVALID;
+
+   // Is there a cell at our coordinates?
+   return ComputeCellForLocation(&loc);
+}
+
+
+double PortalDistPointFromPlane(PortalPlane *p, Location *loc)
+{
+   return mx_dot_vec(&p->normal, &loc->vec) + p->plane_constant;
+}
+
+bool PortalTestLocationInsidePlane(PortalPlane *p, Location *loc)
+{
+   // please, compiler, inline all of this
+   return PortalDistPointFromPlane(p,loc) >= 0;
+}
+
+bool PortalTestInCell(int r, Location *loc)
+{
+   PortalPlane *p = WR_CELL(r)->plane_list;
+   int i, n = WR_CELL(r)->num_planes;
+
+   // check if we're on the positive side of every side
+
+   for (i=0; i < n; ++i, ++p) {
+      if (!PortalTestLocationInsidePlane(p, loc))
+         return FALSE;
+   }
+   return TRUE;
+}
+
+#define TOO_CLOSE    0.05
+#define ADJUST_DIST  0.06
+
+void PortalMovePointInsideCell(Location *loc)
+{
+   mxs_vector *vec = &loc->vec;
+   int cell = CellFromLoc(loc);
+   PortalPlane *p;
+   int i,n, iter;
+   bool changed;
+
+   if(cell==CELL_INVALID)
+      return;
+
+   n = WR_CELL(cell)->num_planes;
+   // check if we're very close to any planes
+   iter = 0;
+   do {
+      p = WR_CELL(cell)->plane_list;
+      changed = FALSE;
+      for (i=0; i < n; ++i,++p) {
+         double dist = PortalDistPointFromPlane(p, loc);
+         if (dist < TOO_CLOSE) {
+            mx_scale_addeq_vec(vec, &p->normal, ADJUST_DIST-dist);
+            changed = TRUE;
+         }
+      }
+      ++iter;
+   } while (changed && iter < n);
+}
+
+// This is a utility function for constructing
+// the portal representation, so I could have put
+// it in the editor code instead, but I figured it's
+// pretty generic...
+
+// This is from a graphcis gem
+void PortalComputeBoundingSphere(PortalCell *cell)
+{
+   int n = cell->num_vertices, i;
+   Vertex *vpool = cell->vpool, *this;
+   Vertex xmin,ymin,zmin,xmax,ymax,zmax;
+   Vertex center;
+   mxs_real radius, rad2, xlen, ylen, zlen, dist, dist_2;
+
+   // find the points at maximal locations along the axes
+
+   xmin = ymin = zmin = xmax = ymax = zmax = vpool[0];
+   for (i=1, this=vpool+1; i < n; ++i, ++this) {
+      if (this->x < xmin.x) xmin = *this;
+      else if (this->x > xmax.x) xmax = *this;
+      if (this->y < ymin.y) ymin = *this;
+      else if (this->y > ymax.y) ymax = *this;
+      if (this->z < zmin.z) zmin = *this;
+      else if (this->z > zmax.z) zmax = *this;
+   }
+
+   // determine which pair (xmin,xmax), (ymin,ymax), (zmin,zmax)
+   // has the maximal sphere
+
+   xlen = mx_dist2_vec(&xmin, &xmax);
+   ylen = mx_dist2_vec(&ymin, &ymax);
+   zlen = mx_dist2_vec(&zmin, &zmax);
+
+   if (ylen > xlen && ylen > zlen) {
+      xmin = ymin;
+      xmax = ymax;
+   } else if (zlen > xlen) {
+      xmin = zmin;
+      xmax = zmax;
+   }
+
+   // compute initial sphere
+
+   mx_interpolate_vec(&center, &xmin, &xmax, 0.5);
+   radius = mx_dist_vec(&center, &xmin);
+
+   // refine the sphere to contain all points
+
+   rad2 = radius * radius;
+   for (i=0, this = vpool; i < n; ++i,++this) {
+      dist_2 = mx_dist2_vec(&center, this);
+      if (dist_2 > rad2) {
+         dist = sqrt(dist_2);
+
+         // our new circle will have a diameter of radius + dist
+         radius = (dist + radius)/2;
+         rad2 = radius*radius;
+
+         // now we need to interpolate from the old center point
+         // towards the new end point
+
+         // the distance from the old center to the new point is dist
+         // we want to move along the line until the new center is
+         // equadistant from the new point and the old back location
+
+         // That means: dist from new center to new point is new_radius
+         // Total distance is dist.  So we want to move by
+         // (dist-new_radius)/dist
+
+         mx_interpolate_vec(&center, &center, this, (dist-radius)/dist);
+      }
+   }
+
+   /*
+   for (i=0; i < n; ++i)
+      if (mx_dist2_vec(&center, &vpool[i]) > rad2 + 0.01)
+         Error(1, "Failed to create bounding sphere.\n");
+   */
+
+   cell->sphere_center = center;
+   cell->sphere_radius = radius;
+}
+
+/*
+ * portal_crosses_bbox:
+ *   We want to know if a particular portal is partly within a bbox.
+ *   We use an inexact conservative solution.  This approach
+ *   is exact for comparing a line segment against a 2d bbox,
+ *   but not in 3d.
+ *
+ *   A description in 2d: we "point code" the line segment vs.
+ *   the 2d bbox, and check for trivial reject.  Then we check
+ *   the points of the bbox against the infinite line of the
+ *   line segment; if they cross, the line segment is partly
+ *   within.
+ */
+bool portal_crosses_bbox(PortalCell *r, PortalPolygonCore *p,
+           mxs_vector *mn, mxs_vector *mx, int vl)
+{
+   // first check the bbox against the plane
+   PortalPlane *plane = &r->plane_list[p->planeid];
+   mxs_vector rel_min, rel_max;
+   mxs_real min_dist, max_dist;
+   int code, i;
+   uchar *vlist;
+   Vertex *vpool;
+
+   // compute the min and max dot products of the bbox
+   // against the normal, using the graphics gem hack
+
+   if (plane->normal.x < 0)
+      rel_min.x = mx->x, rel_max.x = mn->x;
+   else
+      rel_min.x = mn->x, rel_max.x = mx->x;
+
+   if (plane->normal.y < 0)
+      rel_min.y = mx->y, rel_max.y = mn->y;
+   else
+      rel_min.y = mn->y, rel_max.y = mx->y;
+
+   if (plane->normal.z < 0)
+      rel_min.z = mx->z, rel_max.z = mn->z;
+   else
+      rel_min.z = mn->z, rel_max.z = mx->z;
+
+   min_dist = mx_dot_vec(&rel_min, &plane->normal) + plane->plane_constant;
+   max_dist = mx_dot_vec(&rel_max, &plane->normal) + plane->plane_constant;
+
+   if (min_dist > 0 || max_dist < 0)
+      return FALSE;
+
+   vlist = r->vertex_list + vl;
+   vpool = r->vpool;
+
+   // now point code all of the points against the planes
+   code = (1 << 6) - 1;
+
+   for (i=0; i < p->num_vertices; ++i) {
+      Vertex *v = &vpool[vlist[i]];
+      if (v->x > mn->x) code &= ~1;
+      if (v->x < mx->x) code &= ~2;
+      if (v->y > mn->y) code &= ~4;
+      if (v->y < mx->y) code &= ~8;
+      if (v->z > mn->z) code &= ~16;
+      if (v->z < mx->z) code &= ~32;
+   }
+   if (code) // trivial reject on some side
+      return FALSE;
+   return TRUE;
+}
+
+/*
+ * PortalCellsInArea:
+ *
+ *   Given a world-aligned bbox and a "seed" location, this
+ *   returns all of the cells which are reachable from the
+ *   seed without going outside the bbox.
+ *
+ *   E.g. the bbox represents an object, and the seed is the
+ *   center of the object.  If the bbox crosses both ends of
+ *   a U without going through the middle, it will only return
+ *   the end containing the cell.
+ */
+
+#define CELL_VISITED(x)       ((WR_CELL(x)->flags) & CELL_TRAVERSED)
+#define SET_CELL_VISITED(x)   ((WR_CELL(x)->flags) |= CELL_TRAVERSED)
+#define CLEAR_CELL_VISITED(x) ((WR_CELL(x)->flags) &= ~CELL_TRAVERSED)
+
+// global variable used for object splitting hack
+uchar portal_area_flags;
+
+int PortalCellsInArea(int *cell_list, int list_max,
+   mxs_vector *mn, mxs_vector *mx, Location *seed)
+{
+   int count, i, j, vl;
+   int cell = CellFromLoc(seed);
+
+   count = 1;
+   cell_list[0] = cell;
+
+   // is our seed point in the world?
+   if (cell == CELL_INVALID)
+      return 0;
+
+   // is it an empty bounding box?
+   if (mn->x == mx->x && mn->y == mx->y && mn->z == mx->z)
+      return 1;
+
+   SET_CELL_VISITED(cell);
+
+   // breadth first search using the passed in list for storage
+   portal_area_flags = 0;
+
+   for (i=0; i < count; ++i) { // note count increases as we go
+      PortalCell *p = WR_CELL(cell_list[i]);
+      vl = p->portal_vertex_list;
+      for (j=0; j < p->num_portal_polys; ++j) {
+         cell = p->portal_poly_list[j].destination;
+         if (!CELL_VISITED(cell)) {
+            if (portal_crosses_bbox(p, &p->portal_poly_list[j], mn, mx, vl)) {
+               portal_area_flags |= p->portal_poly_list[j].flags;
+               cell_list[count++] = cell;
+               SET_CELL_VISITED(cell);
+               // have we run out of room to store cells?
+               if (count == list_max)
+                  goto done;
+            }
+         } else if (p->portal_poly_list[j].flags)
+            if  (portal_crosses_bbox(p, &p->portal_poly_list[j], mn, mx, vl))
+               portal_area_flags |= p->portal_poly_list[j].flags;
+         vl += p->portal_poly_list[j].num_vertices;
+      }
+   }
+
+ done:
+   for (i=0; i < count; ++i)
+      CLEAR_CELL_VISITED(cell_list[i]);
+   return count;
+}
+
+
+uchar _portal_target_cell_flags;
+uchar _portal_flags_set;
+uchar _portal_flags_mask;
+uchar _portal_flags_visit_test;
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   Here's the recursive core for cell marking.  We mark cells with
+   given flag bits set, starting from a given cell and exploring
+   through the portals.
+
+   Like all of these blocking thingbobs, it returns the number of
+   cells marked.
+
+   If we want to use this for bigger stuff than doors, we should
+   switch to explicit recursion.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+static int _PortalFlagGroupOfCells(PortalCell *cell)
+{
+   PortalPolygonCore *portal;
+   PortalCell *adjacent_cell;
+   int i;
+   uchar adjacent_flags;
+   int cells_marked = 1;            // start by counting this cell
+
+   cell->flags = (cell->flags & _portal_flags_mask) | _portal_flags_set;
+
+   portal = cell->portal_poly_list;
+
+   // We recurse on any bordering cells we haven't been to, and should.
+   // No chit.
+   for (i = cell->num_portal_polys - 1; i >= 0; i--) {
+      adjacent_cell = wr_cell[portal->destination];
+      adjacent_flags = adjacent_cell->flags;
+
+      // Two requirements for recursing: it's got our target flags
+      // set, and the other flags are not yet as we want them.
+      if (((adjacent_flags & _portal_target_cell_flags)
+        == _portal_target_cell_flags)
+       && ((adjacent_flags & _portal_flags_visit_test)
+         != _portal_flags_set))
+         cells_marked += _PortalFlagGroupOfCells(adjacent_cell);
+
+      portal++;
+   }
+
+   return cells_marked;
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This is an internal helper function for the door blocking routines,
+   which follow.
+
+   flags_set is those flags we want to turn on for all qualified
+   cells.
+
+   flags_clear is not a bit mask.  It's the flags we want turned
+   off--we find the mask ourselves.  If this seems backwards, you've
+   twiddled one bit too many.  Get out and play in the snow!
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+static int _PortalFlagCells(PortalCell *cell,
+                            uchar target_cell_flags,
+                            uchar flags_set,
+                            uchar flags_clear)
+{
+   // If our cell don't cut it, we leave in a huff.
+   if ((cell->flags & _portal_target_cell_flags)
+    != _portal_target_cell_flags)
+      return 0;
+
+   _portal_target_cell_flags = target_cell_flags;
+   _portal_flags_set = flags_set;
+   _portal_flags_mask = 255 ^ flags_clear;
+   _portal_flags_visit_test = flags_clear | flags_set;
+
+   return _PortalFlagGroupOfCells(cell);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   We close a door by setting all of its cells to block vision.
+   If return value is zero, our starting cell was not flagged as
+   a door.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalBlockVision(PortalCell *starting_cell)
+{
+   return _PortalFlagCells(starting_cell, 
+                           CELL_CAN_BLOCK_VISION,
+                           CELL_BLOCKS_VISION, 0);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This is like PortalSetBlocking(), above, but accepts a point.
+   It's quite a bit slower since we find our starting cell through an
+   exhaustive search.  We probably shouldn't use this in a game.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalBlockVisionFromLocation(Location *seed_loc)
+{
+   int cell_index = CellFromLoc(seed_loc);
+
+   if (cell_index == CELL_INVALID) {
+      ConfigSpew("BlockSpew",
+                 ("Door blocking out of world rep: (%g %g %G)\n",
+                  seed_loc->vec.x, seed_loc->vec.y, seed_loc->vec.z));
+      return 0;
+   } else
+      return PortalBlockVision(wr_cell[cell_index]);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   We open a door by setting its cells to not block vision.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalUnblockVision(PortalCell *starting_cell)
+{
+   return _PortalFlagCells(starting_cell,
+                           CELL_CAN_BLOCK_VISION,
+                           0, CELL_BLOCKS_VISION);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   As before, but using a location.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+int PortalUnblockVisionFromLocation(Location *seed_loc)
+{
+   int cell_index = CellFromLoc(seed_loc);
+
+   if (cell_index == CELL_INVALID) {
+      ConfigSpew("BlockSpew", 
+                 ("Door unblocking out of world rep: (%g %g %G)\n",
+                  seed_loc->vec.x, seed_loc->vec.y, seed_loc->vec.z));
+      return 0;
+   } else
+      return PortalUnblockVision(wr_cell[cell_index]);
+}
+
+
+#if 0
+/*
+ * find_split_portals
+ *
+ *   This code is just like the above, but it
+ *   records all the planes it sees in the portals
+ *   which cause splits
+ */
+
+#define MAX_SPLIT_CELLS 256
+#define MAX_SPLIT_PLANES 16
+static int cell_list[MAX_SPLIT_CELLS];
+static mxs_plane split_planes[16];
+
+#define EPSILON_VECDOT          0.99
+#define EPSILON_PLANE_CONSTANT  0.01
+
+static add_plane(int *num_planes, PortalPlane *pp)
+{
+   mxs_plane p;
+   int i;
+
+   p.x = pp->normal.x;
+   p.y = pp->normal.y;
+   p.z = pp->normal.z;
+   p.d = pp->plane_constant;
+
+   for (i=0; i < *num_planes; ++i) {
+      if (mx_dot_vec(&p, &split_planes[i]) > EPSILON_VECDOT &&
+          fabs(p.d - split_planes[i].d) < EPSILON_PLANE_CONSTANT)
+        return;
+   }
+   split_planes[(*num_planes)++] = p;
+}
+
+int find_split_portals_in_area(mxs_plane **p, int max_planes,
+   mxs_vector *mn, mxs_vector *mx, Location *seed)
+{
+   int count, i, j, vl, num_planes=0;
+   int cell = CellFromLoc(seed);
+
+   count = 1;
+   cell_list[0] = cell;
+   SET_CELL_VISITED(cell);
+
+   // breadth first search to find all the portals we cross
+
+   for (i=0; i < count; ++i) { // note count increases as we go
+      PortalCell *p = WR_CELL(cell_list[i]);
+      vl = p->portal_vertex_list;
+      for (j=0; j < p->num_portal_polys; ++j) {
+         cell = p->portal_poly_list[j].destination;
+         if (!CELL_VISITED(cell)) {
+            if (portal_crosses_bbox(p, &p->portal_poly_list[j], mn, mx, vl)) {
+               cell_list[count++] = cell;
+               SET_CELL_VISITED(cell);
+               // have we run out of room to store cells?
+               if (count == MAX_SPLIT_CELLS)
+                  goto done;
+               if (portal_poly_list[j].flags & PORTAL_SPLITS_OBJECT)
+                  if (num_planes < max_planes)
+                     add_plane(&num_planes,
+                          &p->plane_list[p->portal_poly_list[j].planeid]);
+            }
+         } else if (portal_poly_list[j].flags & PORTAL_SPLITS_OBJECT)
+            if (portal_crosses_bbox(p, &portal_poly_list[j], mn, mx, vl))
+               if (num_planes < max_planes)
+                  add_plane(&num_planes,
+                          &p->plane_list[p->portal_poly_list[j].planeid]);
+         vl += p->portal_poly_list[j].num_vertices;
+      }
+   }
+
+ done:
+   for (i=0; i < count; ++i)
+      CLEAR_CELL_VISITED(cell_list[i]);
+   
+   if (num_planes) {
+      *p = Malloc(sizeof(mxs_plane) * num_planes);
+      memcpy(*p, split_planes, sizeof(mxs_plane) * num_planes);
+   }
+   return num_planes;
+}
+
+int find_split_portals(mxs_plane **sp, ObjID o, int max_planes)
+{
+
+}
+#endif
+//  $Header: r:/t2repos/thief2/src/portal/portal.c,v 1.140 2000/02/24 23:41:41 mahk Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#ifndef SHIP
+#include <stdio.h>
+#endif
+
+#include <string.h>
+#include <math.h>
+
+#include <lg.h>
+#include <dev2d.h>
+#include <r3d.h>
+#include <g2pt.h>
+#include <mprintf.h>
+#include <config.h>
+#include <timer.h>
+#include <lgd3d.h>
+#include <uigame.h>
+
+#include <wrbsp.h>
+#include <portal_.h>
+#include <portdraw.h>
+#include <portclip.h>
+#include <portsky.h>
+#include <pt_clut.h>
+#include <animlit.h>
+#include <portwatr.h>
+#include <bspsphr.h>
+#include <osysbase.h>
+#include <wrlimit.h>
+
+#include <refsys.h>
+
+#include <profile.h>
+
+#include <texmem.h>
+
+#include <wrdbrend.h> // to get access to cell texutre
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#ifndef SHIP
+// write out a log of our portal traversal
+static FILE *trav_file;
+#endif
+
+  // enable this to collect per-scene statistics
+#define STATS_ON
+
+  // do some internal checking
+//#define VALIDATE
+
+//#define VALIDATE_UNIQUENESS_OF_PORTALS
+
+#if defined(DBG_ON) || defined(PROFILE_ON)
+  #define STATIC
+#else
+  #define STATIC static
+#endif
+
+  // max object fragments visible onscreen at once
+#define MAX_VISIBLE_OBJECTS 4096
+
+  // does lighting compute light maps or at vertices?
+  // We probably don't really support vertex lighting anymore
+#define LIGHT_MAP
+
+#ifdef DBG_ON
+  bool debug_cell_traversal;
+  #define CELL_DEBUG(x)  if (debug_cell_traversal) x; else
+#else
+  #define CELL_DEBUG(x)
+#endif
+
+
+/////////////////////    globals    /////////////////////////
+
+  // default callback for turning texture id into texture
+extern grs_bitmap *make_texture_map(int d);
+r3s_texture (*portal_get_texture)(int d) = make_texture_map;
+ulong portal_fog_color[3];
+float portal_fog_dist = 0;
+BOOL portal_fog_on = TRUE;
+ulong fog_r3_color;
+float fog_dist_modifier = .05;
+extern mxs_vector portal_sunlight;
+
+
+  // default callbacks
+#pragma off(unreferenced)
+static void render_object(ObjID obj, uchar *clut, ulong fragment)
+{
+}
+
+static void dummy_sfx(int cell)
+{
+}
+
+static BOOL object_visible(ObjID o1)
+{
+   return FALSE;
+}
+
+static BOOL object_blocks(ObjID o1, ObjID o2)
+{
+   return FALSE;
+}
+#pragma on(unreferenced)
+
+void (*portal_render_object)(ObjID, uchar *, ulong fragment) = render_object;
+BOOL (*portal_object_visible)(ObjID) = object_visible;
+BOOL (*portal_object_blocks)(ObjID, ObjID) = object_blocks;
+
+void (*portal_sfx_callback)(int cell) = dummy_sfx;
+void (*portal_pre_draw_callback)(void) = NULL;
+
+bool portal_allow_object_splitting = TRUE;
+
+unsigned char pt_medium_entry_clut[256];
+unsigned char pt_medium_exit_clut[256];
+unsigned char pt_medium_haze_clut[256];
+
+unsigned char pt_motion_haze_clut[256];
+
+
+mxs_vector portal_camera_loc;
+
+/////////////////////////////////////////////////////////////////////
+//
+//  statistics
+
+#ifdef DBG_ON
+  #ifndef STATS_ON
+  #define STATS_ON
+  #endif
+#endif
+
+#ifdef STATS_ON
+
+ #define STAT(x)  (x)
+
+ static int stat_num_port;
+ static int stat_num_port_visit;
+ static int stat_num_port_traverse;
+ static int stat_num_cell;
+ static int stat_num_cell_visit;
+ static int stat_num_cell_explored;
+ static int stat_num_facing;
+ static int stat_num_objects;
+ static int stat_num_visible_objects;
+ static int stat_num_terrsplit_objects;
+ static int stat_num_resplit_objects;
+ static int stat_num_hidden_objects;
+ static int stat_num_cell_tests;
+ static int stat_num_partial_objects;
+ int stat_num_polys_clipped_away;
+ int stat_num_poly_raw;
+ int stat_num_poly_considered;
+ int stat_num_poly_drawn;
+ int stat_num_lit_pixels;
+ int stat_num_source_pixels;
+ int stat_num_spans_drawn;
+ int stat_num_spans_clamped;
+ int stat_num_dest_pixels;
+ int stat_num_backface_tests;
+ int stat_num_traverse_ms;
+ int stat_num_render_ms;
+ int stat_num_sort_ms;
+ int stat_num_object_ms;
+ int stat_num_drawn_pixels;
+ int stat_num_clipped_pixels;
+ int stat_num_transp_pixels;
+ int stat_max_undrawn_pixels;
+ int stat_max_undrawn_polys;
+ int stat_max_total_polys;
+
+#else
+
+ #define STAT(x)
+
+#endif
+
+#define STAT_INC(x)  STAT(++stat_num_##x)
+
+///// TODO: move externs into h file
+
+extern ClipData *PortalGetClipInfo(PortalCell *, PortalPolygonCore *, int voff, ClipData *);
+extern uchar compute_water_clut(mxs_real, mxs_real);
+extern mxs_real compute_portal_z(void);
+extern void duv_set_size(int x, int y);
+extern void portal_preload_lightmaps(int cell);
+extern void draw_region(int);
+extern void draw_region_lgd3d(int);
+extern void draw_region_lightmap_only(int);
+extern int  pick_region(PortalCell *, int x, int y);
+extern bool portal_raycast_light(PortalCell *, Location *loc, uchar perm);
+extern bool portal_raycast_sunlight(PortalCell *r, uchar perm);
+extern bool portal_nonraycast_light(PortalCell *, Location *loc, uchar perm);
+extern void portal_dynamic_light(PortalCell *, Location *loc);
+extern void portal_dynamic_dark(PortalCell *, Location *loc);
+extern void render_background_hack();
+extern void background_hack_cleanup(void);
+extern void PortalSetLightInfo(Location *l, float br, uchar start);
+extern bool dynamic_light;
+extern void light_region(int);
+//extern void spotlight_region(int);
+extern void init_portal_light(void);
+extern void init_portal_shading(int dark, int light);
+extern void init_background_hack(void);
+extern BOOL g_lgd3d;
+
+///// examine all portals in region /////
+
+void add_region(int, ClipData *c, PortalCell *src, PortalPolygonCore *port);
+
+static BOOL z_test;
+static float test_radius;
+
+static BOOL poly_passes_ztest(PortalCell *r, PortalPolygonCore *p, int v)
+{
+   // check that at least one z value is close enough
+   int i,n;
+   uchar *vl = r->vertex_list + v;
+   n = p->num_vertices;
+   for (i=0; i < n; ++i)
+      if (cur_ph[vl[i]].p.z < test_radius)
+         return TRUE;
+   return FALSE;   // poly is too far away
+}
+
+static bool flashbomb_through_door_hack=FALSE;
+  // explore through the portal
+void explore_portals(PortalCell *r)
+{  PROF
+   int n = r->num_portal_polys;
+   PortalPolygonCore *p = r->portal_poly_list;
+   int v = r->portal_vertex_list;
+   void *clip = CLIP_DATA(r);
+
+   // If this cell is in a door, or something silly like that, we
+   // won't explore from it.
+   if ((r->flags & CELL_BLOCKS_VISION) && !flashbomb_through_door_hack) {
+      END_PROF;
+      return;
+   }
+   
+   /*//zb
+   if (g_lgd3d && portal_fog_on && portal_fog_dist && (r->flags & CELL_FOG)
+    && (mx_dist_vec(&portal_camera_loc, &r->sphere_center) - r->sphere_radius
+      > portal_fog_dist)) {
+      r->flags |= CELL_FOGGED_OUT;
+      END_PROF;
+      return;
+   }
+   */
+
+   cur_ph = POINTS(r);
+
+   r3_start_block();
+   r3_set_clipmode(NEED_CLIP(r) ? R3_CLIP : R3_NO_CLIP);
+   while (n--) {
+      STAT_INC(port_visit);
+
+#ifndef SHIP
+      if (trav_file)
+         fprintf(trav_file, "  Consider portal %d:", r->num_portal_polys-n+1);
+#endif
+      if (check_surface_visible(r, p, v)) {   // if we can see through portal
+         ClipData *portal_extent;             // get 2d extents of portal
+         portal_extent = PortalGetClipInfo(r, p, v, clip);
+         if (portal_extent) {                 // clip against cell's visibility
+            STAT_INC(port_traverse);          // if visible, go through it
+#ifndef SHIP
+            if (trav_file)
+               fprintf(trav_file, "  cell %d visible\n", p->destination);
+#endif
+            if (!z_test || poly_passes_ztest(r, p, v)) {
+               add_region(p->destination, portal_extent, r, p);
+                 // add_region may change our clipmode, so reset it
+               r3_set_clipmode(NEED_CLIP(r) ? R3_CLIP : R3_NO_CLIP);
+            } else {
+               PortalClipFree(portal_extent);
+            }
+         } else {
+#ifndef SHIP
+            if (trav_file)
+               fprintf(trav_file, "  obscured/offscreen\n");
+#endif
+         }
+      } else {
+#ifndef SHIP
+         if (trav_file)
+            fprintf(trav_file, "  backfaced\n");
+#endif
+      }
+      v += p->num_vertices;
+      ++p;
+   }
+   r3_end_block();
+   END_PROF;
+}
+
+bool hack_fragment[MAX_VISIBLE_OBJECTS]; // temporary hack
+#define FRAGMENT(x)   Assert_(hack_fragment[x])
+#define CELL(x)       Assert_(!hack_fragment[x])
+
+///// do object processing for region /////
+
+#define VISOBJ_NULL      (-1)
+
+
+
+bool obj_dealt[HACK_MAX_OBJ];  // HACK: need real object dealt flags
+bool obj_split[HACK_MAX_OBJ];  // HACK: need real object split flags
+bool obj_hide[HACK_MAX_OBJ];   // HACK: need real object hide flags
+
+// only need this for objects which have dealt != 0
+PortalCell *obj_first_cell[HACK_MAX_OBJ]; // HACK: argh what a waste
+
+ObjVisibleID obj_fragment_list[HACK_MAX_OBJ];
+
+#define MAX_NEED_TESTING  (512)
+
+ObjVisible vis_objs[MAX_VISIBLE_OBJECTS];  // 8K
+ObjVisibleID num_visible_objects;
+ObjID obj_need_testing[MAX_NEED_TESTING]; // max visible objects, not fragments
+int need_testing_count;
+
+STATIC
+int get_visobj(ObjID o, int fragment)
+{
+   ObjVisibleID his = num_visible_objects++;
+   if (his >= MAX_VISIBLE_OBJECTS) return VISOBJ_NULL;
+   vis_objs[his].obj = o;
+hack_fragment[his] = TRUE;
+   vis_objs[his].fragment = fragment;
+   return his;
+}
+
+STATIC
+void queue_object_fragment_in_cell(PortalCell *r, int visobj)
+{
+   if (visobj < 0) return;
+
+#ifdef STATS_ON
+   ++stat_num_visible_objects;
+#endif
+
+   vis_objs[visobj].next_visobj = OBJECTS(r);
+   OBJECTS(r) = visobj;
+}
+
+STATIC
+void queue_object_fragment_for_obj(PortalCell *r, int visobj)
+{
+   int o = vis_objs[visobj].obj;
+hack_fragment[visobj] = FALSE;
+   vis_objs[visobj].cell = r;
+   vis_objs[visobj].next_visobj = obj_fragment_list[o];
+   obj_fragment_list[o] = visobj;
+}
+
+// first time we encounter an object not split
+void deal_with_unsplit_object(PortalCell *r, ObjID o)
+{
+   int n = get_visobj(o, OBJ_NO_SPLIT);
+   queue_object_fragment_in_cell(r, n);
+   obj_fragment_list[o] = n;
+   obj_first_cell[o] = r;
+
+   // add to the list of unsplit objects which might need splitting
+   if (need_testing_count < MAX_NEED_TESTING)
+      obj_need_testing[need_testing_count++] = o;
+   else
+      Warning(("Too many objects to test for splitting!\n"));
+}
+
+// other times we encounter an object not split
+void deal_with_object_leftover(PortalCell *r, ObjID o)
+{
+   queue_object_fragment_for_obj(r, get_visobj(o, OBJ_NO_SPLIT));
+}
+
+// first time we encounter an object to be split
+void deal_with_splitting_object(PortalCell *r, ObjID o)
+{
+   queue_object_fragment_in_cell(r, get_visobj(o, OBJ_SPLIT_FIRST));
+   obj_fragment_list[o] = VISOBJ_NULL;
+}
+
+// other times we encounter an object to be split
+void deal_with_split_object(PortalCell *r, ObjID o)
+{
+   queue_object_fragment_in_cell(r, get_visobj(o, OBJ_SPLIT_OTHER));
+}
+
+BOOL poly_greater(PortalCell *r, PortalPolygonCore *p, int v, int axis,
+   float value)
+{
+   int i,n = p->num_vertices;
+   uchar *vl = r->vertex_list + v;
+
+   for (i=0; i < n; ++i)
+      if (r->vpool[*vl++].el[axis] < value)
+         return FALSE;
+   return TRUE;
+}
+
+BOOL poly_less(PortalCell *r, PortalPolygonCore *p, int v, int axis,
+   float value)
+{
+   int i,n = p->num_vertices;
+   uchar *vl = r->vertex_list + v;
+
+   for (i=0; i < n; ++i)
+      if (r->vpool[*vl++].el[axis] > value)
+         return FALSE;
+   return TRUE;
+}
+
+BOOL poly_overlap_2d(PortalCell *r, PortalPolygonCore *p, int v, fix *min2d, fix *max2d)
+{
+   int ccode = 0, n = p->num_vertices, i, code_2d;
+   uchar *vl = r->vertex_list + v;
+   r3s_point *plist = POINTS(r);
+
+   // generate the polygon clip code
+   for (i=0; i < n; ++i)
+      ccode |= plist[vl[i]].ccodes;
+
+   code_2d = 255;
+
+   if (!ccode) {
+      // if we don't need to clip, test it directly by generating new ccode,
+      // this time we want a ccode_and
+
+      for (i=0; i < n; ++i) {
+         r3s_point *pt = plist + vl[i];
+         fix xy,yx;
+         xy = pt->grp.sx + pt->grp.sy;
+         yx = pt->grp.sx - pt->grp.sy;
+         if (pt->grp.sx > min2d[0]) code_2d &= ~1;
+         if (pt->grp.sx < max2d[0]) code_2d &= ~2;
+         if (pt->grp.sy > min2d[1]) code_2d &= ~4;
+         if (pt->grp.sy < max2d[1]) code_2d &= ~8;
+         if (xy > min2d[2]) code_2d &= ~16;
+         if (xy < max2d[2]) code_2d &= ~32;
+         if (yx > min2d[3]) code_2d &= ~64;
+         if (yx < max2d[3]) code_2d &= ~128;
+      }
+   } else {
+      // clip the polygon
+      r3s_phandle vlist[32], *nvl;
+      for (i=0; i < n; ++i)
+         vlist[i] = plist + vl[i];
+      n = r3_clip_polygon(n, vlist, &nvl);
+      for (i=0; i < n; ++i) {
+         r3s_point *pt = nvl[i];
+         fix xy,yx;
+         xy = pt->grp.sx + pt->grp.sy;
+         yx = pt->grp.sx - pt->grp.sy;
+         if (pt->grp.sx > min2d[0]) code_2d &= ~1;
+         if (pt->grp.sx < max2d[0]) code_2d &= ~2;
+         if (pt->grp.sy > min2d[1]) code_2d &= ~4;
+         if (pt->grp.sy < max2d[1]) code_2d &= ~8;
+         if (xy > min2d[2]) code_2d &= ~16;
+         if (xy < max2d[2]) code_2d &= ~32;
+         if (yx > min2d[3]) code_2d &= ~64;
+         if (yx < max2d[3]) code_2d &= ~128;
+      }
+   }
+   if (code_2d != 0)
+      return FALSE;  // we trivially do not overlap the bounding octagon
+
+   // we don't trivially miss the rectangle
+   // in this case, we should probably do a non-trivial test (clip
+   // the polygon by the bounding octagon, see if result is non-empty)
+   // better yet, we should use the convex bounding volume of
+   // the object, by computing the silhouette edges of the
+   // bounding box... oh well
+
+   // we could at least do a more thorough test of whether
+   // the polygon is in front/behind the object, say by using
+   // the object's bounding planes
+
+   return TRUE;
+}
+
+extern BOOL bbox_intersects_plane(mxs_vector *bbox_min, mxs_vector *bbox_max,
+          PortalPlane *p);
+
+// return TRUE if the object can be drawn in front of this cell
+BOOL object_in_front(PortalCell *r, mxs_vector *mn, mxs_vector *mx,
+             fix *mn2d, fix *mx2d)
+{
+   int i,n,v=0;
+   ulong plane_check;     // have we tested this plane
+   ulong plane_result;    // the result for this plane
+   PortalPolygonCore *p = r->poly_list;
+
+   // any rendered portal polygon will force an explicit split, so ignore those
+   n = r->num_polys - r->num_portal_polys;
+
+   plane_check = 0;
+   plane_result = 0;
+
+   r3_start_block();  // for clipping I guess
+
+   for (i=0; i < n; ++i) {
+      int plane = p->planeid;
+      BOOL result;
+      if (plane_check & (1 << plane))
+         result = plane_result & (1 << plane);
+      else {
+         PortalPlane *p = &r->plane_list[plane];
+         float dist = mx_dot_vec(&portal_camera_loc, &p->normal)
+                      + p->plane_constant;
+         if (dist >= 0 && bbox_intersects_plane(mn, mx, p)) {
+            result = TRUE;
+            plane_result |= 1 << plane;
+         } else {
+            result = FALSE;
+         }
+
+         plane_check |= 1 << plane;
+      }
+
+      if (result) {
+         // check for an axially aligned split plane which reveals
+         // that the polygon is on the opposite side of the object
+         // from the viewer
+         // maybe we should explicitly build the bbox of the poly?
+         // this way we get to early out...
+
+#define pcl       portal_camera_loc
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+
+         if (poly_less(r, p, v, 0, MIN(pcl.x,mn->x))) goto behind;
+         if (poly_greater(r, p, v, 0, MAX(pcl.x,mx->x))) goto behind;
+         if (poly_less(r, p, v, 1, MIN(pcl.y,mn->y))) goto behind;
+         if (poly_greater(r, p, v, 1, MAX(pcl.y,mx->y))) goto behind;
+         if (poly_less(r, p, v, 2, MIN(pcl.z,mn->z))) goto behind;
+         if (poly_greater(r, p, v, 2, MAX(pcl.z,mx->z))) goto behind;
+#undef pcl
+#undef MAX
+#undef MIN
+
+         if (poly_overlap_2d(r, p, v, mn2d, mx2d))
+         {
+            r3_end_block();
+            return FALSE;
+         }
+      }
+     behind:
+      v += p->num_vertices;
+      ++p;
+   }
+
+   r3_end_block();
+   return TRUE;
+}
+
+extern void portal_obj_bounds(ObjID obj, mxs_vector **mn, mxs_vector **mx,
+           mxs_vector **center, float *radius, fix *mn2d, fix *mx2d);
+
+bool visible_in_cell(PortalCell *r, fix *mn2d, fix *mx2d)
+{
+   return PortalClipOverlap(CLIP_DATA(r), mn2d, mx2d);
+}
+
+// the list of cells to draw
+int active_regions[MAX_ACTIVE_REGIONS];
+int r_sorted_count, r_total_count;
+
+// bitfields for visible cells--we depend on the app to clear these per
+// frame so that if we draw three scenes in a frame we'll mark the cells
+// for all of them
+uchar portal_cell_rendered[1 + MAX_REGIONS / 8];
+
+bool portal_object_complete_test=TRUE;
+
+void split_object(ObjID o)
+{
+   int v,next;
+   v = obj_fragment_list[o];
+
+   // for all fragments except the last in the chain, move them
+   // to the appropriate cell and set their fragment # to the split
+   // value.  The last item in the chain (the nearest to the viewer)
+   // is already in the right cell, and just needs fragment #
+
+   next = vis_objs[v].next_visobj;
+   while (next != VISOBJ_NULL && vis_objs[next].obj == o) {
+CELL(v);
+      queue_object_fragment_in_cell(vis_objs[v].cell, v);
+hack_fragment[v] = TRUE;
+      vis_objs[v].fragment = OBJ_SPLIT_OTHER;
+
+      v = next;
+      next = vis_objs[v].next_visobj;
+   }
+
+hack_fragment[v] = TRUE;
+   vis_objs[v].fragment = OBJ_SPLIT_FIRST;
+   obj_fragment_list[o] = VISOBJ_NULL;
+}
+
+extern int mCellRefSys;
+BOOL test_object_cells_visible(ObjID obj)
+{
+   ObjRefID first = OBJ_FIRST_REF(obj, mCellRefSys);
+   ObjRefID ref;
+   if (!first)
+      return TRUE;
+   ref = first;
+   do {
+      ObjRef *p = OBJREFID_TO_PTR(ref);
+      int cell = * (int *) &p->bin;
+      if (!WR_CELL(cell)->render_data)
+         return FALSE;
+      ref = p->next_of_obj;
+   } while (ref != first);
+   return TRUE;
+}
+
+void check_object_split(ObjID o)
+{
+   int v,next;
+   mxs_vector *mn,*mx,*center;
+   fix mn2d[4], mx2d[4];
+   float radius;
+
+   if (!portal_object_visible(o)) {
+      obj_hide[o] = TRUE;
+#ifdef STATS_ON
+         ++stat_num_hidden_objects;
+#endif
+      return;
+   }
+
+   portal_obj_bounds(o, &mn, &mx, &center, &radius, mn2d, mx2d);
+
+   v = obj_fragment_list[o];
+   next = vis_objs[v].next_visobj;
+
+   if (next == VISOBJ_NULL || vis_objs[next].obj != o) {
+      if (!visible_in_cell(obj_first_cell[o], mn2d, mx2d)) {
+         obj_hide[o] = TRUE;
+#ifdef STATS_ON
+         ++stat_num_hidden_objects;
+#endif
+         return;
+      }
+   } else if (!visible_in_cell(obj_first_cell[o], mn2d, mx2d)) {
+   // iterate over all the cells the object is in,
+   // and see if it's visible in any
+
+      obj_hide[o] = TRUE;
+
+      // check all but the last entry
+      while (next != VISOBJ_NULL && vis_objs[next].obj == o) {
+CELL(v);
+         if (visible_in_cell(vis_objs[v].cell, mn2d, mx2d)) {
+            obj_hide[o] = FALSE;
+            break;
+         }
+         v = next;
+         next = vis_objs[v].next_visobj;
+      }
+
+      if (obj_hide[o] == TRUE) {
+#ifdef STATS_ON
+         ++stat_num_hidden_objects;
+#endif
+         return;
+      }
+
+      // reset current search location to how it was before we looped
+
+      v = obj_fragment_list[o];
+      next = vis_objs[v].next_visobj;
+   }
+
+   {
+      int far_index, near_index, i;
+      BOOL partial = !test_object_cells_visible(o);
+
+      if (next == VISOBJ_NULL || vis_objs[next].obj != o) {
+         // only in one cell
+         if (!partial)
+            return;
+      } else {
+         CELL(v);
+      }
+
+      near_index = obj_first_cell[o]->render_data->sorted_index;
+
+      // now, the object didn't get hidden, so check if it's
+      // fully visible
+      if (partial) {
+#ifdef STATS_ON
+         ++stat_num_partial_objects;
+#endif
+         far_index = r_sorted_count;
+      } else {
+        far_index = ((PortalCell *) vis_objs[v].cell)->render_data->sorted_index;
+      }
+
+      // now test all cells except furthest
+      for (i=near_index; i < far_index; ++i) {
+#ifdef STATS_ON
+         ++stat_num_cell_tests;
+#endif
+         if (!object_in_front(wr_cell[active_regions[i]], mn, mx, mn2d, mx2d))
+            break;
+      }
+
+      if (i == far_index)
+      {
+         return;
+      }
+   }
+
+   // we get here if the object needs splitting
+
+   STAT(++stat_num_terrsplit_objects);
+   split_object(o);
+}
+
+// check if objects need to be split due to terrain
+void check_for_object_splitting(void)
+{
+   int n=need_testing_count,i;
+
+   for (i=0; i < n; ++i)
+      check_object_split(obj_need_testing[i]);
+}
+
+// check if objects need to be split due to terrain
+void check_for_object_hiding(void)
+{
+   int v,next;
+   mxs_vector *mn,*mx,*center;
+   fix mn2d[4], mx2d[4];
+   float radius;
+
+   int n=need_testing_count,i;
+
+   for (i=0; i < n; ++i) {
+      ObjID obj = obj_need_testing[i];
+      // check if the game really thinkgs it's visible
+      if (portal_object_visible(obj)) {
+         // check if it's visible in any of the cells
+         portal_obj_bounds(obj, &mn, &mx, &center, &radius, mn2d, mx2d);
+
+         v = obj_fragment_list[obj];
+         next = vis_objs[v].next_visobj;
+
+         if (visible_in_cell(obj_first_cell[obj], mn2d, mx2d))
+            continue;
+
+         // check all but the last entry
+         while (next != VISOBJ_NULL && vis_objs[next].obj == obj) {
+CELL(v);
+            if (visible_in_cell(vis_objs[v].cell, mn2d, mx2d))
+               goto cont;  // continue out two levels
+            v = next;
+            next = vis_objs[v].next_visobj;
+         }
+      }
+
+      obj_hide[obj] = TRUE;
+#ifdef STATS_ON
+      ++stat_num_hidden_objects;
+#endif
+     cont:
+      ;
+   }
+}
+
+// check all objects (even non-visible refs) in this cell;
+// if they are visible and not already split, and their
+// frontmost cell is > front, check if object obj blocks view
+// of them; if it does, force it to split
+
+// cell is a cell#; front is a sorted index
+
+BOOL force_object_splits(int cell, int front, int obj)
+{
+   PortalCell *r = wr_cell[cell];
+   ObjRefID id = * (int *) (&r->refs);
+
+   while (id) {
+      ObjRef *p = OBJREFID_TO_PTR(id);
+      ObjID o = p->obj;
+
+      // is object o being drawn?
+      if (obj_dealt[o] && !obj_hide[o]) {
+         // does it matter if o blocked obj?
+         // if o blocks obj, but obj gets drawn "in front", then bad;
+         // that happens if FRONT(o) is < front,
+         // or if it's split
+
+         if (obj_fragment_list[o] == VISOBJ_NULL ||
+              front < obj_first_cell[o]->render_data->sorted_index) {
+            if (portal_object_blocks(o, obj)) {
+               STAT(++stat_num_resplit_objects);
+               split_object(obj);
+               return TRUE;
+            }
+         }
+      }
+      id = p->next_in_bin;
+   }
+   return FALSE;
+}
+
+// check if objects need to be split due to other objects
+void check_for_extra_object_splitting(void)
+{
+   int i;
+
+   for(i=0; i < r_sorted_count; ++i) {
+      // consider all objects rendered in this cell
+
+      int cell = active_regions[i];
+      PortalCell *r = wr_cell[cell];
+      int v,next,o;
+
+      if (!r->render_data)                       // @TBD (toml 09-02-98): attempted band-aid. needs real investigation
+      {
+         mprintf("ECTS: !r->render_data\n");
+         continue;
+      }
+
+      v = OBJECTS(r);
+      while (v != VISOBJ_NULL) {
+        // grab the next field before we mess with it
+        // this actually SHOULD be totally safe without
+        // it, because I'm so zany with this goofy data
+        // structure, but better safe than sorry
+        next = vis_objs[v].next_visobj;
+
+        o = vis_objs[v].obj;
+        if (!obj_hide[o] && vis_objs[v].fragment == OBJ_NO_SPLIT) {
+           // determine frontmost & backmost cells
+           int far_index, near_index, j;
+
+           // if more than one cell
+           if (vis_objs[obj_fragment_list[o]].next_visobj != VISOBJ_NULL &&
+               vis_objs[vis_objs[obj_fragment_list[o]].next_visobj].obj == o) {
+CELL(obj_fragment_list[o]);
+              far_index = ((PortalCell *) vis_objs[obj_fragment_list[o]].cell)->
+                                                   render_data->sorted_index;
+              near_index = i;
+              for (j=near_index; j <= far_index; ++j)
+                 if (force_object_splits(active_regions[j], near_index, o))
+                    break;
+           }
+        }
+        v = next;
+      }
+   }
+}
+
+void process_objects(PortalCell *r)
+{
+   ObjRefID id = * (int *) (&r->refs);
+
+   while (id) {
+      ObjRef *p = OBJREFID_TO_PTR(id);
+      ObjID o = p->obj;
+
+      if (!obj_dealt[o]) {
+         if (portal_allow_object_splitting && obj_split[o])
+            deal_with_splitting_object(r, o);
+         else
+            deal_with_unsplit_object(r,o);
+
+         obj_dealt[o] = TRUE;
+         obj_hide[o] = FALSE;
+#ifdef STATS_ON
+         ++stat_num_objects;
+#endif
+      } else
+         if (portal_allow_object_splitting && obj_split[o])
+            deal_with_split_object(r, o);
+         else
+            deal_with_object_leftover(r, o);
+
+      id = p->next_in_bin;
+   }
+}
+
+void init_process_objects(void)
+{
+   num_visible_objects=0;
+   need_testing_count = 0;
+}
+
+///////////////////// the rendering pipeline ///////////////////////
+
+#define IS_VISITED(n)     (VISIT(WR_CELL(n)))
+#define CLEAR_VISITED(n)  (VISIT(WR_CELL(n))=FALSE)
+#define SET_VISITED(n)    (VISIT(WR_CELL(n))=TRUE)
+
+#define AVERAGE_PORTALS_PER_CELL    8
+
+PortalCellRenderData rdata[MAX_ACTIVE_REGIONS];
+
+// new sorting algorithm is in sort.txt in the renderer docs
+
+static ushort outgoing_portals[MAX_ACTIVE_REGIONS * AVERAGE_PORTALS_PER_CELL];
+static int outgoing;
+
+bool has_portal_to(int from, PortalCell *dest)
+{  PROF
+   PortalCell *src = WR_CELL(from);
+   int i, n, k;
+   bool result;
+
+   if (!src->render_data) {
+      END_PROF;
+      return FALSE;
+   }
+
+   result = FALSE;
+
+   n = NUM_OUTGOING(src),
+   k = FIRST_OUTGOING(src);
+   for (i=0; i < n; ++i)
+      if (WR_CELL(outgoing_portals[k+i]) == dest) {
+#ifdef VALIDATE_UNIQUENESS_OF_PORTALS
+         for(++i; i < n; ++i)
+            if (WR_CELL(outgoing_portals[k+i]) == dest) {
+               Warning(("has_portal_to: more than one portal between two cells!\n"));
+            }
+#endif // ~VALIDATE_UNIQUENESS_OF_PORTALS
+         result = TRUE;
+         break;
+      }
+
+   END_PROF;
+   return result;
+}
+
+  // add the destinations to the outgoing portal list
+void examine_portals(PortalCell *r)
+{  PROF
+   int n = r->num_portal_polys;
+   PortalPolygonCore *p = r->portal_poly_list;
+   int v = r->portal_vertex_list;
+   r3s_point *old_ph = cur_ph;
+   PortalCellRenderData *z = r->render_data;
+
+   // don't bother putting us on the 0count list
+
+   z->num_outgoing_portals = 0;
+   z->num_unexplored_entries = 0;
+   z->outgoing_portal_offset = outgoing;
+
+   cur_ph = POINTS(r);
+
+   while (n--) {
+      // check if the destination already points to us; we have
+      // to avoid inconsistency in the backface check
+
+      if (has_portal_to(p->destination, r)) {
+         if (!IS_VISITED(p->destination)) {
+            ++z->num_unexplored_entries;
+         }
+      } else if (check_surface_visible(r, p, v)) {
+         if (outgoing < MAX_ACTIVE_REGIONS * AVERAGE_PORTALS_PER_CELL) {
+            ++z->num_outgoing_portals;
+            outgoing_portals[outgoing++] = p->destination;
+            CELL_DEBUG(mprintf("  outgoing to %d\n", p->destination));
+         } else
+            mprintf("examine_portals: Overflowed outgoing_portals table.\n");
+      }
+
+      // it might be that the destination didn't point to us, and
+      // we didn't point to it, if we're right on the plane.  But
+      // that should be ok.  Rounding error could also make that
+      // happen, but we've guaranteed that we won't point to each
+      // other and cause a little local cycle
+
+      v += p->num_vertices;
+      ++p;
+   }
+
+   cur_ph = old_ph;
+   END_PROF;
+}
+
+// now, during the front-to-back pass, the
+//   above list is topologically sorted
+//   with a selection sort.  This means that
+//   at any given point in time, the first
+//   n elements are sorted and the rest aren't,
+//   and then some more are appended on the
+//   end as we go, woo woo
+
+// for every active region, we need
+// some clipping data
+
+int r_rdata;
+
+void validate_incoming_count(int n, char *where)
+{
+   int i,k=0;
+   for (i=0; i < r_rdata; ++i) {
+      if (has_portal_to(active_regions[i], WR_CELL(n)))
+         if (!IS_VISITED(active_regions[i]))
+            ++k;
+   }
+   if (k != NUM_INCOMING(WR_CELL(n)))
+      Error(1, "%s: Invalid NUM_INCOMING: is %d, should be %d\n", where,
+         NUM_INCOMING(WR_CELL(n)), k);
+}
+
+void portal_validate_lists(char *where)
+{
+   int i;
+
+   for (i=0; i < r_sorted_count; ++i)
+      if (!IS_VISITED(active_regions[i]))
+         Error(1, "!IS_VISITED entry out of place in %s\n", where);
+   for (; i < r_total_count; ++i)
+      if (IS_VISITED(active_regions[i]))
+         Error(1, "IS_VISITED entry out of place in %s\n", where);
+
+   for (i=0; i < r_total_count; ++i)
+      validate_incoming_count(active_regions[i], where);
+}
+
+bool skip_clip;
+
+bool setup_cell(PortalCell *r)
+{  PROF
+   int i;
+   float m;
+   if (r_rdata == MAX_ACTIVE_REGIONS) {
+#ifdef DBG_ON
+      mprintf("Scene complexity high, increase MAX_ACTIVE_REGIONS\n");
+#endif // ~DBG_ON
+      END_PROF;
+      return TRUE;
+   }
+
+   r3_set_clipmode(R3_CLIP);
+
+   STAT_INC(cell);
+   STAT(stat_num_port += r->num_portal_polys);
+
+   r->render_data = &rdata[r_rdata++];
+
+   CLIP_DATA(r) = 0;
+   VISIT(r) = 0;
+   ZWATER(r) = 0;
+   OBJECTS(r) = VISOBJ_NULL;
+   CLUT(r).clut_id = 0;
+   CLUT(r).clut_id2 = 0;
+   CLUT(r).next = 0;
+
+   r3d_ccodes_or = 0;
+
+   POINTS(r) = Malloc(r->num_vertices * sizeof(r3s_point));
+   r3_transform_block(r->num_vertices, POINTS(r), r->vpool);
+   NEED_CLIP(r) = skip_clip ? r3d_ccodes_or : 1;
+
+   m = 0;
+
+   for (i=0; i < r->num_vertices; ++i)
+      m += POINTS(r)[i].p.z;
+   DIST(r) = m / r->num_vertices;
+
+   examine_portals(r);
+
+   END_PROF;
+   return FALSE;
+}
+
+void free_cell(PortalCell *r)
+{
+   if (CLIP_DATA(r))
+      PortalClipFree(CLIP_DATA(r));
+   if (POINTS(r))
+      Free(POINTS(r));
+
+   //free_render_data(r->render_data);
+   r->render_data = 0;
+}
+
+void mark_outgoing_portals(PortalCell *r)
+{  PROF
+   int i,n = NUM_OUTGOING(r), k = FIRST_OUTGOING(r);
+#ifdef DBG_ON
+   if (VISIT(r)) Error(1, "Tried to mark outgoing from a sorted cell.\n");
+#endif
+
+   for (i=0; i < n; ++i) {
+      PortalCell *out = WR_CELL(outgoing_portals[k+i]);
+      if (out->render_data)
+         ++NUM_INCOMING(out);
+   }
+   END_PROF;
+}
+
+void unmark_outgoing_portals(PortalCell *r)
+{  PROF
+   int i, n = NUM_OUTGOING(r), k = FIRST_OUTGOING(r);
+#ifdef DBG_ON
+   if (!VISIT(r)) Error(1, "Tried to unmark outgoing from an unsorted cell.\n");
+#endif
+   for (i=0; i < n; ++i) {
+      PortalCell *out = WR_CELL(outgoing_portals[k+i]);
+      if (out->render_data)
+         --NUM_INCOMING(out);
+   }
+   END_PROF;
+}
+
+// we've uncovered a region, add it to the list
+//   or expand its clipping info if already there
+void add_region(int n, ClipData *c, PortalCell *src, PortalPolygonCore *p)
+{  PROF
+   PortalCell *dest = WR_CELL(n);
+   STAT_INC(cell_visit);
+
+   if (!dest->render_data) {
+#ifndef SHIP
+      if (trav_file)
+         fprintf(trav_file, "    First time in %d.\n", n);
+#endif
+      CELL_DEBUG(mprintf("Expand new cell %d\n", n));
+      if (setup_cell(dest)) {
+         END_PROF;
+         return;
+      }
+      CLEAR_VISITED(n);
+      CLIP_DATA(dest) = c;
+      CLUT(dest) = CLUT(src);
+      CELL_FLAGS(dest) = CELL_FLAGS(src) | dest->flags;
+      if (p->clut_id)
+      {
+         uchar clut, m1, m2, clut2;
+
+         // first determine what medium we're emerging from and going into
+         m1 = src->medium;
+         m2 = dest->medium;
+
+         // check if the source medium has a clut
+         clut = pt_medium_exit_clut[m1];
+         if (!clut)
+         {
+            int mot = src->motion_index;
+            if (mot > 0)
+               clut = pt_motion_haze_clut[mot];
+
+            if (!clut)
+               clut = pt_medium_haze_clut[m1];
+
+            if (clut)
+               clut += compute_water_clut(ZWATER(src), compute_portal_z());
+         }
+
+         // check if the dest medium has an entry clut
+         clut2 = pt_medium_entry_clut[m2];
+
+         // if only one clut, make clut1 = it
+         // if two cluts, swap them, because order is reversed
+         if (clut2) {
+            if (!clut) {
+               clut = clut2;
+               clut2 = 0;
+            } else {
+               uchar temp = clut;
+               clut = clut2;
+               clut2 = temp;
+            }
+         }
+
+         if (clut) {
+            CLUT(wr_cell[n]).next = CLUT(src).clut_id ? &CLUT(src) : 0;
+            CLUT(wr_cell[n]).clut_id = clut;
+            CLUT(wr_cell[n]).clut_id2 = clut2;
+         }
+
+         // check if the dest medium hazes
+         if (pt_medium_haze_clut[m2])
+            ZWATER(wr_cell[n]) = compute_portal_z();
+      }
+      active_regions[r_total_count++] = n;
+   } else {
+      PortalClipUnion(CLIP_DATA(dest), c);
+      PortalClipFree(c);
+      CELL_DEBUG(mprintf("Revisit cell %d\n", n));
+
+      // if we portal from air into water, merge z value
+      // so we keep nearest, which matches well when we move camera under water
+      if (p->clut_id) {
+         mxs_real z = compute_portal_z();
+         // BUG: if you can get here one way through water and one way not,
+         // this comparison is totally bogus
+         if (z < ZWATER(dest))
+            ZWATER(dest) = z;
+      }
+
+      // TODO: we should merge the clut info!
+
+      if (IS_VISITED(n)) {
+         // move this place off the visited list back onto the
+         // unvisited list, because we might explore it differently,
+         // and to force correct sorting.
+         int i=0;
+         while (active_regions[i] != n)
+            ++i;
+
+         memmove(&active_regions[i], &active_regions[i+1],
+            sizeof(active_regions[0])*(r_sorted_count-i-1));
+         active_regions[--r_sorted_count] = n;
+         CLEAR_VISITED(n);
+      } else {
+         END_PROF;
+         return; // don't mark outgoing portals, they already are!
+      }
+   }
+
+   if (!IS_VISITED(n))
+      mark_outgoing_portals(wr_cell[n]);
+   END_PROF;
+}
+
+/////////////////////// select region /////////////////////////
+
+
+// Take all the cells on the list, and pick one which
+// has nothing unselected in front of it
+
+int select_next_region(void)
+{  PROF
+   int i, n;
+   float mn;
+
+   n = -1;
+   mn = 1e20;
+
+   for (i = r_sorted_count; i < r_total_count; ++i) {
+      if (NUM_INCOMING(wr_cell[active_regions[i]]) > 0)
+         continue;
+      if (DIST(wr_cell[active_regions[i]]) < mn) {
+         mn = DIST(wr_cell[active_regions[i]]);
+         n = i;
+      }
+   }
+
+   if (n == -1) {
+      for (i = r_sorted_count; i < r_total_count; ++i) {
+         if (DIST(wr_cell[active_regions[i]]) < mn) {
+            mn = DIST(wr_cell[active_regions[i]]);
+            n = i;
+         }
+      }
+      if (n == -1) n = r_sorted_count;
+      Warning(("Didn't find any 0-incoming cells, used %d!\n", NUM_INCOMING(wr_cell[active_regions[n]])));
+   }
+
+   END_PROF;
+   return n;
+}
+
+///////////////// main pipeline loop //////////////////////////
+
+void initialize_first_region(int n)
+{
+   // this needs to be the location of the camera
+   PortalCell *cell = WR_CELL(n);
+
+   r3_start_block();
+   if (setup_cell(cell))
+      Error(1, "initialize_first_region: no free cells?!!.\n");
+
+   mark_outgoing_portals(cell);
+
+   r3_end_block();
+
+   active_regions[0] = n;
+   r_total_count = 1;
+   r_sorted_count = 0;
+
+   CLIP_DATA(cell) = PortalClipRectangle(0,0, grd_bm.w, grd_bm.h);
+   CLUT(cell).clut_id = 0;
+   CLUT(cell).next = 0;
+   CELL_FLAGS(cell) = cell->flags;
+}
+
+bool render_backward;
+
+long pt_get_time(void) { return 0; }
+long (*portal_get_time)(void) = pt_get_time;
+long (*portal_get_frame_time)(void) = pt_get_time;
+
+void (*portal_anim_light_callback)(long time_change_millisec);
+void (*portal_anim_medium_callback)(long time_change_millisec);
+
+extern int portal_sky_id;
+
+static BOOL bRenderSky = FALSE;
+
+void portal_traverse_scene(int cell)
+{  PROF
+   int off,n, count = 0;
+   PortalCell *pCell;
+   int i,j;
+
+   bRenderSky = FALSE;
+
+#ifdef STATS_ON
+   stat_num_traverse_ms = portal_get_time();
+#endif
+
+   r_rdata = 0;  // clear count of used cells
+   outgoing = 0; // clear count of used outgoing portal list
+
+     // initialize the list of unexplored regions
+     // pass in the region containing the camera
+   initialize_first_region(cell);
+
+     // now, as long as there are unexplored regions
+   while (r_sorted_count < r_total_count) {
+
+#ifdef VALIDATE
+      portal_validate_lists("before select");
+#endif
+
+        // find the next region to explore (roughly front-to-back)
+      off = select_next_region();
+      n = active_regions[off];
+
+#ifndef SHIP
+      if (trav_file)
+         fprintf(trav_file, "Expand cell %d:\n", n);
+#endif
+      STAT_INC(cell_explored);
+      CELL_DEBUG(mprintf("%d onto sorted list\n", n));
+
+        // swap it to the end of the sorted list
+      active_regions[off] = active_regions[r_sorted_count];
+      active_regions[r_sorted_count++] = n;
+
+        // mark it as visited
+      SET_VISITED(n);
+
+        // decrement NUM_INCOMING counts of reachable cells
+      unmark_outgoing_portals(wr_cell[n]);
+
+        // and now explore the portals out of it, this adds new regions to
+        // the active region list (and may even move some back from the sorted
+        // area to the unsorted area)
+      explore_portals(wr_cell[n]);
+
+        // avoid us getting in an infinite loop;
+        // although this may result in major sorting bugs!
+      if (++count == 1024) {
+#ifndef SHIP
+         if (trav_file)
+            fprintf(trav_file, "Apparent cell cycle!\n");
+#endif
+         mprintf("Apparent cell cycle in portal_traverse_scene\n");
+         mprintf(" cell %d, center %g %g %g\n", n, WR_CELL(n)->sphere_center.x, WR_CELL(n)->sphere_center.y, WR_CELL(n)->sphere_center.z);
+         r_sorted_count = r_total_count;
+         break;
+      }
+   }
+
+
+// Traverse active cells to see if any sky is visible:
+   for (i = r_sorted_count-1; (i >= 0) && !bRenderSky; i--)
+   {
+      pCell = WR_CELL(active_regions[i]);
+      for (j = 0; (j < pCell->num_render_polys) && !bRenderSky; j++)
+         if ((!pCell->render_list[j].texture_id) || (pCell->render_list[j].texture_id >= BACKHACK_IDX))
+            bRenderSky = TRUE;
+   }
+
+#ifdef STATS_ON
+   stat_num_traverse_ms = portal_get_time() - stat_num_traverse_ms;
+#endif
+
+   CELL_DEBUG(debug_cell_traversal = FALSE);
+   END_PROF;
+}
+
+int last_r_count;
+bool project_space=TRUE;
+
+#ifdef STATS_ON
+static void zero_stats(void);
+#endif
+
+extern void PortalMovePointInsideCell(Location *loc);
+static Position adjusted;
+
+static void portal_start_3d(Position *pos)
+{
+   adjusted = *pos;
+   pos = &adjusted;
+   if (pos->loc.cell != CELL_INVALID)
+       PortalMovePointInsideCell(&pos->loc);
+
+   r3_start_frame();
+   r3_set_view_angles(&pos->loc.vec, &pos->fac, R3_DEFANG);
+   if (project_space)
+      r3_set_space(R3_PROJECT_SPACE);
+   else
+      r3_set_space(R3_CLIPPING_SPACE);
+   portal_camera_loc = pos->loc.vec;
+}
+
+static void portal_end_3d(void)
+{
+   r3_end_frame();
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   It's possible this wants to be in the host program, since all we're
+   doing is calling two external functions using the time we get from
+   another external function.  On the other hand, if there's every
+   any reason to call these before or after anything else in Portal,
+   we'll be able to.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+static void update_terrain_animation(void)
+{
+   long delta_time_ms = portal_get_frame_time();
+
+   if (portal_anim_medium_callback)
+      (*portal_anim_medium_callback)(delta_time_ms);
+
+   if (portal_anim_light_callback)
+      (*portal_anim_light_callback)(delta_time_ms);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The visualization tools need to render back-to-front.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool portal_render_back_to_front()
+{
+   bool front_to_back;
+
+#ifndef SHIP
+   if (g2pt_span_clip && !(draw_solid_by_MIP_level
+                         | draw_solid_by_cell
+                         | draw_solid_wireframe))
+      front_to_back = TRUE;
+   else
+      front_to_back = FALSE;
+#else  // ~SHIP
+   front_to_back = g2pt_span_clip;
+#endif // ~SHIP
+   return !(front_to_back ^ render_backward);
+}
+
+
+void draw_lightmap_points(int);
+bool show_lightmap;
+extern int cache_mem_this_frame;
+
+
+// When a leaf is going to be rendered, we mark it and its
+//  ancestors so that when we traverse the BSP tree, we can
+//  cull out any subtrees that have no leaves to be rendered.
+void markup_bsp(uint node_index)
+{
+   uint parent_index = wrParentIndex(&g_wrBspTree[node_index]);
+
+   wrBspMark(&g_wrBspTree[node_index]);
+
+   while ((parent_index != WRBSP_INVALID) && !wrBspIsMarked(&g_wrBspTree[parent_index]))
+   {
+      node_index = parent_index;
+      parent_index = wrParentIndex(&g_wrBspTree[node_index]);
+
+      wrBspMark(&g_wrBspTree[node_index]);
+   }
+}
+
+// Traverse the tree, unmarking all nodes and leaves.
+void unmark_bsp(uint node_index)
+{
+   wrBspNode *pCurNode = &g_wrBspTree[node_index];
+
+   if (!wrBspIsMarked(pCurNode))
+      return;
+
+   wrBspUnmark(pCurNode);
+
+   if (!wrBspIsLeaf(pCurNode))
+   {
+      if (wrInsideIndex(pCurNode) != WRBSP_INVALID)
+         unmark_bsp(wrInsideIndex(pCurNode));
+
+      if (wrOutsideIndex(pCurNode) != WRBSP_INVALID)
+         unmark_bsp(wrOutsideIndex(pCurNode));
+   }
+}
+
+// First unmark any leaves and nodes that were marked, then
+//  mark all the to-be-rendered leaves and nodes.
+void setup_bsp()
+{
+   int i;
+
+   unmark_bsp(0);
+
+   for (i=0; i<r_sorted_count; ++i)
+      markup_bsp(WR_CELL(active_regions[i])->leaf_index);
+}
+
+// rebuild active_regions so it's in front-to-back BSP sorted order
+int sort_via_bsp(uint node_index, mxs_vector *pos, int index)
+{
+   wrBspNode *pCurNode = &g_wrBspTree[node_index];
+
+   // If it's a node, traverse in the proper order and unmark it
+   if (!wrBspIsLeaf(pCurNode))
+   {
+      BOOL outside_first;
+
+      if (wrBspIsReversed(pCurNode))
+      {
+         if ((-mx_dot_vec(&pCurNode->plane->normal, pos) - pCurNode->plane->plane_constant) < 0)
+            outside_first = TRUE;
+         else
+            outside_first = FALSE;
+      }
+      else
+      {
+         if ((mx_dot_vec(&pCurNode->plane->normal, pos) + pCurNode->plane->plane_constant) < 0)
+            outside_first = TRUE;
+         else
+            outside_first = FALSE;
+      }
+
+      if (outside_first)
+      {
+         if ((wrOutsideIndex(pCurNode) != WRBSP_INVALID) && wrBspIsMarked(&g_wrBspTree[wrOutsideIndex(pCurNode)]))
+            index = sort_via_bsp(wrOutsideIndex(pCurNode), pos, index);
+         if ((wrInsideIndex(pCurNode) != WRBSP_INVALID) && wrBspIsMarked(&g_wrBspTree[wrInsideIndex(pCurNode)]))
+            index = sort_via_bsp(wrInsideIndex(pCurNode), pos, index);
+      }
+      else
+      {
+         if ((wrInsideIndex(pCurNode) != WRBSP_INVALID) && wrBspIsMarked(&g_wrBspTree[wrInsideIndex(pCurNode)]))
+            index = sort_via_bsp(wrInsideIndex(pCurNode), pos, index);
+         if ((wrOutsideIndex(pCurNode) != WRBSP_INVALID) && wrBspIsMarked(&g_wrBspTree[wrOutsideIndex(pCurNode)]))
+            index = sort_via_bsp(wrOutsideIndex(pCurNode), pos, index);
+      }
+   // Otherwise it's a leaf, so make it has been marked
+   }
+   else
+   if (wrBspIsMarked(pCurNode))
+   {
+      active_regions[index] = pCurNode->cell_id;
+      return index + 1;
+   }
+   return index;
+}
+
+// set bitfield flags for those cells which are visible
+static void _portal_mark_visible_cells()
+{
+   int i, cell;
+   for (i = 0; i < r_sorted_count; ++i) {
+      cell = active_regions[i];
+      portal_cell_rendered[cell >> 3] |= (1 << (cell & 7));
+   }
+}
+
+
+// clear our array which indicates which cells are visible--we rely
+// on the app to call this once per frame since we may draw more than
+// one scene in a frame
+void portal_unmark_visible_cells()
+{
+   memset(portal_cell_rendered, 0, 1 + MAX_REGIONS / 8);
+}
+
+
+// check whether any cell in a list has been marked as visible
+static bool _portal_cell_list_visible(int *cell_list, int num_cells)
+{
+   int *cell = cell_list;
+   int *end = cell + num_cells;
+
+   while (cell != end) {
+      if (portal_cell_visible(*cell))
+         return TRUE;
+      ++cell;
+   }
+
+   return FALSE;
+}
+
+
+bool portal_write_traversal;
+bool portal_obj_fixup = TRUE;
+
+void (*portal_post_render_cback)(void);
+void (*portal_render_overlays_cback)(void);
+extern int num_water_polys;
+extern int portal_hack_blend;
+extern bool background_setup;
+extern bool punt_hardware_lighting;
+extern void portal_do_blendtest(void);
+extern BOOL g_zbuffer;
+
+extern BOOL portal_multitexture;
+
+BOOL portal_test_blend;
+BOOL portal_true_two_pass = TRUE;
+
+BOOL (*pSkyRenderCallback)(void) = 0;
+BOOL bRenderNewSky = FALSE;
+
+void portal_render_scene(Position *pos, float zoom)
+{  PROF
+   Location *loc = &pos->loc;
+   int cell = CellFromLoc(loc), i;
+#ifdef STATS_ON
+   zero_stats();
+#endif
+
+   cache_mem_this_frame = 0;
+   background_setup = FALSE;
+
+#ifndef SHIP
+   if (portal_write_traversal) {
+      trav_file = fopen("traverse.log", "a");
+      portal_write_traversal = FALSE;
+   }
+   AssertMsg2(HACK_MAX_OBJ>=gMaxObjID,"Portal Using fewer ObjIDs (%d) than object system (%d)\n",HACK_MAX_OBJ,gMaxObjID);
+#endif
+
+   portal_start_3d(pos);
+   r3_set_zoom (zoom);
+
+     // tell the scene clipper to clear its clipinfo
+
+   g2pt_reset_clip(0, grd_bm.w, grd_bm.h);
+
+   g2pt_duv_set_size(grd_bm.w, grd_bm.h);
+
+     // if we have the special "just draw it all flag",
+     // just go through it all and draw it in any order
+     // but we don't draw any objects!
+
+   if (cell == CELL_INVALID) {
+      bool save_state = punt_hardware_lighting;
+
+      Warning(("Viewer not in any cell.\n"));
+
+      // we need to do this since we don't preload lightmaps here...
+      punt_hardware_lighting = TRUE;
+
+      if (portal_pre_draw_callback != NULL)
+         portal_pre_draw_callback();
+
+      for (i=0; i < wr_num_cells; ++i) {
+         r_rdata=0; // clear the active cell after every cell.  duh
+         outgoing=0; // similarly
+         r3_start_block();
+         r3_set_clipmode(R3_CLIP);
+         setup_cell(WR_CELL(i));
+         r3_end_block();
+         CLIP_DATA(wr_cell[i]) = PortalClipRectangle(0,0, grd_bm.w, grd_bm.h);
+         draw_region(i);
+         free_cell(wr_cell[i]);
+      }
+      punt_hardware_lighting = save_state;
+      goto cleanup;
+   }
+
+   // do the traversal of all visible cells
+   portal_traverse_scene(cell);
+
+   if (portal_pre_draw_callback != NULL)
+      portal_pre_draw_callback();
+
+   if (bRenderSky && pSkyRenderCallback)
+   {
+      bRenderNewSky = pSkyRenderCallback(); // New-style sky may have rendered
+
+      // wsf: not sure if we really need to reset these or not, but they're cheap anyway.
+      g2pt_reset_clip(0, grd_bm.w, grd_bm.h);
+      g2pt_duv_set_size(grd_bm.w, grd_bm.h);
+   }
+   else
+      bRenderNewSky = FALSE;
+
+
+   update_terrain_animation();
+
+     // now traverse them in front-to-back order so we can determine
+     // object rendering information for now we just draw each object
+     // in the first cell we encounter
+
+   setup_bsp(0);
+   sort_via_bsp(0, &(loc->vec), 0);
+
+   for (i=0; i < r_sorted_count; ++i)
+      wr_cell[active_regions[i]]->render_data->sorted_index = i;
+
+#ifdef STATS_ON
+   stat_num_sort_ms = portal_get_time();
+#endif
+
+   init_process_objects();
+
+   for (i=0; i < r_sorted_count; ++i)
+      process_objects(wr_cell[active_regions[i]]);
+
+   if (portal_allow_object_splitting) {
+      check_for_object_splitting();
+
+      if (portal_obj_fixup)
+         check_for_extra_object_splitting();
+   } else
+      check_for_object_hiding();
+
+#ifdef STATS_ON
+   stat_num_sort_ms = portal_get_time() - stat_num_sort_ms;
+#endif
+
+   // Now that we've explored all of the areas, we're going to draw
+   // them all.  If the variable "span_clip" is set, then we're using
+   // a scene clipper that requires we render front to back.
+   // Otherwise, we render back to front.  But to keep things
+   // interesting, if the flag "render_backward" is on, we do the
+   // opposite--this is a useful debugging tool to show you how much
+   // stuff is being processed.
+
+   portal_mip_setup(zoom);
+
+   if ((g_lgd3d)&&(!punt_hardware_lighting)) {
+      for (i=0; i < r_sorted_count; i++)
+         portal_preload_lightmaps(active_regions[i]);
+      porthw_end_frame();
+   }
+
+   if (g_lgd3d && portal_fog_on) {
+      if (portal_fog_dist) {
+         lgd3d_set_fog_color(portal_fog_color[0], portal_fog_color[1],
+                             portal_fog_color[2]);
+         //zb//temp lgd3d_set_fog_density(fog_dist_modifier / portal_fog_dist);
+         lgd3d_set_linear_fog_distance( portal_fog_dist );
+
+         fog_r3_color = guiRGB(portal_fog_color[0], portal_fog_color[1],
+                               portal_fog_color[2]);
+      } else
+         portal_fog_on = FALSE;
+   }
+
+#ifdef STATS_ON
+   stat_num_render_ms = portal_get_time();
+#endif
+   if (portal_render_back_to_front()) {
+      if (g_lgd3d && portal_true_two_pass) {
+         for(i=r_sorted_count-1; i >= 0; --i) {
+            // render textures only if we're zbuffering to avoid state changes
+            draw_region_lgd3d(active_regions[i]);
+         }
+         // now render lightmaps if we're z buffering
+         if (g_zbuffer && !portal_multitexture && (!punt_hardware_lighting)) {
+            lgd3d_set_zcompare(TRUE);
+            lgd3d_set_zwrite(FALSE);
+            lgd3d_blend_multiply(portal_hack_blend);
+            lgd3d_set_blend(TRUE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(0.5);
+#endif
+            for(i=r_sorted_count-1; i >= 0; --i) {
+               draw_region_lightmap_only(active_regions[i]);
+               free_cell(WR_CELL(active_regions[i]));
+            }
+            lgd3d_blend_normal();
+            lgd3d_set_blend(FALSE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(1.0);
+#endif
+            lgd3d_set_zcompare(FALSE);
+            lgd3d_set_zwrite(TRUE);
+         } else {
+            // still need to free cells...
+            for(i=r_sorted_count-1; i >= 0; --i) {
+               free_cell(WR_CELL(active_regions[i]));
+            }
+         }
+      } else {
+         for(i=r_sorted_count-1; i >= 0; --i) {
+            draw_region(active_regions[i]);
+            free_cell(WR_CELL(active_regions[i]));
+         }
+      }
+   } else {
+      for(i=0; i < r_sorted_count; ++i) {
+         draw_region(active_regions[i]);
+         free_cell(wr_cell[active_regions[i]]);
+#ifdef LIGHTMAP_DEBUG
+         if (show_lightmap)
+            draw_lightmap_points(active_regions[i]);
+#endif
+      }
+      if (!render_backward) {
+#ifdef STATS_ON
+         // don't count background hack pixels as clipped away
+         int old_drawn = stat_num_drawn_pixels;
+         int old_clipped = stat_num_clipped_pixels;
+         render_background_hack();
+         stat_num_clipped_pixels =
+            old_clipped + (stat_num_drawn_pixels - old_drawn);
+#else
+         render_background_hack();
+#endif
+      }
+   }
+#ifdef STATS_ON
+   stat_num_render_ms = portal_get_time() - stat_num_render_ms;
+#endif
+
+cleanup:
+   if (ptsky_type == PTSKY_SPAN)
+      ptsky_render_stars();
+
+   // now that we've finished traversing the scene, we tell the
+   // renderer--it may have deferred rendering some polygons, e.g.
+   // ones with transparency/translucency if we were drawing
+   // front-to-back
+
+   background_hack_cleanup();
+
+   g2pt_post_render_polys();
+
+   if (portal_post_render_cback)
+      portal_post_render_cback();
+
+   if (g_lgd3d && portal_fog_on && portal_fog_dist)
+      lgd3d_set_fog_enable(FALSE);
+
+   if (portal_render_overlays_cback)
+      portal_render_overlays_cback();
+
+#ifndef SHIP
+   if (portal_test_blend)
+      portal_do_blendtest();
+#endif
+
+   portal_end_3d();
+
+#ifndef SHIP
+   if (trav_file) {
+      fprintf(trav_file, "End of scene.\n");
+      fclose(trav_file);
+      trav_file = NULL;
+   }
+#endif
+
+   _portal_mark_visible_cells();
+
+   last_r_count = r_sorted_count;
+   END_PROF;
+}
+
+int PortalRenderPick(Position *pos, int x, int y, float zoom)
+{
+   Location *loc = &pos->loc;
+   int cell = CellFromLoc(loc), i, val;
+
+   if (cell == CELL_INVALID)
+      return -1;
+
+   portal_start_3d(pos);
+   r3_set_zoom (zoom);
+
+     // do the traversal of all visible cells
+   portal_traverse_scene(cell);
+
+     // pick_region until val != -1, and free them all
+   val = -1;
+   for(i=0; i < r_sorted_count; ++i) {
+      if (val == -1) {
+         val = pick_region(wr_cell[active_regions[i]], x, y);
+         if (val != -1)
+            val = active_regions[i]*256 + val;  // encode cell+polygon
+      }
+      free_cell(wr_cell[active_regions[i]]);
+   }
+
+   portal_end_3d();
+
+   return val;
+}
+
+/////////////////////////////////////////////////////////////////////
+//              lighting
+//
+
+#ifdef RGB_LIGHTING
+
+#ifndef RGB_888
+extern ulong pl_red_color[256], pl_green_color[256], pl_blue_color[256];
+extern ulong pl_blue_mask=0x7c00, pl_green_mask=0x03e0, pl_red_mask=0x001f;
+#endif // ~RGB_888
+
+int hack_red, hack_green, hack_blue;
+
+// set color tables given color 0..255 in each thing, one of them 255
+void portal_set_normalized_color(int rm, int gm, int bm)
+{
+#ifdef RGB_888
+   hack_red = (rm * 256) / 255;
+   hack_green = (gm * 256) / 255;
+   hack_blue = (bm * 256) / 255;
+#else // RGB_888
+   int r,g,b,dr,dg,db,i;
+   hack_red = rm;
+   hack_green = gm;
+   hack_blue = bm;
+
+   // after 256 steps, r should reach rm% of red_mask, << 8:
+   dr = pl_red_mask * rm;
+   dg = pl_green_mask * gm;
+   db = pl_blue_mask * bm;
+   r = g = b = 0;
+   for (i=0; i < 256; ++i) {
+      pl_red_color[i]   = (r >> 16) & pl_red_mask;
+      pl_green_color[i] = (g >> 16) & pl_green_mask;
+      pl_blue_color[i]  = (b >> 16) & pl_blue_mask;
+      r += dr;
+      g += dg;
+      b += db;
+   }
+#endif // RGB_888
+}
+
+void portal_convert_hsb_to_rgb(int *rp, int *gp, int *bp, float hue, float saturation)
+{
+#ifndef DEEPC
+   float r,g,b, isat;
+   hue *= 3;
+   // compute fully saturated color
+   if (hue < 1.0) {
+      // interpolate from red to green
+      r = 1-hue;
+      g = hue;
+      b = 0;
+   } else if (hue < 2.0) {
+      g = 2-hue;
+      b = hue-1;
+      r = 0;
+   } else {
+      b = 3-hue;
+      r = hue-2;
+      g = 0;
+   }
+
+   // blend with white
+   isat = 1.0 - saturation;
+   r = r*saturation + isat;
+   g = g*saturation + isat;
+   b = b*saturation + isat;
+   *rp = r * 255;
+   *gp = g * 255;
+   *bp = b * 255;
+#else // ~DEEPC
+   float r, g, b, isat, max_recip;
+
+   // quantize to 24 hues--the strange number is 1/48, for rounding
+   int i_hue = ((double) hue + 0.020833333333333333333333333333333) * 24.0;
+   if (i_hue > 24)
+      i_hue = 24;
+   hue = i_hue;
+
+   // compute fully saturated color
+   if (hue < 8.0) {
+      // interpolate from red to green
+      r = 8-hue;
+      g = hue;
+      b = 0;
+   } else if (hue < 16.0) {
+      g = 16-hue;
+      b = hue-8;
+      r = 0;
+   } else {
+      b = 24-hue;
+      r = hue-16;
+      g = 0;
+   }
+
+   // make largest component unit so light won't be dim
+   max_recip = (r > g) ? r : g;
+   max_recip = (max_recip > b) ? max_recip : b;
+   max_recip = 1.0 / max_recip;
+
+   r *= max_recip;
+   g *= max_recip;
+   b *= max_recip;
+
+   // blend with white
+   isat = 1.0 - saturation;
+   r = r*saturation + isat;
+   g = g*saturation + isat;
+   b = b*saturation + isat;
+
+   *rp = r * 255;
+   *gp = g * 255;
+   *bp = b * 255;
+#endif // ~DEEPC
+}
+
+extern ulong pl_red_convert[32], pl_blue_convert[32], pl_green_convert[32];
+
+void portal_setup_light_masks(void)
+{
+   grs_rgb_bitmask bm;
+   if (g_lgd3d)
+      lgd3d_get_opaque_texture_bitmask(&bm);
+   else
+      gr_get_screen_rgb_bitmask(&bm);
+
+#ifndef RGB_888
+   {
+      int i;
+
+      for (i=0; i < 32; ++i) {
+         pl_red_convert[i]   = (i * bm.red   / 31) & bm.red;
+         pl_green_convert[i] = (i * bm.green / 31) & bm.green;
+         pl_blue_convert[i]  = (i * bm.blue  / 31) & bm.blue;
+      }
+   }
+#endif // ~RGB_888
+   portal_set_normalized_color(255,255,255);
+}
+#endif
+
+void portal_render_light(Position *pos, float zoom, float br,
+                         void (*light_func)(int))
+{
+   Location *loc = &pos->loc;
+   grs_bitmap dum_bm;
+   grs_canvas dum_cnv;
+
+   int cell = CellFromLoc(loc), i;
+
+   if (cell == CELL_INVALID) {
+      //mprintf("Light not in region\n");
+      return;
+   }
+
+   gr_init_bitmap(&dum_bm, 0, BMT_FLAT8, 0, 240, 240);
+   gr_make_canvas(&dum_bm, &dum_cnv);
+   gr_push_canvas(&dum_cnv);
+
+   portal_start_3d(pos);
+
+   r3_set_zoom(zoom);
+
+   portal_traverse_scene(cell);
+
+     // setup some parameters which are true forever
+   PortalSetLightInfo(loc, br, wr_cell[cell]->medium);
+
+   for (i=0; i < r_sorted_count; ++i) {
+      light_func(active_regions[i]);
+      free_cell(wr_cell[active_regions[i]]);
+   }
+//mprintf("lit cells: %d  viewed cells %d\n", r_sorted_count, last_r_count);
+
+   portal_end_3d();
+   gr_pop_canvas();
+}
+
+#define MAX_LIT_CELLS 512
+int lit_cell[MAX_LIT_CELLS], num_lit, num_culled;
+
+// store indexes of all cells reached in a given direction in lit_cell[]
+bool portal_visit_light(Position *pos, float zoom)
+{
+   Location *loc = &pos->loc;
+   grs_bitmap dum_bm;
+   grs_canvas dum_cnv;
+   bool enough_active_regions = TRUE;
+
+   int cell = CellFromLoc(loc), i, j;
+
+   if (cell == CELL_INVALID) {
+      //mprintf("Light not in region\n");
+      return TRUE;
+   }
+
+   gr_init_bitmap(&dum_bm, 0, BMT_FLAT8, 0, 240, 240);
+   gr_make_canvas(&dum_bm, &dum_cnv);
+   gr_push_canvas(&dum_cnv);
+
+   portal_start_3d(pos);
+
+   r3_set_zoom(zoom);
+
+   portal_traverse_scene(cell);
+   if (r_sorted_count == MAX_ACTIVE_REGIONS)
+      enough_active_regions = FALSE;
+
+   for (i=0; i < r_sorted_count; ++i) {
+      int r = active_regions[i];
+      for (j=0; j < num_lit; ++j)
+        if (r == lit_cell[j])
+           break;
+      if (j == num_lit && num_lit < MAX_LIT_CELLS)
+        lit_cell[num_lit++] = r;
+      free_cell(wr_cell[r]);
+   }
+
+   portal_end_3d();
+   gr_pop_canvas();
+   return enough_active_regions;
+}
+
+#define BRIGHT_SCALE   4
+
+
+int portal_add_spotlight(float br, Position *pos, float zoom,
+                         uchar dynamic)
+{
+#if 0
+   dynamic_light = dynamic & LIGHT_DYNAMIC;
+
+//   if (dynamic == LIGHT_STATIC)
+//      LightDefineStart();
+
+   br *= BRIGHT_SCALE;
+
+   portal_render_light(pos, zoom, br, spotlight_region);
+
+//   if (dynamic == LIGHT_STATIC) {
+//      int lt = LightDefineEnd();
+//      LightTurnOnSet(lt, 255);
+//      return lt;
+//   } else
+#endif
+      return -1;
+}
+
+int cur_raycast_cell;
+
+#ifdef LIGHT_MAP
+
+#ifdef LIGHTMAP_DEBUG
+
+#define MAX_RAYCAST_CELL 256
+#define MAX_RAYCAST_PT   256
+
+mxs_vector lt_pt[MAX_RAYCAST_CELL][MAX_RAYCAST_PT];
+int lt_count[MAX_RAYCAST_CELL];
+
+void save_lightmap_point(mxs_vector *pt, bool dummy)
+{
+   if (cur_raycast_cell >= MAX_RAYCAST_CELL) return;
+   if (lt_count[cur_raycast_cell] < MAX_RAYCAST_PT)
+      lt_pt[cur_raycast_cell][lt_count[cur_raycast_cell]++] = *pt;
+}
+
+void draw_lightmap_points(int cell)
+{
+   int i;
+   r3s_point p;
+   if (cell >= MAX_RAYCAST_CELL) return;
+   for (i=0; i < lt_count[cell]; ++i) {
+      r3_transform_point(&p, &lt_pt[cell][i]);
+      if (!p.ccodes) {
+         gr_set_pixel(1, fix_int(p.grp.sx), fix_int(p.grp.sy));
+      }
+   }
+}
+
+#else
+
+void save_lightmap_point(mxs_vector *pt, bool dummy)
+{
+}
+
+#endif
+
+extern void (*lightmap_point_callback)(mxs_vector *loc, bool lit);
+
+Location *light_loc;
+void draw_light_region_number(int n)
+{
+   portal_dynamic_light(wr_cell[n], light_loc);
+}
+
+
+extern float ambient_weight;
+extern float max_dist, max_dist_2, inner_dist, dist_diff_recip;
+
+int portal_add_omni_light(float br, float ambient, Location *loc,
+                          uchar style, float radius, float inner_radius)
+{
+   Position pos;
+   int cell, i, t;
+   bool region_check = TRUE;
+
+   num_lit = 0;
+   num_culled = 0;
+
+   cell = CellFromLoc(loc);
+   if (cell == CELL_INVALID)
+      return -1;
+
+   br *= BRIGHT_SCALE / 2;
+   max_dist = radius;
+   max_dist_2 = radius * radius;
+   inner_dist = inner_radius;
+   if (inner_dist)
+      dist_diff_recip = 1.0 / (radius - inner_radius);
+
+   lightmap_point_callback = save_lightmap_point;
+
+   ambient_weight = br;
+
+   PortalSetLightInfo(loc, br * BRIGHT_SCALE, (WR_CELL(cell))->medium);
+   light_loc = loc;
+
+   // record all the cells reached by our light in lit_cell[] and num_lit
+   pos.loc = *loc;
+   pos.fac.tx = 0;
+   pos.fac.ty = 0;
+   pos.fac.tz = 0x4000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0x8000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0xc000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0;      region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.ty = 0x4000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.ty = 0xc000; region_check &= portal_visit_light(&pos, 1.0);
+
+   if (!region_check)
+      mprintf("\nToo many cells to light at (%g, %g, %g)",
+              loc->vec.x, loc->vec.y, loc->vec.z);
+
+   for (i = 0; i < (num_lit - num_culled); ++i) {
+      int n = lit_cell[i];
+      bool cell_lit = TRUE;
+
+      cur_raycast_cell = n;
+#ifdef LIGHTMAP_DEBUG
+      if (n < MAX_RAYCAST_CELL)
+         lt_count[n] = 0;
+#endif
+
+      // Dynamic lights are never animated, since they change every
+      // frame anyhow.  And quickness overrides raycast lighting.
+      // (Currently, they're actually opposites.)
+      if (style & LIGHT_DYNAMIC)
+         portal_dynamic_light(WR_CELL(n), loc);
+      else if (style & LIGHT_QUICK)
+         cell_lit = portal_nonraycast_light(WR_CELL(n), loc, style);
+      else
+         cell_lit = portal_raycast_light(WR_CELL(n), loc, style);
+
+      // If we didn't really reach a cell, we move it to a group of them
+      // at the end of the list.  This lets us discard those cells if we
+      // like (this is used to cull the cell lists of animated lights).
+      if (!cell_lit) {
+         ++num_culled;
+         t = lit_cell[i];
+         lit_cell[i] = lit_cell[num_lit - num_culled];
+         lit_cell[num_lit - num_culled] = t;
+         --i;
+      }
+   }
+
+   return num_lit;
+}
+
+void portal_add_light_bright(Location *loc, float radius, BOOL light)
+{
+   int amount = light ? 1 : -1;
+   Position pos;
+   int cell, i;
+   bool region_check = TRUE;
+
+   num_lit = 0;
+
+   cell = CellFromLoc(loc);
+   if (cell == CELL_INVALID)
+      return;
+
+   z_test = TRUE;  // don't allow light to go further than radius
+   test_radius = radius;
+
+   lightmap_point_callback = save_lightmap_point;
+
+   //ambient_weight = br;
+   //PortalSetLightInfo(loc, br * BRIGHT_SCALE, (WR_CELL(cell))->medium);
+   light_loc = loc;
+
+   flashbomb_through_door_hack = TRUE;
+
+   // record all the cells reached by our light in lit_cell[] and num_lit
+   pos.loc = *loc;
+   pos.fac.tx = 0;
+   pos.fac.ty = 0;
+   pos.fac.tz = 0x4000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0x8000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0xc000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.tz = 0;      region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.ty = 0x4000; region_check &= portal_visit_light(&pos, 1.0);
+   pos.fac.ty = 0xc000; region_check &= portal_visit_light(&pos, 1.0);
+
+   flashbomb_through_door_hack = FALSE;
+
+#ifdef DBG_ON
+   if (!region_check)
+      mprintf("\nToo many cells to light at (%g, %g, %g)",
+              loc->vec.x, loc->vec.y, loc->vec.z);
+#endif
+
+   for (i = 0; i < num_lit; ++i) {
+      int n = lit_cell[i];
+      PortalCell *r = WR_CELL(n);
+      r->num_full_bright += amount;
+   }
+
+   z_test = FALSE;
+}
+#endif // LIGHT_MAP
+
+
+// This is meant to be called right after portal_add_omni_light.
+// It sets up the arrays which tell each cell which lights affect it.
+void portal_shine_omni_light(int light_index, Location *loc,
+                             uchar dynamic)
+{
+   int i;
+
+   for (i=0; i < num_lit; ++i) {
+      int n = lit_cell[i];
+      PortalCell *r = WR_CELL(n);
+      ++r->light_indices[0];  // count of lights
+      r->light_indices = Realloc(r->light_indices,
+           (r->light_indices[0]+1) * sizeof(r->light_indices[0]));
+      r->light_indices[r->light_indices[0]] = light_index;
+   }
+   return;
+}
+
+
+#define kPortalSunlightMinMag .1
+
+int portal_shine_sunlight(const mxs_vector *pDirection, float fBrightness,
+                          int light_index, uchar perm)
+{
+   int i;
+   BOOL num_cells_lit = 0;
+   BOOL cell_lit;
+
+   // set up globals
+   if (fabs(pDirection->x) < kPortalSunlightMinMag
+    && fabs(pDirection->y) < kPortalSunlightMinMag
+    && fabs(pDirection->z) < kPortalSunlightMinMag) {
+      Warning(("portal.c: sunlight vector too small.  Not using sunlight.\n"));
+      return 0;
+   }
+
+   ambient_weight = fBrightness / kPortalSunlightCastLength;
+
+   // iterate over all cells
+   for (i=0; i < wr_num_cells; ++i) {
+      PortalCell *cell = WR_CELL(i);
+      cur_raycast_cell = i;
+      cell_lit = portal_raycast_sunlight(cell, perm);
+      if (cell_lit) {
+         ++num_cells_lit;
+
+         ++cell->light_indices[0];         // count of lights on cell
+         cell->light_indices
+            = Realloc(cell->light_indices, (cell->light_indices[0]+1)
+                                         * sizeof(cell->light_indices[0]));
+         cell->light_indices[cell->light_indices[0]] = light_index;
+      }
+   }
+   return num_cells_lit;
+}
+
+
+// helper for portal_add_simple_dynamic_light--pares down cell list to
+// cells which can be reached from a given cell
+int portal_contiguous_cells(int *cell_list, int num_cells, int root_cell)
+{
+   int i, j, t, portal_index;
+   PortalPolygonCore *portal;
+   PortalCell *cell, *adjacent_cell;
+   int adjacent_cell_index;
+   int num_contiguous;
+
+   if (num_cells == 1)
+      return 1;
+
+   if (root_cell == CELL_INVALID)
+      return 0;
+
+   // find the seed cell in the list
+   i = 0;
+   while ((i < num_cells) && (cell_list[i] != root_cell))
+      ++i;
+
+#ifdef DBG_ON
+   // Is the seed cell in the list?
+   AssertMsg1(i != num_cells,
+              "Dynamic light cell list does not contain root cell %d\n",
+              root_cell);
+#endif // ~DBG_ON
+
+   // force the seed to element 0
+   cell_list[i] = cell_list[0];
+   cell_list[0] = root_cell;
+
+   // We'll mark all cells but the first, then clear each we visit as
+   // we recurse through the database from the seed cell.
+   for (i = 1; i < num_cells; ++i)
+      WR_CELL(cell_list[i])->flags |= CELL_TRAVERSED;
+
+   num_contiguous = 1;
+
+   // Now we iterate in the brute_force, ugly way, collecting all the
+   // cells we can reach in the beginning of the array.  Notice that
+   // num_contiguous may rise.
+   for (i = 0; i < num_contiguous; ++i) {
+      cell = WR_CELL(cell_list[i]);
+
+      portal_index = cell->num_portal_polys;
+      portal = cell->portal_poly_list;
+
+      while (portal_index--) {
+         adjacent_cell_index = portal->destination;
+         adjacent_cell = WR_CELL(adjacent_cell_index);
+
+         // If a cell is flagged, we know that it's within the sphere
+         // and has not yet been visited.  We swap it into the lower
+         // part of cell_list, where we're collecting the contiguous
+         // cells, and clear its flag.
+         if (adjacent_cell->flags & CELL_TRAVERSED) {
+            adjacent_cell->flags &= ~CELL_TRAVERSED;
+
+            // find our cell in the array
+            for (j = num_contiguous; j < num_cells; ++j)
+               if (cell_list[j] == adjacent_cell_index)
+                  break;
+
+#ifdef DBG_ON
+            AssertMsg1(j != num_cells,
+                       "light cell list does not contain marked cell %d\n",
+                       adjacent_cell_index);
+#endif // ~DBG_ON
+
+            t = cell_list[num_contiguous];
+            cell_list[num_contiguous] = cell_list[j];
+            cell_list[j] = t;
+            ++num_contiguous;
+         }
+
+         portal++;
+      }
+   }
+
+   // Now in theory, we have num_contiguous cells for which we've
+   // cleared the CELL_TRAVERSED flags, and some others at the end of
+   // the array which are still marked.
+#ifdef DBG_ON
+   for (i = num_contiguous; i < num_cells; ++i)
+      AssertMsg1((WR_CELL(cell_list[i])->flags & CELL_TRAVERSED) != 0,
+                 "cell we did not visit is not marked %d\n",
+                 adjacent_cell_index);
+#endif // ~DBG_ON
+
+   for (i = num_contiguous; i < num_cells; ++i)
+      WR_CELL(cell_list[i])->flags &= ~CELL_TRAVERSED;
+
+   return num_contiguous;
+}
+
+
+// This is for the following function.  It's on a scale of 0 to 255.
+#define SIMPLE_LIGHT_MIN_BRIGHTNESS 16.0
+
+// This is a sloppier way to generate a dynamic light.  Rather than
+// using the rendering system's visibility code, it just finds all the
+// cells which 1) are within the radius affected by the light and 2)
+// can be reached in the cell database from the cell containing the
+// light.
+void portal_add_simple_dynamic_light(float br, float ambient, Location *loc,
+                                     float radius)
+{
+   int i;
+   int cell;
+
+   br *= BRIGHT_SCALE / 2;
+
+   ambient_weight = br;
+
+   cell = CellFromLoc(loc);
+   if (cell == CELL_INVALID)
+      return;
+
+   PortalSetLightInfo(loc, br * BRIGHT_SCALE, (WR_CELL(cell))->medium);
+   light_loc = loc;
+
+   max_dist = radius;
+   max_dist_2 = radius * radius;
+
+   num_lit = portal_cells_intersecting_sphere(loc, radius, &lit_cell[0]);
+   num_lit = portal_contiguous_cells(lit_cell, num_lit, loc->cell);
+
+   if (!_portal_cell_list_visible(&lit_cell[0], num_lit))
+      return;
+
+   for (i = 0; i < num_lit; ++i) {
+      int n = lit_cell[i];
+      cur_raycast_cell = n;
+
+      portal_dynamic_light(WR_CELL(n), loc);
+   }
+}
+
+
+void portal_add_simple_dynamic_dark(float br, float ambient, Location *loc,
+                                    float radius)
+{
+   int i;
+   int cell;
+
+   br *= BRIGHT_SCALE / 2;
+
+   ambient_weight = br;
+
+   cell = CellFromLoc(loc);
+   if (cell == CELL_INVALID)
+      return;
+
+   PortalSetLightInfo(loc, br * BRIGHT_SCALE, (WR_CELL(cell))->medium);
+   light_loc = loc;
+
+   max_dist = radius;
+   max_dist_2 = radius * radius;
+
+   num_lit = portal_cells_intersecting_sphere(loc, radius, &lit_cell[0]);
+   num_lit = portal_contiguous_cells(lit_cell, num_lit, loc->cell);
+
+   for (i = 0; i < num_lit; ++i) {
+      int n = lit_cell[i];
+      cur_raycast_cell = n;
+
+      portal_dynamic_dark(WR_CELL(n), loc);
+   }
+}
+
+
+#define RECIP_TABLE_SIZE 2048
+fix reciprocal_table_24[RECIP_TABLE_SIZE+1];
+float int_table[32];
+
+void init_portal_renderer(int dark, int light)
+{
+   int i;
+
+   init_background_hack();
+
+   reciprocal_table_24[0] = 0x7fffffff;
+
+   for (i=1; i <= RECIP_TABLE_SIZE; ++i)
+      reciprocal_table_24[i] = fix_make(256,0) / i;
+
+   for (i=0; i < 32; ++i)
+      int_table[i] = i;
+
+   init_portal_shading(dark, light);
+   init_portal_light();
+
+   // this turns out useless, as gMax ain't initialized yet
+   AssertMsg2(HACK_MAX_OBJ>=gMaxObjID,"Portal Using fewer ObjIDs (%d) than object system (%d)\n",HACK_MAX_OBJ,gMaxObjID);
+}
+
+
+// callback needed by lighting system (once upon a time)
+#if 0
+unsigned char *portal_get_lighting_data(int cell_id)
+{
+   return WR_CELL(cell_id)->vertex_list_lighting;
+}
+#endif
+
+bool show_span_lengths, show_render_times;
+
+ int pixel_count[32];
+#ifdef STATS_ON
+
+ static void zero_stats(void)
+ {
+   int undrawn = stat_num_clipped_pixels - stat_num_drawn_pixels;
+
+   if (undrawn > stat_max_undrawn_pixels)
+      stat_max_undrawn_pixels = undrawn;
+
+   if (stat_num_polys_clipped_away > stat_max_undrawn_polys) {
+      stat_max_undrawn_polys = stat_num_polys_clipped_away;
+      stat_max_total_polys = stat_num_poly_drawn;
+   }
+
+   stat_num_port = 0;
+   stat_num_port_visit = 0;
+   stat_num_port_traverse = 0;
+   stat_num_cell = 0;
+   stat_num_cell_visit = 0;
+   stat_num_cell_explored = 0;
+   stat_num_facing = 0;
+   stat_num_poly_raw = 0;
+   stat_num_poly_considered = 0;
+   stat_num_poly_drawn = 0;
+   stat_num_polys_clipped_away = 0;
+   stat_num_lit_pixels = 0;
+   stat_num_source_pixels = 0;
+   stat_num_dest_pixels = 0;
+   stat_num_spans_drawn = 0;
+   stat_num_spans_clamped = 0;
+   stat_num_backface_tests = 0;
+   stat_num_render_ms = 0;
+   stat_num_traverse_ms = 0;
+   stat_num_object_ms = 0;
+   stat_num_sort_ms = 0;
+   stat_num_drawn_pixels = 0;
+   stat_num_clipped_pixels = 0;
+   stat_num_transp_pixels = 0;
+   stat_num_objects = 0;
+   stat_num_visible_objects = 0;
+   stat_num_terrsplit_objects = 0;
+   stat_num_resplit_objects = 0;
+   stat_num_hidden_objects = 0;
+   stat_num_cell_tests = 0;
+   stat_num_partial_objects = 0;
+   memset(pixel_count, 0, sizeof(pixel_count));
+ }
+
+   // The following macro is used internally in the output function.
+   // "index" is the variable # of the last message we printed; the
+   // current one is found in 'i', so if i <= index, we've already
+   // been printed.  Ideally we would just switch() on the value of index,
+   // but then we'd have to explicitly assign numbers to each case,
+   // instead of making them implicit using i as seen here.
+
+ #define INFO(var, str, my_vol)              \
+    if (++i > index && vol >= my_vol) {      \
+       index = i;                            \
+       sprintf(buffer, str, stat_num_##var); \
+       return buffer;                        \
+    }
+
+ #define MAXINFO(var, str, my_vol)           \
+    if (++i > index && vol >= my_vol) {      \
+       index = i;                            \
+       sprintf(buffer, str, stat_max_##var); \
+       return buffer;                        \
+    }
+
+ #define BLANK(my_vol)  if (++i > index && vol >= my_vol) { index = i; return "----"; }
+
+ static char buffer[256];
+ char *portal_scene_info(int vol)
+ {
+    static int index=0;
+    int i=0;
+
+    if (++i > index && show_render_times) {
+       index = i;
+       // note that stat_num_object_ms is sampling based!
+       sprintf(buffer,
+              "traverse %d ms; objsort %d ms; render %d ms (%d ms on objects)",
+                stat_num_traverse_ms, stat_num_sort_ms,
+                stat_num_render_ms, stat_num_object_ms);
+       return buffer;
+    }
+
+    if (g2pt_span_clip) {
+       int stat_num_poly_notclipped =
+             stat_num_poly_drawn - stat_num_polys_clipped_away;
+       INFO(poly_notclipped, "Polygons past span-clip: %d", 5);
+    }
+
+    INFO(poly_drawn, "Polygons rendered: %d", 1);
+    INFO(poly_considered, "Polygons before portal clip: %d", 20);
+    INFO(poly_raw, "Polygons before backfacing: %d", 20);
+
+    BLANK(25);
+
+    if (g2pt_span_clip) {
+       int stat_num_undrawn_pixels =
+              stat_num_clipped_pixels - stat_num_drawn_pixels;
+       INFO(drawn_pixels, "Opaque pixels output: %d", 10);
+       INFO(undrawn_pixels, "Opaque Pixels not drawn: %d", 10);
+       INFO(transp_pixels, "Transparent pixels output: %d", 10);
+    } else {
+       INFO(dest_pixels, "Pixels output: %d", 10);
+    }
+    INFO(lit_pixels, "Surface pixels computed: %d", 3);
+    INFO(source_pixels, "Surface pixels used: %d", 5);
+
+    BLANK(40);
+
+    INFO(spans_drawn, "Spans: %d", 15);
+    INFO(spans_clamped, "Spans clamped: %d", 30);
+
+    BLANK(20);
+
+    INFO(cell, "Unique cells: %d", 10);
+    INFO(cell_explored, "Cells explored: %d", 20);
+    INFO(cell_visit, "Cells visited: %d", 30);
+
+    BLANK(30);
+
+    INFO(port, "Portals: %d", 5);
+    INFO(port_visit, "Portals visited: %d", 30);
+    INFO(port_traverse, "Portals traversed: %d", 30);
+    INFO(backface_tests, "Backface checks: %d", 10);
+
+    BLANK(30);
+
+    if (g2pt_span_clip) {
+       MAXINFO(undrawn_pixels, "Max span-clipped-away pixels: %d", 10);
+       if (++i > index && vol >= 10) {
+          index = i;
+          sprintf(buffer, "Max span-clipped-away polys: %d of %d (%d percent)",
+             stat_max_undrawn_polys, stat_max_total_polys,
+             (int)(((float)stat_max_undrawn_polys / (float)stat_max_total_polys) * 100));
+          return buffer;
+       }
+    }
+
+    INFO(objects, "Visible objects: %d", 8);
+    INFO(hidden_objects, "Re-hidden objects: %d", 10);
+    INFO(partial_objects, "Partially-visible objects: %d", 10);
+    INFO(terrsplit_objects, "Terrain-split objects: %d", 10);
+    INFO(resplit_objects, "Object-split objects: %d", 10);
+    INFO(visible_objects, "Visible object fragments: %d", 10);
+    INFO(cell_tests, "object cell tests: %d", 15);
+
+    if (++i > index && show_span_lengths) {
+       index = i;
+       sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d %d %d",
+          pixel_count[0], pixel_count[1], pixel_count[2], pixel_count[3],
+          pixel_count[4], pixel_count[5], pixel_count[6], pixel_count[7],
+          pixel_count[8], pixel_count[9], pixel_count[10], pixel_count[11]);
+       return buffer;
+    }
+
+    if (++i > index && show_span_lengths) {
+       index = i;
+       sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d %d %d",
+          pixel_count[12], pixel_count[13], pixel_count[14], pixel_count[15],
+          pixel_count[16], pixel_count[17], pixel_count[18], pixel_count[19],
+          pixel_count[20], pixel_count[21], pixel_count[22], pixel_count[23]);
+       return buffer;
+    }
+
+    if (++i > index && show_span_lengths) {
+       index = i;
+       sprintf(buffer, "%d %d %d %d %d %d %d %d",
+          pixel_count[24], pixel_count[25], pixel_count[26], pixel_count[27],
+          pixel_count[28], pixel_count[29], pixel_count[30], pixel_count[31]);
+       return buffer;
+    }
+
+    index=0; // we got to end without printing, so reset to beginning of list
+    return 0;
+ }
+
+ #undef INFO
+ #undef BLANK
+
+#else
+
+ #pragma off(unreferenced)
+ char *portal_scene_info(int vol)
+ {
+    return 0;
+ }
+ #pragma on(unreferenced)
+
+#endif
+
+
+/*
+Local Variables:
+typedefs:("ClipData" "LightPermanence" "Location" "ObjID" "ObjRef" "ObjRefID" "ObjVisibleID" "PortalCell" "PortalPolygonCore" "Position" "grs_bitmap" "grs_canvas" "mxs_real" "uchar")
+End:
+*/
+// $Header: r:/t2repos/thief2/src/portal/wrfunc.h,v 1.11 2000/01/29 13:37:43 adurant Exp $
+#pragma once
+
+// World Representation Functions
+
+#ifndef __WRFUNC_H
+#define __WRFUNC_H
+
+#include <lg.h>        // bool
+#include <wrtype.h>
+#include <wrdb.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+  // the way cell references work is like this:
+  //   the first time you reference a cell in a given
+  //   frame, use WR_CELL(n) to get a pointer to it
+  //   after that, you can use wr_cell[n] to refer to
+  //   it, until the end of the frame.
+  //
+  //   Every time you call ResetWorldRep(), you can no
+  //   longer count on data which you have dangled off
+  //   of the world rep, and you need to call WR_CELL
+  //   again.
+  //
+  //   In reality, for this round, we're not going to
+  //   swap the db to disk.
+
+extern PortalCell *wr_cell[];
+extern int wr_num_cells;
+void ResetWorldRep(void);
+
+#ifndef DYNAMIC_CELLS
+  #define WR_CELL(n)  (wr_cell[n])
+#else
+  #define WR_CELL(n)  (wr_cell[n] ? wr_cell[n] : LoadWorldRepCell(n))
+  PortalCell *LoadWorldRepCell(int n);
+#endif
+
+  // A macro which if true means that we definitely have a valid
+  // cell, and we can quickly compute it
+#define IS_CELLFROMLOC_FAST(loc)   ((loc)->cell != CELL_INVALID)
+
+#define CellFromLoc(loc) (IS_CELLFROMLOC_FAST(loc) ? (loc)->cell : ComputeCellForLocation(loc))
+#define CellFromPos(p)   CellFromLoc(&((p)->loc))
+
+int ComputeCellForLocation(Location *loc);
+int PortalComputeCellFromPoint(mxs_vector *seed_pos);
+bool PortalTestInCell(int r, Location *loc);
+
+void PortalComputeBoundingSphere(PortalCell *cell);
+
+// for opening and closing doors
+int PortalBlockVision(PortalCell *starting_cell);
+int PortalBlockVisionFromLocation(Location *seed_loc);
+int PortalUnblockVision(PortalCell *starting_cell);
+int PortalUnblockVisionFromLocation(Location *seed_loc);
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+
+#pragma once
+#ifndef __WRLIMIT_H
+#define __WRLIMIT_H
+
+#define MAX_REGIONS   28672
+#define MAX_ACTIVE_REGIONS  768
+
+#endif
+#pragma once
+/* wrobj.h
+**
+** Object system stuff that needs to know about the World Rep at compile time
+**
+** $Header: r:/t2repos/thief2/src/portal/wrobj.h,v 1.4 2000/01/29 13:37:45 adurant Exp $
+** $Log: wrobj.h,v $
+** Revision 1.4  2000/01/29 13:37:45  adurant
+** #pragma once
+**
+** Revision 1.3  1997/11/24 19:32:28  mahk
+** Changed to include wrtype.h instead of wr.h
+**
+ * Revision 1.2  1997/08/05  12:11:37  TOML
+ * added extern "C" blocks for C++
+ * 
+ * Revision 1.1  1996/11/18  13:17:23  buzzard
+ * Initial revision
+ * 
+ * Revision 1.1  1996/07/24  12:39:30  DFAN
+ * Initial revision
+ * 
+*/
+
+#ifndef _WROBJ_H
+#define _WROBJ_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#include <wrtype.h>
+
+// TODO: Hey, these need to set position too!
+
+// Set the location of obj to <x,y,z>
+#define ObjSetLocation(obj,objp,x,y,z) \
+  (MakeLocation(&((objp)->pos->loc), (x), (y), (z)), \
+   ObjUpdateLocs (obj))
+
+// Update the location of obj to <x,y,z>, using obj's old location
+// for hinting information
+#define ObjUpdateLocation(obj,objp,x,y,z) \
+  (MakeHintedLocation(&((objp)->pos->loc), (x), (y), (z), \
+                      &((objp)->pos->loc)), \
+   ObjUpdateLocs (obj))
+
+
+// Should this be in wrtype.h?
+#define MakeOrientation(dst,a,b,c) \
+  ((dst).el[0]=(a), (dst).el[1]=(b), (dst).el[2]=(c))
+
+#define ObjSetOrientation(objp,a,b,c) \
+  (MakeOrientation((objp)->pos->fac, (a), (b), (c)))
+
+#define ObjSetPosition(obj,objp,x,y,z,a,b,c) \
+  (ObjSetOrientation((objp),(a),(b),(c)), \
+   ObjSetLocation((obj),(objp),(x),(y),(z)))
+
+#define ObjUpdatePosition(obj,objp,x,y,z,a,b,c) \
+  (ObjSetOrientation((objp),(a),(b),(c)), \
+   ObjUpdateLocation((obj),(objp),(x),(y),(z)))
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+; $Header: r:/t2repos/thief2/src/portal/ptsurf.asm,v 1.15 1998/04/06 12:43:14 MAT Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptmap.asm
+;   support functions
+
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+        extd _grd_light_table
+
+_DATA	segment	dword public USE32 'DATA'
+
+	align	4
+
+texture_row dd 0
+output_row  dd 0
+light_row   dd 0
+didy        dd 0
+didxdy      dd 0
+temp_light1 dd 0
+temp_light2 dd 0
+tempy       dd 0
+
+
+; import
+externdef __portal_surface_texture_row: dword
+externdef __portal_surface_output_row: dword
+externdef __portal_surface_lightmap_row: dword
+externdef __portal_surface_texture: dword
+externdef __portal_surface_output: dword
+externdef __portal_surface_lightmap: dword
+                                   
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+
+; eax i
+; ebx light table
+; ecx bytes being processed
+; edx bytes being processed
+; esi source
+; edi dest
+; ebp didx
+pt_buildspan_8:
+        mov  ch,ah
+        add  eax,ebp
+
+        mov  cl,[esi]
+        mov  dh,ah
+
+        mov  dl,[esi+1]
+        add  eax,ebp
+
+        mov  cl,[ebx+ecx]
+        nop
+
+        mov  dl,[ebx+edx]
+        mov  [edi],cl
+
+        mov  ch,ah
+        add  eax,ebp
+
+        mov  cl,[esi+2]
+        mov  dh,ah    
+
+        mov  [edi+1],dl
+        mov  dl,[esi+3]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  [edi+2],cl
+        mov  ch,ah
+
+        add  eax,ebp
+        mov  dl,[ebx+edx]
+
+        mov  cl,[esi+4]
+        mov  dh,ah
+
+        mov  [edi+3],dl
+        mov  dl,[esi+5]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  dl,[ebx+edx]
+        mov  [edi+4],cl
+
+        mov  ch,ah
+        add  eax,ebp
+
+        mov  cl,[esi+6]
+        mov  dh,ah    
+
+        mov  [edi+5],dl
+        mov  dl,[esi+7]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  [edi+6],cl
+        mov  dl,[ebx+edx]
+
+        mov  [edi+7],dl
+        ret
+
+
+
+
+pt_buildspan_8_x:
+        mov  ecx,eax
+        add  eax,ebp
+        shr  ecx,8
+
+        mov  cl,[esi]
+        mov  edx,eax
+        shr  edx,8
+
+        mov  dl,[esi+1]
+        add  eax,ebp
+
+        mov  cl,[ebx+ecx]
+        nop
+
+        mov  dl,[ebx+edx]
+        mov  [edi],cl
+
+        mov  ecx,eax
+        add  eax,ebp
+        shr  ecx,8
+
+        mov  cl,[esi+2]
+        mov  edx,eax
+        shr  edx,8
+
+        mov  [edi+1],dl
+        mov  dl,[esi+3]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  [edi+2],cl
+        mov  ecx,eax
+        shr  ecx,8
+
+        add  eax,ebp
+        mov  dl,[ebx+edx]
+
+        mov  cl,[esi+4]
+        mov  edx,eax
+        shr  edx,8
+
+        mov  [edi+3],dl
+        mov  dl,[esi+5]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  dl,[ebx+edx]
+        mov  [edi+4],cl
+
+        mov  ecx,eax
+        shr  ecx,8
+        add  eax,ebp
+
+        mov  cl,[esi+6]
+        mov  edx,eax
+        shr  edx,8
+
+        mov  [edi+5],dl
+        mov  dl,[esi+7]
+
+        mov  cl,[ebx+ecx]
+        add  eax,ebp
+
+        mov  [edi+6],cl
+        mov  dl,[ebx+edx]
+
+        mov  [edi+7],dl
+        ret
+
+  ;   ESI   =  texture source
+  ;   EDI   =  output location
+  ;   EDX   =  lightmap source
+
+  ;   EAX   =  texture row
+  ;   EBX   =  output row
+  ;   ECX   =  lightmap row
+_FUNCDEF_ASM pt_surfbuild_16
+        push  ebp
+        push  esi
+
+        push  eax
+        push  ebx
+
+        push  ecx
+        push  edx
+
+        push  edi
+        mov   eax, [__portal_surface_texture_row]
+
+        mov   ebx, [__portal_surface_output_row]
+        mov   ebp, [__portal_surface_lightmap_row]
+
+        mov   edx, [__portal_surface_lightmap]
+        sub   eax, 8
+
+        mov   esi, [__portal_surface_texture]
+        sub   ebx,8
+
+        mov   texture_row, eax
+        mov   output_row, ebx
+
+        mov   bl,[edx]
+        mov   cl,[edx + ebp + 1]
+
+        mov   bh, [edx + 1] 
+        mov   ch, [edx + ebp]
+
+        and   ebx, 0f0f0h       ; mask off all but upper 4 bits of light levels
+        and   ecx, 0f0f0h
+
+        mov   edi, [__portal_surface_output]
+        cmp   ebx, ecx
+
+        jne   pt_surfbuild_gouraud_16
+
+        cmp   cl, ch
+
+        je    pt_surfbuild_uniform_16
+
+pt_surfbuild_gouraud_16:
+        xor   eax,eax
+        xor   ebx,ebx
+
+        mov   al, [edx]
+        xor   ecx, ecx
+
+        mov   bl, [edx+1]
+        mov   cl, [edx+ebp]
+
+        sub   ebx,eax       ; ebx == di(0)dx * 16
+        mov   dl,[edx+ebp+1]
+
+        shl   eax,4         ; eax == i(0)*16
+        and   edx,0ffh
+
+        sub   edx,ecx       ; edx == di(16)dx * 16
+
+        shl   ecx,4         ; ecx == i(16)*16
+        sub   edx,ebx       ; edx == di(0)dxdy * 256
+
+        shl   ebx,4         ; ebx == di(0)dx * 64 
+        sub   ecx,eax       ; ecx == di(0)dy * 256
+
+        shl   eax,4         ; eax == i(0)*256
+        mov   didy,ecx
+
+        xor   ecx,ecx
+        mov   didxdy,edx
+
+        mov   ebp,ebx
+        mov   ebx,_grd_light_table
+
+        xor   edx,edx
+        mov   ecx, 16
+
+        ; eax =  0..15 * 256*16
+        ; eax derived from number from 0..255, so
+        ; eax = 0..255 * 256
+
+pt_surf16_looptop:
+        push  eax
+        push  ecx
+
+        shr   eax, 4
+        mov   edx, ebp
+
+        shr   edx, 28           ; round negative didx towards 0
+        push  ebp
+
+        mov   cl,[edi]          ; cache prefetch
+        add   ebp, edx
+
+        sar   ebp, 4
+        call  pt_buildspan_8
+
+        add   esi, 8
+        add   edi, 8
+
+        mov   cl,[edi]          ; cache prefetch
+        call  pt_buildspan_8
+        
+        add   esi,texture_row
+        add   edi,output_row
+
+        ; wait for 2-cycle instructions
+
+        pop   ebp
+        pop   ecx
+        pop   eax
+
+        add   eax,didy
+        add   ebp,didxdy
+
+        ; wait for 2-cycle instructions
+
+        dec   ecx
+        jnz   pt_surf16_looptop
+
+        jmp   pt_surfbuild_done_16
+
+pt_surfbuild_uniform_16:
+        shr   ebx, 4
+        mov   ebp, _grd_light_table
+
+        mov   eax, ebx
+        mov   ecx, ebx
+
+        mov   edx, ebx
+        mov   texture_row, 16
+
+pt_surfbuild_uniform_16_loop:
+        mov   al, [edi] ; prefetch
+        nop
+
+        ; first set of 4 texels
+        mov al, [esi]
+        mov bl, [esi + 4]
+
+        mov cl, [esi + 8]
+        mov dl, [esi + 12]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+        
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi], al
+        mov [edi + 4], bl
+        
+        mov [edi + 8], cl
+        mov [edi + 12], dl
+
+        ; second set of 4 texels
+        mov al, [esi + 1]
+        mov bl, [esi + 5]
+
+        mov cl, [esi + 9]
+        mov dl, [esi + 13]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+        
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi + 1], al
+        mov [edi + 5], bl
+        
+        mov [edi + 9], cl
+        mov [edi + 13], dl
+
+        ; third set of 4 texels
+        mov al, [esi + 2]
+        mov bl, [esi + 6]
+
+        mov cl, [esi + 10]
+        mov dl, [esi + 14]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+        
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi + 2], al
+        mov [edi + 6], bl
+        
+        mov [edi + 10], cl
+        mov [edi + 14], dl
+
+        ; fourth set of 4 texels
+        mov al, [esi + 3]
+        mov bl, [esi + 7]
+
+        mov cl, [esi + 11]
+        mov dl, [esi + 15]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi + 3], al
+        mov [edi + 7], bl
+        
+        mov [edi + 11], cl
+        mov [edi + 15], dl
+
+        add esi, [__portal_surface_texture_row]
+        add edi, __portal_surface_output_row
+
+        dec texture_row
+
+        jnz pt_surfbuild_uniform_16_loop
+
+pt_surfbuild_done_16:
+        pop   edi
+        pop   edx
+        pop   ecx
+        pop   ebx
+        pop   eax
+        pop   esi
+        pop   ebp
+        ret        
+
+
+
+
+_FUNCDEF_ASM pt_surfbuild_8
+        push  ebp
+        push  esi
+
+        push  eax
+        push  ebx
+
+        push  ecx
+        push  edx
+        
+        push  edi
+        mov   eax, [__portal_surface_texture_row]
+
+        mov   ebx, [__portal_surface_output_row]
+        mov   ebp, [__portal_surface_lightmap_row]
+
+        mov   edx, [__portal_surface_lightmap]
+        mov   texture_row,eax
+
+        mov   esi, [__portal_surface_texture]
+        mov   output_row, ebx
+
+        mov   bl, [edx]
+        mov   cl, [edx + ebp + 1]
+
+        mov   bh, [edx + ebp]
+        mov   ch, [edx + 1]
+
+        and   ebx, 0f0f0h
+        and   ecx, 0f0f0h
+
+        mov   edi, [__portal_surface_output]
+        cmp   ebx, ecx
+
+        jne   pt_surfbuild_gouraud_8
+
+        cmp   cl, ch
+
+        je    pt_surfbuild_uniform_8
+
+pt_surfbuild_gouraud_8:
+        xor   eax,eax
+        xor   ebx,ebx
+
+        mov   al, [edx]
+        xor   ecx, ecx
+
+        mov   bl, [edx+1]
+        mov   cl, [edx+ebp]
+
+        sub   ebx, eax      ; ebx == di(0)dx * 16
+        mov   dl, [edx+ebp+1]
+
+        shl   eax, 3        ; eax == i(0)*8
+        and   edx, 0ffh
+
+        sub   edx,ecx       ; edx == di(16)dx * 16
+
+        shl   ecx,3         ; ecx == i(16)*16
+        sub   edx,ebx       ; edx == di(0)dxdy * 256
+
+        shl   ebx,3         ; ebx == di(0)dx * 64 
+        sub   ecx,eax       ; ecx == di(0)dy * 256
+
+        shl   eax,3         ; eax == i(0)*256
+        mov   didy,ecx
+
+        xor   ecx,ecx
+        mov   didxdy,edx
+
+        mov   ebp,ebx
+        mov   ebx,_grd_light_table
+
+        xor   edx,edx
+        mov   ecx,8
+
+pt_surf8_looptop:
+        push  eax
+        push  ecx
+
+        shr   eax, 2
+        mov   edx, ebp
+
+        shr   edx, 30           ; round negative didx towards 0
+        push  ebp
+
+        mov   cl,[edi]          ; cache prefetch
+        add   ebp, edx
+
+        sar   ebp, 2
+        call  pt_buildspan_8
+
+        add   esi,texture_row
+        add   edi,output_row
+
+        ; wait for 2-cycle instructions
+
+        pop   ebp
+        pop   ecx
+        pop   eax
+
+        add   eax,didy
+        add   ebp,didxdy
+
+        ; wait for 2-cycle instructions
+
+        dec   ecx
+        jnz   pt_surf8_looptop
+
+        jmp   pt_surfbuild_done_8
+
+pt_surfbuild_uniform_8:
+        shr   ebx, 4
+        mov   ebp, [_grd_light_table]
+
+        mov   eax, ebx
+        mov   ecx, ebx
+
+        mov   edx, ebx
+        mov   texture_row, 8
+
+pt_surfbuild_uniform_8_loop:
+        mov   al, [edi] ; prefetch
+        nop
+
+        ; first set of 4 texels
+        mov al, [esi]
+        mov bl, [esi + 4]
+
+        mov cl, [esi + 2]
+        mov dl, [esi + 6]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi], al
+        mov [edi + 4], bl
+
+        mov [edi + 2], cl
+        mov [edi + 6], dl
+
+        ; second set of 4 texels
+        mov al, [esi + 1]
+        mov bl, [esi + 5]
+
+        mov cl, [esi + 3]
+        mov dl, [esi + 7]
+
+        mov al, [eax + ebp]
+        mov bl, [ebx + ebp]
+
+        mov cl, [ecx + ebp]
+        mov dl, [edx + ebp]
+
+        mov [edi + 1], al
+        mov [edi + 5], bl
+
+        mov [edi + 3], cl
+        mov [edi + 7], dl
+
+        add esi, [__portal_surface_texture_row]
+        add edi, [__portal_surface_output_row]
+
+        dec texture_row
+        jnz pt_surfbuild_uniform_8_loop
+
+pt_surfbuild_done_8:                        
+        pop   edi
+        pop   edx
+        pop   ecx
+        pop   ebx
+        pop   eax
+        pop   esi
+        pop   ebp
+        ret   
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; pt_surfbuild_4
+;
+_FUNCDEF_ASM pt_surfbuild_4
+        push  edx
+        push  edi
+
+        push  eax
+        push  esi
+
+        push  ecx
+        push  ebx
+
+        push  ebp
+        mov   edi, [__portal_surface_output]
+
+        mov   ebp, [__portal_surface_lightmap_row]
+        mov   al, [edi]         ;  prefetch first row
+
+        mov   esi, [__portal_surface_texture]
+        mov   edx, [__portal_surface_lightmap]
+
+; setup has four light levels--            a---b
+; we want our results x16                  |   |
+; for our light table lookups              c---d
+
+        xor   eax, eax
+        xor   ecx, ecx
+
+        mov   al, [edx]
+        mov   cl, [edx + ebp]
+
+        mov   bl, [edx + 1]
+        mov   dl, [edx + ebp + 1]
+
+        and   ebx, 0ffh
+        and   edx, 0ffh
+
+        sub   edx, ecx
+        mov   ebp, ebx
+
+        sub   ecx, eax
+        sub   ebp, eax
+
+        shl   ebp, 2            ; initial didx = (-4a + 4b) / 16
+        add   edx, eax
+
+        shl   ecx, 2            ; didy = (-4a + 4c) / 16
+        sub   edx, ebx          ; didxdy = (a - b - c + d) / 16
+
+        shl   eax, 4            ; i0 = (16a) / 16
+        mov   [didy], ecx
+
+        mov   [didxdy], edx
+        mov   dl, [edi + 0999999h];  prefetch second row
+row_4_self_mod_1:
+
+; eax   left edge intensity
+; ebx   first point being processed
+; ecx   second point being processed
+; edx   output bytes
+; esi   source texture
+; edi   surface being built + misc.
+; ebp   didx
+
+        lea   ebx, [eax + 2 * ebp]
+        lea   ecx, [eax + 2 * ebp]
+
+        mov   bl, [esi + 2]     ; We process the right-hand texels first
+        add   ecx, ebp          ; so we can shift them into upper 16 of edx.
+
+        mov   cl, [esi + 3]
+        mov   edi, [didxdy]
+
+        mov   dl, [ebx + 0999999h]; self-modifying reference to light table
+gouraud_4_self_mod_1:
+        mov   ebx, eax
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_2:
+        lea   ecx, [eax + ebp]
+
+        shl   edx, 16
+        mov   bl, [esi]
+
+        mov   cl, [esi + 1]
+        add   ebp, edi          ; didx += didxdy
+
+        mov   dl, [ebx + 0999999h]
+gouraud_4_self_mod_3:
+        mov   edi, [__portal_surface_output]
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_4:
+        mov   ebx, [didy]
+
+        mov   ecx, [__portal_surface_texture_row]
+        add   eax, ebx          ; left edge i += didy
+
+        mov   [edi], edx
+        add   esi, ecx          ; texture pointer += texture row
+
+        mov   dl, [edi + 0999999h]   ;  prefetch third row
+row_4_self_mod_2:
+        nop
+
+; second row
+        lea   ebx, [eax + 2 * ebp]
+        lea   ecx, [eax + 2 * ebp]
+
+        mov   bl, [esi + 2]     ; We process the second pair of texels first
+        add   ecx, ebp          ; so we can shift them into upper 16 of edx.
+
+        mov   cl, [esi + 3]
+        mov   edi, [didxdy]
+
+        mov   dl, [ebx + 0999999h]; self-modifying reference to light table
+gouraud_4_self_mod_5:
+        mov   ebx, eax
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_6:
+        lea   ecx, [eax + ebp]
+
+        shl   edx, 16
+        mov   bl, [esi]
+
+        mov   cl, [esi + 1]
+        add   ebp, edi          ; didx += didxdy
+
+        mov   dl, [ebx + 0999999h]
+gouraud_4_self_mod_7:
+        mov   edi, [__portal_surface_output]
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_8:
+        mov   ebx, [didy]
+
+        mov   ecx, [__portal_surface_texture_row]
+        add   eax, ebx          ; left edge i += didy
+
+        mov   [edi + 0999999h], edx
+row_4_self_mod_3:
+        add   esi, ecx          ; texture pointer += texture row
+
+        mov   dl, [edi + 0999999h];  prefetch fourth row
+row_4_self_mod_4:
+        nop
+
+; third row
+        lea   ebx, [eax + 2 * ebp]
+        lea   ecx, [eax + 2 * ebp]
+
+        mov   bl, [esi + 2]     ; We process the second pair of texels first
+        add   ecx, ebp          ; so we can shift them into upper 16 of edx.
+
+        mov   cl, [esi + 3]
+        mov   edi, [didxdy]
+
+        mov   dl, [ebx + 0999999h]; self-modifying reference to light table
+gouraud_4_self_mod_9:
+        mov   ebx, eax
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_10:
+        lea   ecx, [eax + ebp]
+
+        shl   edx, 16
+        mov   bl, [esi]
+
+        mov   cl, [esi + 1]
+        add   ebp, edi          ; didx += didxdy
+        
+        mov   dl, [ebx + 0999999h]
+gouraud_4_self_mod_11:
+        mov   edi, [__portal_surface_output]
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_12:
+        mov   ebx, [didy]
+
+        mov   ecx, [__portal_surface_texture_row]
+        add   eax, ebx          ; left edge i += didy
+
+        mov   [edi + 0999999h], edx
+row_4_self_mod_5:
+        add   esi, ecx          ; texture pointer += texture row
+
+; fourth row
+        lea   ebx, [eax + 2 * ebp]
+        lea   ecx, [eax + 2 * ebp]
+
+        mov   bl, [esi + 2]     ; We process the second pair of texels first
+        add   ecx, ebp          ; so we can shift them into upper 16 of edx.
+
+        mov   cl, [esi + 3]
+        nop
+
+        mov   dl, [ebx + 0999999h]; self-modifying reference to light table
+gouraud_4_self_mod_13:
+        mov   ebx, eax
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_14:
+        lea   ecx, [eax + ebp]
+
+        shl   edx, 16
+        mov   bl, [esi]
+
+        mov   cl, [esi + 1]
+        pop   ebp
+
+        mov   dl, [ebx + 0999999h]
+gouraud_4_self_mod_15:
+        pop   ebx
+
+        mov   dh, [ecx + 0999999h]
+gouraud_4_self_mod_16:
+        pop   ecx
+
+        pop   esi
+        pop   eax
+
+        mov   [edi + 0999999h], edx
+row_4_self_mod_6:
+
+        pop   edi
+        pop   edx
+        ret
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; pt_surfbuild_2
+;
+_FUNCDEF_ASM pt_surfbuild_2
+
+        push  eax
+        push  ebx
+
+        push  ecx
+        push  edx
+
+        push  esi
+        push  edi
+
+        xor   ecx, ecx
+        xor   edx, edx
+
+        ; We'll build one pixel/light combo in ecx and one in edx.
+        ; While the light for the upper-left pixel is raw data, the
+        ; light for the upper-right is the average of two values.
+        mov   edi, [_grd_light_table]
+        mov   esi, [__portal_surface_lightmap]
+        
+        mov   ebx, [__portal_surface_texture]
+        mov   al, [edi]          ; prefetch
+
+        mov   cl, [esi]
+        mov   dl, [esi + 1]
+
+        add   edx, ecx
+        mov [temp_light1], ecx  ; We'll be averaging these light values
+
+        ; We move our light bytes into ch and dh with bit shifts to
+        ; get them down to 4 bits each.
+        shl   ecx, 4
+        mov [temp_light2], edx  ; with others for the lower pixels.
+
+        shl   edx, 3            ; average of two lightmap points
+        mov   cl, [ebx]
+        
+        mov   dl, [ebx + 1]
+        mov   cl, [edi + ecx]   ; clut upper-left
+        
+        mov   eax, [__portal_surface_output]
+        mov   dl, [edi + edx]   ; clut upper-right
+        
+        mov   [eax], cl
+        mov   [eax + 1], dl
+
+        add   esi, [__portal_surface_lightmap_row]
+
+        ; The light for the lower two pixels is a little more involved
+        ; since they are both averages.
+        xor   ecx, ecx
+        xor   edx, edx
+
+        mov   cl, [esi]
+        mov   dl, [esi + 1]
+
+        add   edx, [temp_light2]; average of two right-hand lights
+        add   ebx, [__portal_surface_texture_row]
+
+        add   edx, ecx          ; lower-right light * 4
+        add   eax, [__portal_surface_output_row]
+
+        add   ecx, [temp_light1]; lower-left light * 2
+
+        shl   edx, 2            ; average of four lightmap points
+
+        shl   ecx, 3            ; average of two lightmap points
+
+        mov   cl, [ebx]         ; get texture points
+        mov   dl, [ebx + 1]
+
+        mov   cl, [edi + ecx]   ; clut upper-left
+        mov   dl, [edi + edx]   ; clut upper-right
+
+        mov   [eax], cl
+        mov   [eax + 1], dl
+
+        pop   edi
+        pop   esi
+        pop   edx
+        pop   ecx
+        pop   ebx
+        pop   eax
+
+        ret   
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; pt_surfbuild_1
+;
+; We prefetch here since this is called on seqential bytes.
+;
+_FUNCDEF_ASM pt_surfbuild_1
+        push  eax
+        push  edx
+
+        push  ebx
+        push  ecx
+        
+        mov   eax, [__portal_surface_lightmap]
+        mov   ebx, [__portal_surface_output]
+
+        xor   edx, edx
+        mov   ecx, [__portal_surface_texture]
+
+        mov   dh, [eax]         ; high byte is light level
+        mov   al, [ebx]         ; prefetch
+
+        shr   dh, 4             ; 16 levels of shading
+        mov   eax, [_grd_light_table]
+
+        mov   dl, [ecx]         ; low byte is texture data
+        
+        mov   al, [eax + edx]   ; translate light
+        pop   ecx
+
+        mov   [ebx], al
+        pop   ebx
+
+        pop   edx
+        pop   eax
+
+        ret
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; voif pt_surfbuild_setup (void)
+; 
+; These set up some self-modifying offsets.  Actually, only one of
+; them does.
+
+_FUNCDEF_ASM pt_surfbuild_setup_1
+        ret
+
+_FUNCDEF_ASM pt_surfbuild_setup_2
+        ret
+        
+_FUNCDEF_ASM pt_surfbuild_setup_4
+        push   eax
+        push   edx
+
+        mov    eax, [_grd_light_table]
+        mov    edx, dword ptr ds:[gouraud_4_self_mod_1 - 4]
+
+        cmp    eax, edx
+        je     pt_surfbuild_setup_4_light_done
+
+        mov    dword ptr ds:gouraud_4_self_mod_1  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_2  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_3  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_4  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_5  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_6  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_7  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_8  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_9  - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_10 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_11 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_12 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_13 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_14 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_15 - 4, eax
+        mov    dword ptr ds:gouraud_4_self_mod_16 - 4, eax
+
+pt_surfbuild_setup_4_light_done:
+        mov   eax, __portal_surface_output_row
+        mov   edx, dword ptr ds:[gouraud_4_self_mod_1 - 4]
+
+        cmp    eax, edx
+        je     pt_surfbuild_setup_4_row_done
+
+        mov    dword ptr ds:row_4_self_mod_1 - 4, eax
+        mov    dword ptr ds:row_4_self_mod_3 - 4, eax
+
+        lea    edx, [eax + eax * 2]     ; row * 3
+        add    eax, eax                 ; row * 2
+
+        mov    dword ptr ds:row_4_self_mod_4 - 4, edx
+        mov    dword ptr ds:row_4_self_mod_6 - 4, edx
+
+        mov    dword ptr ds:row_4_self_mod_2 - 4, eax
+        mov    dword ptr ds:row_4_self_mod_5 - 4, eax
+
+pt_surfbuild_setup_4_row_done:
+        pop   edx
+        pop   eax
+
+        ret
+
+
+_FUNCDEF_ASM pt_surfbuild_setup_8
+        ret               
+
+_FUNCDEF_ASM pt_surfbuild_setup_16
+        ret
+
+        
+        
+;pt_buildspan_8_pal:
+;        mov  cl,ah
+;        add  eax,ebp
+;
+;        mov  ch,ah
+;        add  eax,ebp
+;
+;        mov  dl,ah
+;        add  eax,ebp
+;
+;        mov  dh,ah
+;        add  eax,ebp
+;
+;        shl  edx,16
+;        and  ecx,0ffffh
+;
+;        or   edx,ecx
+;        mov  ecx,[esi]
+;
+;        add  edx,ecx
+;        mov  cl,ah
+;
+;        mov  [edi],edx
+;        add  eax,ebp
+;
+;        mov  ch,ah
+;        add  eax,ebp
+;
+;        mov  dl,ah
+;        add  eax,ebp
+;
+;        mov  dh,ah
+;        add  eax,ebp
+;
+;        shl  edx,16
+;        and  ecx,0ffffh
+;
+;        or   edx,ecx
+;        mov  ecx,[esi]
+;
+;        add  edx,ecx
+;
+;        mov  [edi+4],edx
+;        ret
+;
+;  ;   ESI   =  texture source
+;  ;   EDI   =  output location
+;  ;   EDX   =  lightmap source
+;
+;  ;   EAX   =  texture row
+;  ;   EBX   =  output row
+;  ;   ECX   =  lightmap row
+;pt_surfbuild_16_pal:
+;        push  ebp
+;        sub   eax,8
+;
+;        mov   texture_row,eax
+;        sub   ebx,8
+;
+;        mov   output_row,ebx
+;        mov   ebp,ecx
+;
+;        xor   eax,eax
+;        xor   ebx,ebx
+;
+;        mov   al,[edx]
+;        xor   ecx,ecx
+;
+;        mov   bl,[edx+1]
+;        mov   cl,[edx+ebp]
+;
+;        sub   ebx,eax       ; ebx == di(0)dx * 16
+;        mov   dl,[edx+ebp+1]
+;
+;        shl   eax,4         ; eax == i(0)*16
+;        and   edx,0ffh
+;
+;        sub   edx,ecx       ; edx == di(16)dx * 16
+;
+;        shl   ecx,4         ; ecx == i(16)*16
+;        sub   edx,ebx       ; edx == di(0)dxdy * 256
+;
+;        shl   ebx,4         ; ebx == di(0)dx * 64 
+;        sub   ecx,eax       ; ecx == di(0)dy * 256
+;
+;        shl   eax,4         ; eax == i(0)*256
+;        mov   didy,ecx
+;
+;        shr   edx,4
+;        xor   ecx,ecx
+;
+;        shr   ebx,4
+;        mov   didxdy,edx
+;
+;        mov   ebp,ebx
+;        mov   ebx,_grd_light_table
+;
+;        xor   edx,edx
+;        mov   ecx,16
+;
+;pt_surf16_looptop_pal:
+;        push  eax
+;        push  ecx
+;
+;        shr   eax,5
+;        mov   cl,[edi]
+;        shr   ebp,1
+;        call  pt_buildspan_8_pal
+;
+;        add   esi,8
+;        add   edi,8
+;
+;        mov   cl,[edi]
+;        call  pt_buildspan_8_pal
+;        
+;        add   esi,texture_row
+;        add   edi,output_row
+;
+;        ; wait for 2-cycle instructions
+;
+;        pop   ecx
+;        pop   eax
+;
+;        add   eax,didy
+;        add   ebp,didxdy
+;        
+;        ; wait for 2-cycle instructions
+;
+;        dec   ecx
+;        jnz   pt_surf16_looptop_pal
+;
+;        pop   ebp
+;        ret        
+;
+;pt_surfbuild_8_pal:
+;        push  ebp
+;        mov   texture_row,eax
+;
+;        mov   output_row,ebx
+;        mov   ebp,ecx
+;
+;        xor   eax,eax
+;        xor   ebx,ebx
+;
+;        mov   al,[edx]
+;        xor   ecx,ecx
+;
+;        mov   bl,[edx+1]
+;        mov   cl,[edx+ebp]
+;
+;        sub   ebx,eax       ; ebx == di(0)dx * 16
+;        mov   dl,[edx+ebp+1]
+;
+;        shl   eax,3         ; eax == i(0)*16
+;        and   edx,0ffh
+;
+;        sub   edx,ecx       ; edx == di(16)dx * 16
+;
+;        shl   ecx,3         ; ecx == i(16)*16
+;        sub   edx,ebx       ; edx == di(0)dxdy * 256
+;
+;        shl   ebx,3         ; ebx == di(0)dx * 64 
+;        sub   ecx,eax       ; ecx == di(0)dy * 256
+;
+;        shl   eax,3         ; eax == i(0)*256
+;        mov   didy,ecx
+;
+;        shr   edx,2
+;        xor   ecx,ecx
+;
+;        shr   ebx,2
+;        mov   didxdy,edx
+;
+;        mov   ebp,ebx
+;        mov   ebx,_grd_light_table
+;
+;        xor   edx,edx
+;        mov   ecx,8
+;
+;pt_surf8_looptop_pal:
+;        push  eax
+;        push  ecx
+;
+;        shr   eax,3
+;        mov   cl,[edi]
+;        shr   ebp,1
+;        call  pt_buildspan_8_pal
+;
+;        add   esi,texture_row
+;        add   edi,output_row
+;
+;        ; wait for 2-cycle instructions
+;
+;        pop   ecx
+;        pop   eax
+;
+;        add   eax,didy
+;        add   ebp,didxdy
+;        
+;        ; wait for 2-cycle instructions
+;
+;        dec   ecx
+;        jnz   pt_surf8_looptop_pal
+;
+;        pop   ebp
+;        ret        
+
+_TEXT   ends
+
+END
+// $Header: r:/t2repos/thief2/src/portal/ptsurf.h,v 1.6 2000/01/29 13:37:33 adurant Exp $
+#pragma once
+
+#ifndef _PTSURF_H_
+#define _PTSURF_H_
+
+void pt_surfbuild_16_asm(void);
+void pt_surfbuild_8_asm (void);
+void pt_surfbuild_4_asm (void);
+void pt_surfbuild_2_asm (void);
+void pt_surfbuild_1_asm (void);
+
+void pt_surfbuild_setup_16_asm(void);
+void pt_surfbuild_setup_8_asm (void);
+void pt_surfbuild_setup_4_asm (void);
+void pt_surfbuild_setup_2_asm (void);
+void pt_surfbuild_setup_1_asm (void);
+
+#endif // _PTSURF_H_
+; $Header: r:/t2repos/thief2/src/portal/ptsurf16.asm,v 1.3 1998/08/24 13:22:09 KEVIN Exp $
+; 16 bit surface building
+
+.486
+        .nolist
+
+        include type.inc
+        include cseg.inc
+        include dseg.inc
+        include macros.inc
+        include thunks.inc
+
+        .list
+
+assume cs:_TEXT
+assume ds:_DATA
+_DATA   segment
+        extd    _grd_ltab816
+        extd    __portal_surface_texture
+        extd    __portal_surface_output
+        extd    __portal_surface_lightmap
+        extd    __portal_surface_texture_row
+        extd    __portal_surface_output_row
+        extd    __portal_surface_lightmap_row
+
+src_row         dd 0
+dst_row         dd 0
+i_left          dd 0
+i_right         dd 0
+di_left         dd 0
+di_right        dd 0
+count           dd 0
+
+last_block1_ltab        dd 0deadbeefh
+last_block2_ltab        dd 0deadbeefh
+last_block4_ltab        dd 0deadbeefh
+last_block8_ltab        dd 0deadbeefh
+last_block16_ltab       dd 0deadbeefh
+_DATA   ends
+
+_TEXT   segment
+_FUNCDEF_ASM pt16_surfbuild_1
+        push    edi
+        mov     edi, __portal_surface_lightmap
+
+        push    eax
+        xor     eax, eax
+
+        mov     al, [edi]
+        mov     edi, __portal_surface_texture
+
+        push    edx
+        xor     edx, edx
+
+        shl     eax, 5
+        mov     dl, [edi]
+
+        and     eax, 01fe00h
+        mov     edi, __portal_surface_output
+
+        mov     dx, 0deadbeefh[eax + 2*edx]
+block1_ltab:
+
+        mov     [edi], dx
+
+        pop     edx
+        pop     eax
+        pop     edi
+        ret
+
+_FUNCDEF_ASM pt16_surfbuild_setup_1
+        push    eax
+        push    edx
+
+        mov     eax, _grd_ltab816
+        mov     edx, last_block1_ltab
+
+        cmp     eax, edx
+        jz      skip_setup_1
+
+        mov     d ds:[block1_ltab-4], eax
+        mov     last_block1_ltab, eax
+skip_setup_1:
+        pop     edx
+        pop     eax
+        ret
+
+
+
+
+common_setup:
+        mov     eax, __portal_surface_texture_row
+        mov     edx, __portal_surface_output_row
+
+        mov     src_row, eax
+        mov     dst_row, edx
+
+        mov     esi, __portal_surface_lightmap
+        mov     edi, __portal_surface_lightmap_row
+
+        xor     eax, eax
+        xor     ebx, ebx
+
+        xor     ecx, ecx
+        xor     edx, edx
+
+        mov     al, [esi]
+        mov     bl, [esi+1]
+
+        mov     cl, [esi+edi]
+        mov     dl, [esi+edi+1]
+
+        mov     esi, __portal_surface_texture
+        mov     edi, __portal_surface_output
+
+        ret
+
+_FUNCDEF_ASM pt16_surfbuild_2
+        push    esi
+        push    edi
+
+        push    eax
+        push    ebx
+
+        push    ecx
+        push    edx
+
+        call    common_setup
+
+        add     ecx, eax
+        add     edx, ebx
+
+        add     ebx, eax
+
+        shl     eax, 5
+
+        shl     ebx, 4
+        add     edx, ecx
+
+        push    edx
+        xor     edx, edx
+
+        mov     dl, [esi]
+        and     eax, 01fe00h
+
+        shl     ecx, 4
+        and     ebx, 01fe00h
+
+        mov     ax, 0deadbeefh[eax + 2*edx]
+block2_ltab0:
+
+        mov     [edi], ax
+
+        xor     edx, edx
+        xor     eax, eax
+
+        mov     dl, [esi+1]
+        and     ecx, 01fe00h
+
+        mov     bx, 0deadbeefh[ebx + 2*edx]
+block2_ltab1:
+
+        mov     [edi + 2], bx
+
+        add     esi, src_row
+        add     edi, dst_row
+
+        pop     edx
+        xor     ebx, ebx
+
+        shl     edx, 3
+        mov     al, [esi]
+
+        and     edx, 01fe00h
+        mov     bl, [esi+1]
+
+        mov     ax, 0deadbeefh[ecx + 2*eax]
+block2_ltab2:
+
+        mov     [edi], ax
+
+        mov     cx, 0deadbeefh[edx + 2*ebx]
+block2_ltab3:
+
+        mov     [edi+2], cx
+
+        pop     edx
+        pop     ecx
+
+        pop     ebx
+        pop     eax
+
+        pop     edi
+        pop     esi
+
+        ret
+
+_FUNCDEF_ASM pt16_surfbuild_setup_2
+        push    eax
+        push    edx
+
+        mov     eax, _grd_ltab816
+        mov     edx, last_block2_ltab
+
+        cmp     eax, edx
+        jnz     do_setup_2
+
+        pop     edx
+        pop     eax
+        ret
+
+do_setup_2:
+        mov     d ds:[block2_ltab0-4], eax
+        mov     d ds:[block2_ltab1-4], eax
+        mov     d ds:[block2_ltab2-4], eax
+        mov     d ds:[block2_ltab3-4], eax
+        mov     last_block2_ltab, eax
+        pop     edx
+        pop     eax
+        ret
+
+
+
+
+
+_FUNCDEF_ASM pt16_surfbuild_4
+        push    ebp
+        push    esi
+
+        push    eax
+        push    ebx
+
+        push    ecx
+        push    edx
+
+        push    edi
+
+        call    common_setup
+
+        sub     ecx, eax
+        mov     ebp, eax
+
+        shl     ecx, 3
+        sub     edx, ebx
+
+        shl     edx, 3
+        mov     di_left, ecx
+
+        shl     ebp, 5
+        mov     di_right, edx
+
+        shl     ebx, 5
+        mov     eax, 4
+
+; eax = count
+; ebp = i_left
+; ebx = i_right
+; edi = dest
+; esi = src
+
+block4_loop:
+        mov     i_left, ebp
+        mov     i_right, ebx
+
+        sub     ebx, ebp
+        xor     edx, edx
+
+        sar     ebx, 2
+        mov     count, eax
+
+        cmp     ebx, 080000000h
+        sbb     ecx, ecx
+
+        add     ebx, ecx
+        mov     eax, ebp
+
+        inc     ebx
+        mov     dl,[esi]
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     ecx, ebp
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block4_ltab0:
+
+        mov     [edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 1[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block4_ltab1:
+
+        mov     2[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 2[esi]
+        and     ecx, 01fe00h
+
+        mov     ebp, i_left
+        mov     ebx, i_right
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block4_ltab2:
+
+        mov     4[edi], dx
+
+        xor     edx, edx
+        mov     eax, count
+
+        mov     dl, 3[esi]
+        nop
+
+        add     ebp, di_left
+        add     ebx, di_right
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block4_ltab3:
+
+        mov     6[edi], dx
+
+        add     esi, src_row
+        add     edi, dst_row
+
+        dec     eax
+        jnz     block4_loop
+
+        pop     edi
+
+        pop     edx
+        pop     ecx
+
+        pop     ebx
+        pop     eax
+
+        pop     esi
+        pop     ebp
+
+_FUNCDEF_ASM pt16_surfbuild_setup_4
+        push    eax
+        push    edx
+
+        mov     eax, _grd_ltab816
+        mov     edx, last_block4_ltab
+
+        cmp     eax, edx
+        jnz     do_setup_4
+
+        pop     edx
+        pop     eax
+        ret
+
+do_setup_4:
+        mov     d ds:[block4_ltab0-4], eax
+        mov     d ds:[block4_ltab1-4], eax
+        mov     d ds:[block4_ltab2-4], eax
+        mov     d ds:[block4_ltab3-4], eax
+        mov     last_block4_ltab, eax
+        pop     edx
+        pop     eax
+        ret
+
+_FUNCDEF_ASM pt16_surfbuild_8
+        push    ebp
+        push    esi
+
+        push    eax
+        push    ebx
+
+        push    ecx
+        push    edx
+
+        push    edi
+
+        call    common_setup
+
+        sub     ecx, eax
+        mov     ebp, eax
+
+        shl     ecx, 2
+        sub     edx, ebx
+
+        shl     edx, 2
+        mov     di_left, ecx
+
+        shl     ebp, 5
+        mov     di_right, edx
+
+        shl     ebx, 5
+        mov     eax, 8
+
+; eax = count
+; ebp = i_left
+; ebx = i_right
+; edi = dest
+; esi = src
+
+block8_loop:
+        mov     i_left, ebp
+        mov     i_right, ebx
+
+        sub     ebx, ebp
+        xor     edx, edx
+
+        sar     ebx, 3
+        mov     count, eax
+
+        cmp     ebx, 080000000h
+        sbb     ecx, ecx
+
+        add     ebx, ecx
+        mov     eax, ebp
+
+        inc     ebx
+        mov     dl,[esi]
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     ecx, ebp
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block8_ltab0:
+
+        mov     [edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 1[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block8_ltab1:
+
+        mov     2[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 2[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block8_ltab2:
+
+        mov     4[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 3[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block8_ltab3:
+
+        mov     6[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 4[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block8_ltab4:
+
+        mov     8[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 5[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block8_ltab5:
+
+        mov     10[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 6[esi]
+        and     ecx, 01fe00h
+
+        mov     ebp, i_left
+        mov     ebx, i_right
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block8_ltab6:
+
+        mov     12[edi], dx
+
+        xor     edx, edx
+        mov     eax, count
+
+        mov     dl, 7[esi]
+        nop
+
+        add     ebp, di_left
+        add     ebx, di_right
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block8_ltab7:
+
+        mov     14[edi], dx
+
+        add     esi, src_row
+        add     edi, dst_row
+
+        dec     eax
+        jnz     block8_loop
+
+        pop     edi
+
+        pop     edx
+        pop     ecx
+
+        pop     ebx
+        pop     eax
+
+        pop     esi
+        pop     ebp
+
+_FUNCDEF_ASM pt16_surfbuild_setup_8
+        push    eax
+        push    edx
+
+        mov     eax, _grd_ltab816
+        mov     edx, last_block8_ltab
+
+        cmp     eax, edx
+        jnz     do_setup_8
+
+        pop     edx
+        pop     eax
+        ret
+
+do_setup_8:
+        mov     d ds:[block8_ltab0-4], eax
+        mov     d ds:[block8_ltab1-4], eax
+        mov     d ds:[block8_ltab2-4], eax
+        mov     d ds:[block8_ltab3-4], eax
+        mov     d ds:[block8_ltab4-4], eax
+        mov     d ds:[block8_ltab5-4], eax
+        mov     d ds:[block8_ltab6-4], eax
+        mov     d ds:[block8_ltab7-4], eax
+        mov     last_block8_ltab, eax
+        pop     edx
+        pop     eax
+        ret
+
+_FUNCDEF_ASM pt16_surfbuild_16
+        push    ebp
+        push    esi
+
+        push    eax
+        push    ebx
+
+        push    ecx
+        push    edx
+
+        push    edi
+
+        call    common_setup
+
+        sub     ecx, eax
+        mov     ebp, eax
+
+        shl     ecx, 1
+        sub     edx, ebx
+
+        shl     edx, 1
+        mov     di_left, ecx
+
+        shl     ebp, 5
+        mov     di_right, edx
+
+        shl     ebx, 5
+        mov     eax, 16
+
+; eax = count
+; ebp = i_left
+; ebx = i_right
+; edi = dest
+; esi = src
+
+block16_loop:
+        mov     i_left, ebp
+        mov     i_right, ebx
+
+        sub     ebx, ebp
+        xor     edx, edx
+
+        sar     ebx, 4
+        mov     count, eax
+
+        cmp     ebx, 080000000h
+        sbb     ecx, ecx
+
+        add     ebx, ecx
+        mov     eax, ebp
+
+        inc     ebx
+        mov     dl,[esi]
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     ecx, ebp
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab0:
+
+        mov     [edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 1[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab1:
+
+        mov     2[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 2[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab2:
+
+        mov     4[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 3[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab3:
+
+        mov     6[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 4[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab4:
+
+        mov     8[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 5[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab5:
+
+        mov     10[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 6[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab6:
+
+        mov     12[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 7[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab7:
+
+        mov     14[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 8[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab8:
+
+        mov     16[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 9[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab9:
+
+        mov     18[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 10[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab10:
+
+        mov     20[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 11[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab11:
+
+        mov     22[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 12[esi]
+        add     ebp, ebx
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab12:
+
+        mov     24[edi], dx
+
+        xor     edx, edx
+        and     ecx, 01fe00h
+
+        mov     dl, 13[esi]
+        mov     eax, ebp
+
+        add     ebp, ebx
+        and     eax, 01fe00h
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab13:
+
+        mov     26[edi], dx
+
+        xor     edx, edx
+        mov     ecx, ebp
+
+        mov     dl, 14[esi]
+        and     ecx, 01fe00h
+
+        mov     ebp, i_left
+        mov     ebx, i_right
+
+        mov     dx, 0deadbeefh[eax+2*edx]
+block16_ltab14:
+
+        mov     28[edi], dx
+
+        xor     edx, edx
+        mov     eax, count
+
+        mov     dl, 15[esi]
+        nop
+
+        add     ebp, di_left
+        add     ebx, di_right
+
+        mov     dx, 0deadbeefh[ecx+2*edx]
+block16_ltab15:
+
+        mov     30[edi], dx
+
+        add     esi, src_row
+        add     edi, dst_row
+
+        dec     eax
+        jnz     block16_loop
+
+        pop     edi
+
+        pop     edx
+        pop     ecx
+
+        pop     ebx
+        pop     eax
+
+        pop     esi
+        pop     ebp
+
+_FUNCDEF_ASM pt16_surfbuild_setup_16
+        push    eax
+        push    edx
+
+        mov     eax, _grd_ltab816
+        mov     edx, last_block16_ltab
+
+        cmp     eax, edx
+        jnz     do_setup_16
+
+        pop     edx
+        pop     eax
+        ret
+
+do_setup_16:
+        mov     d ds:[block16_ltab0-4], eax
+        mov     d ds:[block16_ltab1-4], eax
+        mov     d ds:[block16_ltab2-4], eax
+        mov     d ds:[block16_ltab3-4], eax
+        mov     d ds:[block16_ltab4-4], eax
+        mov     d ds:[block16_ltab5-4], eax
+        mov     d ds:[block16_ltab6-4], eax
+        mov     d ds:[block16_ltab7-4], eax
+        mov     d ds:[block16_ltab8-4], eax
+        mov     d ds:[block16_ltab9-4], eax
+        mov     d ds:[block16_ltab10-4], eax
+        mov     d ds:[block16_ltab11-4], eax
+        mov     d ds:[block16_ltab12-4], eax
+        mov     d ds:[block16_ltab13-4], eax
+        mov     d ds:[block16_ltab14-4], eax
+        mov     d ds:[block16_ltab15-4], eax
+        mov     last_block16_ltab, eax
+        pop     edx
+        pop     eax
+        ret
+
+_TEXT   ends
+
+END
+#pragma once
+#define ALIGN_SCALE    (64.0*256)
+// $Header: r:/t2repos/thief2/src/portal/pt_asm.h,v 1.7 2000/01/29 13:37:36 adurant Exp $
+#pragma once
+
+// accessing functions for all of the assembly stuff, private
+
+// basically we never call these directly, we just stuff
+// "function pointers" to them which are only called from
+// assembly in the first place.
+
+// however, the "setup" functions ARE called from C
+
+
+  // n-pixel mappers
+extern void pt_unlit_n_asm(void);
+extern void pt_pallit_n_asm(void);
+extern void pt_palflat_n_asm(void);
+extern void pt_lit_n_asm(void);
+extern void pt_dest_pallit_n_asm(void);
+extern void pt_unlit_arb_n_asm(void);
+extern void pt_unlit_256_n_asm(void);
+
+  // n-pixel filters
+extern void pt_clut_n_asm(void);
+extern void pt_transp_n_asm(void);
+extern void pt_tluc_n_asm(void);
+
+  // n-pixel self-modify setup
+extern void pt_unlit_n_setup(void);
+extern void pt_pallit_n_setup(void);
+extern void pt_palflat_n_setup(void);
+extern void pt_lit_n_setup(void);
+extern void pt_dest_pallit_n_setup(void);
+extern void pt_unlit_256_n_setup(void);
+
+  // 8-pixel mappers
+extern void pt_unlit_8_asm(void);
+extern void pt_palflat_8_asm(void);
+extern void pt_palflat_direct_8_asm(void);
+extern void pt_lit_8_asm(void);
+extern void pt_dest_pallit_8_asm(void);
+extern void pt_unlit_arb_8_asm(void);
+
+  // 8-pixel filters
+extern void pt_pallit_8_asm(void);
+extern void pt_pallit_store_8_asm(void);
+extern void pt_clut_8_asm(void);
+extern void pt_pallit_clut_store_8_asm(void);
+extern void pt_transp_8_asm(void);
+extern void pt_tluc_8_asm(void);
+
+  // 8-pixel wrappers
+extern void pt_generic_8_asm(void);
+extern void pt_generic_preload_8_asm(void);
+
+   // 8-pixel self-modify setup
+extern void pt_unlit_8_setup(void);
+extern void pt_pallit_8_setup(void);
+extern void pt_palflat_8_setup(void);
+extern void pt_lit_8_setup(void);
+
+   // arbitrary length perspective runs
+extern void pt_lit_perspective_run_asm(void);
+extern void pt_unlit_perspective_run_asm(void);
+
+   // 8*n pixel perspective core
+extern void pt_lit_perspective_core_asm(void);
+extern void pt_pallit_perspective_core_asm(void);
+extern void pt_unlit_perspective_core_asm(void);
+extern void pt_unlit_perspective_unrolled_asm(void);
+
+// $Header: r:/t2repos/thief2/src/portal/pt_clut.c,v 1.4 2000/02/19 13:18:44 toml Exp $
+
+#include <lg.h>
+#include <port.h>
+#include <pt_clut.h>
+#include <string.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+  // pointer to user cluts
+uchar *pt_clut_list[256];
+
+  // number of cluts we keep cached
+#define CLUT_CACHE_SIZE    4
+
+  // length of clut chain we cache
+#define CLUT_CACHE_IDSIZE  8
+
+  // storage for the clut cache
+static uchar pt_clut_cache[CLUT_CACHE_SIZE][256];
+
+static uchar pt_clut_cache_idlist[CLUT_CACHE_SIZE][CLUT_CACHE_IDSIZE];
+static uchar pt_clut_cache_idlist_len[CLUT_CACHE_SIZE];
+
+  // compare a clut chain with an idlist, assuming first one already matched
+static bool compare_clut_chain(ClutChain *cc, int n)
+{
+   int i=0, len = pt_clut_cache_idlist_len[n];
+   while (i < len) {
+      if (cc->clut_id != pt_clut_cache_idlist[n][i])
+         return FALSE;
+      ++i;
+      if (cc->clut_id2) {
+         if (i >= len) return FALSE;
+
+         if (cc->clut_id2 != pt_clut_cache_idlist[n][i])
+            return FALSE;
+         ++i;
+      }
+      cc = cc->next;
+      if (!cc)
+         return i == n;
+   }
+   return FALSE;
+}
+
+uchar *pt_get_clut(ClutChain *cc)
+{
+   static int ref;
+   int i, c;
+
+     // check if it's just a single clut
+   if (!cc->next && !cc->clut_id2)
+      return pt_clut_list[cc->clut_id];
+
+     // check if we already have this one cached
+   c = cc->clut_id;
+   for (i=0; i < CLUT_CACHE_SIZE; ++i)
+      if (pt_clut_cache_idlist[i][0] == c && pt_clut_cache_idlist_len[i])
+         if (compare_clut_chain(cc, i))
+            return pt_clut_cache[i];
+
+     // cycle through to the next cache entry
+     //   note lack of LRUness... who cares,
+     //   this should be super rare if it every happens at all
+   if (++ref == CLUT_CACHE_SIZE) ref = 0;
+
+   {
+      uchar *dest = pt_clut_cache[ref];
+      uchar *s1 = pt_clut_list[cc->clut_id];
+      uchar *s2;
+      int j, n;
+
+      pt_clut_cache_idlist[ref][0] = cc->clut_id;
+
+      if (cc->clut_id2) {
+         s2 = pt_clut_list[cc->clut_id2];
+         pt_clut_cache_idlist[ref][1] = cc->clut_id2;
+         for (j=0; j < 256; ++j)
+            dest[j] = s2[s1[j]];
+         n = 2;
+      } else {
+         memcpy(dest, s1, 256);
+         n = 1;
+      }
+
+      while (cc->next) {
+         cc = cc->next;
+         if (n < CLUT_CACHE_IDSIZE)
+            pt_clut_cache_idlist[ref][n] = cc->clut_id;
+         ++n;
+
+         s2 = pt_clut_list[cc->clut_id];
+         for (j=0; j < 256; ++j)
+            dest[j] = s2[dest[j]];
+
+         if (cc->clut_id2) {
+            if (n < CLUT_CACHE_IDSIZE)
+               pt_clut_cache_idlist[ref][n] = cc->clut_id2;
+            ++n;
+
+            s2 = pt_clut_list[cc->clut_id2];
+            for (j=0; j < 256; ++j)
+               dest[j] = s2[dest[j]];
+         }
+      }
+
+      pt_clut_cache_idlist_len[ref] = (n <= CLUT_CACHE_IDSIZE ? n : 0);
+   }
+
+   return pt_clut_cache[ref];
+}
+// $Header: r:/t2repos/thief2/src/portal/pt_clut.h,v 1.3 2000/01/29 13:37:37 adurant Exp $
+#pragma once
+
+#ifndef __PT_CLUT_H
+#define __PT_CLUT_H
+
+typedef struct st_ClutChain
+{
+   struct st_ClutChain *next;
+   uchar clut_id, clut_id2;
+   uchar pad0,pad1;
+} ClutChain;
+
+uchar *pt_get_clut(ClutChain *cc);
+
+#endif
+/*
+ *   $Header: r:/t2repos/thief2/src/portal/pt_main.c,v 1.13 2000/02/19 13:18:46 toml Exp $
+ *
+ *  PORTAL texture mappers
+ *
+ *  Hooks and outer loops 
+ */
+
+#include <lg.h>
+#include <fix.h>
+
+#include <pt_asm.h>
+#include <ptmap.h>
+#include <pt.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+fix last_u, last_v;
+uchar *pt_tmap_ptr;
+uchar *pt_clut, *pt_light_table, *pt_tluc_table;
+ulong pt_tmap_mask, pt_tmap_row;
+
+uchar pt_arb_size;
+
+int dither;
+int pt_preload;
+fix pt_light, pt_dlight, pt_toggle;
+uchar pt_buffer[16], pt_lit_buffer[16];
+fix pt_step_table[2];
+int pt_row_table[65];
+
+void (*pt_unlit_8_chain)(void);
+void (*pt_pallit_8_chain)(void);
+void (*pt_palflat_8_chain)(void);
+void (*pt_lit_8_chain)(void);
+void (*pt_clut_8_chain)(void);
+void (*pt_transp_8_chain)(void);
+void (*pt_tluc_8_chain)(void);
+void (*pt_generic_8_chain)(void);
+void (*pt_generic_8_2_chain)(void);
+
+void (*pt_clut_n_chain)(void);
+void (*pt_transp_n_chain)(void);
+void (*pt_tluc_n_chain)(void);
+
+void (*pt_func_8)(void);
+void (*pt_func_n)(void);
+void (*pt_func_8_flat)(void);
+void (*pt_func_n_flat)(void);
+void (*pt_func_perspective_core)(void);
+void (*pt_func_perspective_run)(void);
+
+void ptmap_unlit(grs_bitmap *bm)
+{
+   if (bm->row == 256) {
+      if (bm->w == 256 && bm->h == 256) {
+         pt_func_n = pt_unlit_256_n_asm;
+         pt_unlit_256_n_setup();
+         pt_func_perspective_core = pt_unlit_perspective_unrolled_asm;
+      } else {
+         pt_func_n = pt_unlit_n_asm;
+         pt_unlit_n_setup();
+         pt_func_perspective_core = pt_unlit_perspective_core_asm;
+      }
+      pt_func_8 = pt_unlit_8_asm;
+      pt_unlit_8_setup();
+      pt_arb_size = 0;
+   } else {
+      pt_func_n = pt_unlit_arb_n_asm;
+      pt_func_8 = pt_unlit_arb_8_asm;
+      pt_tmap_row = bm->row;
+      pt_arb_size = 1;
+      {
+         int i;
+         int row = bm->row, cur=-(row*16);
+         for (i=32-16; i <= 32+16; ++i, cur+=row) {
+            pt_row_table[i] = cur;
+         }
+      }
+      pt_func_perspective_core = pt_unlit_perspective_core_asm;
+   }
+
+   if (pt_clut) {
+      pt_clut_n_chain = pt_func_n;
+      pt_func_n = pt_clut_n_asm;
+      pt_unlit_8_chain = pt_clut_8_asm;
+      pt_clut_8_chain = pt_generic_8_asm;
+      pt_func_perspective_core = pt_unlit_perspective_core_asm;
+   } else
+      pt_unlit_8_chain = pt_preload?pt_generic_preload_8_asm:pt_generic_8_asm;
+
+   pt_func_perspective_run  = pt_unlit_perspective_run_asm;
+}
+
+void ptmap_pallit(void)
+{
+   pt_arb_size = 0;
+   if (!pt_clut)
+   {
+         pt_func_n = pt_pallit_n_asm;
+         pt_func_n_flat = pt_palflat_n_asm;
+
+         pt_func_8 = pt_unlit_8_asm;
+         pt_unlit_8_chain = pt_pallit_store_8_asm;
+
+         pt_func_8_flat = pt_palflat_8_asm;
+         pt_palflat_8_chain = pt_preload ? pt_generic_preload_8_asm : pt_generic_8_asm;
+
+         if (dither)
+            pt_func_perspective_core = pt_lit_perspective_core_asm;
+         else
+            pt_func_perspective_core = pt_pallit_perspective_core_asm;
+         pt_func_perspective_run = pt_lit_perspective_run_asm;
+   }
+   else
+   {
+      pt_func_n = pt_clut_n_asm;
+      pt_clut_n_chain = pt_pallit_n_asm;
+
+      pt_func_8 = pt_unlit_8_asm;
+#if 0
+      pt_unlit_8_chain = pt_pallit_8_asm;
+      pt_pallit_8_chain = pt_clut_8_asm;
+      pt_clut_8_chain = pt_generic_8_asm;
+#else
+      pt_unlit_8_chain = pt_pallit_clut_store_8_asm;
+#endif
+
+      pt_func_perspective_core = pt_lit_perspective_core_asm;
+      pt_func_perspective_run = pt_lit_perspective_run_asm;
+   }
+
+   pt_pallit_n_setup();
+   pt_palflat_n_setup();
+
+   pt_unlit_8_setup();
+   pt_palflat_8_setup();
+}
+
+void ptmap_lit(void)
+{
+   pt_arb_size = 0;
+
+   pt_func_n = pt_lit_n_asm;
+
+   pt_func_8 = pt_lit_8_asm;
+   pt_lit_8_chain = pt_preload ? pt_generic_preload_8_asm : pt_generic_8_asm;
+
+   pt_lit_n_setup();
+   pt_lit_8_setup();
+
+   pt_func_perspective_run = pt_lit_perspective_run_asm;
+   pt_func_perspective_core = pt_lit_perspective_core_asm;
+}
+
+void ptmap_tluc8(void)
+{
+   pt_arb_size = 0;
+
+   pt_func_n = pt_tluc_n_asm;
+   pt_tluc_n_chain = pt_unlit_n_asm;
+
+   pt_func_8 = pt_unlit_8_asm;
+   pt_unlit_8_chain = pt_tluc_8_asm;
+
+   pt_unlit_8_setup();
+   pt_unlit_n_setup();
+
+   pt_func_perspective_run = pt_unlit_perspective_run_asm;
+   pt_func_perspective_core = pt_unlit_perspective_core_asm;
+}
+
+void ptmap_transp(void)
+{
+   bool clut = FALSE;
+
+   pt_arb_size = 0;
+
+   pt_func_n = pt_transp_n_asm;
+   pt_transp_n_chain = clut ? pt_clut_n_asm : pt_unlit_n_asm;
+   pt_clut_n_chain = pt_unlit_n_asm;
+ 
+   pt_func_8 = pt_unlit_8_asm;
+   if (clut) {
+      pt_unlit_8_chain = pt_clut_8_asm;
+      pt_clut_8_chain = pt_transp_8_asm;
+   } else {
+      pt_unlit_8_chain = pt_transp_8_asm;
+   }
+
+   pt_unlit_8_setup();
+   pt_unlit_n_setup();
+
+   pt_func_perspective_run = pt_unlit_perspective_run_asm;
+   pt_func_perspective_core = pt_unlit_perspective_core_asm;
+}
+
+void ptmap_pallit_tluc8(void)
+{
+   pt_arb_size = 0;
+
+   pt_func_n = pt_tluc_n_asm;
+   pt_tluc_n_chain = pt_pallit_n_asm;
+
+   pt_func_8 = pt_unlit_8_asm;
+   pt_unlit_8_chain = pt_pallit_8_asm;
+   pt_pallit_8_chain = pt_tluc_8_asm;
+
+   pt_unlit_8_setup();
+   pt_pallit_n_setup();
+
+   pt_func_perspective_run  = pt_unlit_perspective_run_asm;
+   pt_func_perspective_core = pt_unlit_perspective_core_asm;
+}
+
+extern bool poly_lit;
+void ptmap_setup(grs_bitmap *bm)
+{
+   if (grd_canvas->bm.type != BMT_FLAT8)
+      Error(1, "Tried to run portal texture mappers in non-flat 8 mode!\n");
+   if (bm->type == BMT_TLUC8)
+      ptmap_tluc8();
+   else if (bm->flags & BMF_TRANS)
+      ptmap_transp();
+   else if (poly_lit)
+      ptmap_lit();
+   else {
+      ptmap_unlit(bm);
+   }
+}
+
+// $Header: r:/t2repos/thief2/src/portal/pt_mem.c,v 1.13 2000/02/19 13:18:47 toml Exp $
+
+// texture map storage management
+
+#include <string.h>
+
+#include <lg.h>
+#include <dev2d.h>
+#include <stdlib.h>
+#include <r3d.h>
+
+#include <port.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+  // damn people who misspell things
+#define ASSERT(x) \
+     if (!(x)) Error(1, "Assertion failed: %s %d\n", __FILE__, __LINE__); else
+
+
+static uchar temp[64][256];
+static uchar temp2[64][256];
+static grs_bitmap dummy[8];
+
+#pragma off(unreferenced)
+grs_bitmap *make_texture_map(int i)
+{
+   static int init = TRUE;
+   if (init) {
+      int x,y;
+      for (x=0; x < 64; ++x)
+         for (y=0; y < 64; ++y)
+            temp[x][y] = ((x^y) << 3) + ((rand() >> 2) % 3);
+      for (x=0; x < 64; ++x)
+         temp[x][0] = temp[x][1] = 0,
+         temp[0][x] = temp[1][x] = 8;
+      for (x=0; x < 64; ++x)
+         for (y=0; y < 64; ++y)
+            if ((x & 3) && (y & 3))
+               temp2[x][y] = 0;
+
+      for (x=0; x <= 6; ++x) {
+         dummy[x].bits = &temp[0][0];
+         dummy[x].row  = 256;
+         dummy[x].h    = 1 << (6-x);
+         dummy[x].w    = 1 << (6-x);
+         dummy[x].hlog = 6-x;
+         dummy[x].wlog = 8;
+         dummy[x].type = BMT_FLAT8;
+         dummy[x].flags = 0;
+      }
+      dummy[x].w = 0;
+
+      init = FALSE;
+   }
+
+   return dummy;
+}
+#pragma on(unreferenced)
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//  texture memory management
+//
+//    we create a bunch of "strips", which are some height and ROW wide.
+//    each strip is maintained as a little separate 1d malloc buffer, with
+//    merging on frees (this data must be maintained in a separate buffer).
+
+int   ptmem_row=256;
+uchar ptmem_wlog=8;
+
+#define ROW          ptmem_row      // must be a power of two
+#define MAX_HOLES    64             // 128 bytes overhead per strip
+
+typedef struct
+{
+   ushort x;     // x location of hole
+   ushort wid;   // width-1 of hole
+} Hole;
+
+typedef struct
+{
+   uchar *block;
+   Hole *holes;
+
+   uchar num_alloc;
+   uchar num_holes;
+   uchar pad0;
+   uchar pad1;
+
+   int ht;
+} Strip;
+
+static int num_rects=0;               // total number of memrects allocated
+int num_strips, max_strips;
+static Strip *strip_list;
+
+void portal_set_mem_rect_row(int row)
+{
+   int i;
+   if (row==ptmem_row)
+      return;
+
+   clear_surface_cache();
+   AssertMsg(num_rects==0,
+      "portal_set_mem_rect_row(): all rects must be freed before setting row.");
+   AssertMsg(((row-1) & row) == 0, 
+      "portal_set_mem_rect_row(): row must be a power of two.");
+   ptmem_row = row;
+   for (ptmem_wlog = 0, i=1; i<row; i+=i)
+      ptmem_wlog++;
+}
+   
+static void free_strip(Strip *s)
+{
+   Free(s->block);
+}
+
+void portal_free_all_mem_rects(void)
+{
+   int i;
+   for (i=0; i < num_strips; ++i)
+      free_strip(&strip_list[i]);
+   if (strip_list)
+   {
+      Free(strip_list);
+      strip_list=NULL;
+   }
+   num_strips=0;
+   max_strips=0;
+}
+
+static void init_strip(Strip *s, int ht)
+{
+   s->ht = ht;
+   s->block = Malloc(ht * ROW + MAX_HOLES * sizeof(Hole));
+   s->holes = (Hole *) (s->block + ht*ROW);  // relies on s->block is uchar
+   s->num_alloc = 0;
+   s->num_holes = 1;
+
+   s->holes[0].x = 0;
+   s->holes[0].wid = ROW-1;
+}
+
+static Strip *alloc_strip(int ht)
+{
+   int mem;
+   ++num_strips;
+   if (num_strips > max_strips) {
+      max_strips = num_strips;
+      mem = num_strips * sizeof(Strip);
+      if (strip_list)
+         strip_list = Realloc(strip_list, mem);
+      else
+         strip_list = Malloc(mem);
+   }
+   init_strip(&strip_list[num_strips-1], ht);
+   return &strip_list[num_strips-1];
+}
+
+static void delete_hole(Strip *s, int hole)
+{
+   memmove(&s->holes[hole], &s->holes[hole+1], sizeof(Hole) * (s->num_holes-1 - hole));
+   --s->num_holes;
+}
+
+static void insert_hole(Strip *s, int hole)
+{
+   ASSERT(s->num_holes < MAX_HOLES);
+   memmove(&s->holes[hole+1], &s->holes[hole], sizeof(Hole) * (s->num_holes - hole));
+   ++s->num_holes;
+}
+
+static uchar *allocate_rectangle(Strip *s, int hole, int w)
+{
+   uchar *p = s->block + s->holes[hole].x;
+
+   if (s->holes[hole].wid == w-1) {
+      delete_hole(s, hole);
+   } else {
+      s->holes[hole].wid -= w;
+      s->holes[hole].x += w;
+   }
+
+   s->num_alloc += 1;
+
+   return p;
+}
+
+static uchar *alloc_rectangle_from_strip(Strip *s, int w)
+{
+   int i;
+
+   // make sure there's room to allocate more... due to merging,
+   //   at most every other alloced block can be turned into a hole
+   if (s->num_alloc/2 + s->num_holes >= MAX_HOLES) 
+      return 0;
+
+   for (i=0; i < s->num_holes; ++i)
+      if (s->holes[i].wid >= w-1)
+         return allocate_rectangle(s, i, w);
+
+   return 0;
+}
+
+static void free_rectangle_from_strip(Strip *s, int x, int w)
+{
+   bool before,after;
+   int i;
+
+   // search for the first free node after this
+   for (i=0; i < s->num_holes; ++i)
+      if (s->holes[i].x > x)
+         break;
+
+   s->num_alloc -= 1;
+
+   // hole # s->num_holes should come immediately after this hole
+   // first check if we attach to either adjacent hole
+
+   before = (i-1 >= 0) && (s->holes[i-1].x + s->holes[i-1].wid+1 == x);
+   after = (i < s->num_holes) && (x+w == s->holes[i].x);
+
+   if (before && after) {
+      s->holes[i-1].wid += w + s->holes[i].wid+1;
+      delete_hole(s, i);
+   } else if (before) {
+      s->holes[i-1].wid += w;
+   } else if (after) {
+      s->holes[i].x -= w;
+   } else {
+      insert_hole(s, i);
+      s->holes[i].x = x;
+      s->holes[i].wid = w-1;
+   }
+}
+
+uchar *portal_allocate_mem_rect(int x, int y)
+{
+   Strip *s;
+   uchar *p;
+   int i;
+
+   ASSERT(x <= ROW && y <= ROW+4);
+
+   num_rects++;
+
+   if (x == ROW)
+      return Malloc(x * y);
+
+   s = strip_list;
+
+   for (i=0; i < num_strips; ++i, ++s) {
+      if (s->ht == y) {
+         p = alloc_rectangle_from_strip(s, x);
+         if (p) return p;
+      }
+   }
+
+   p = alloc_rectangle_from_strip(alloc_strip(y), x);
+   ASSERT(p);
+
+   return p;
+}
+
+#ifndef DBG_ON
+#pragma off(unreferenced)
+#endif
+void portal_free_mem_rect(uchar *p, int x, int y)
+{
+   Strip *s;
+   int i;
+
+   num_rects--;
+
+   if (x == ROW) {
+      Free(p);
+      return;
+   }
+
+   s = strip_list;
+   for (i=0; i < num_strips; ++i, ++s) {
+      if (s->block <= p && p < s->block+ROW) {
+         ASSERT(s->ht == y);
+         free_rectangle_from_strip(s, p - s->block, x);
+
+         // free this strip if it's empty
+         if (s->num_alloc == 0) {
+            free_strip(s);
+            *s = strip_list[--num_strips];
+         }
+
+         return;
+      }
+   }
+
+#ifdef DBG_ON
+   Error(1, "portal_free_rectangle: rectangle not found\n");
+#endif
+}
+#ifndef DBG_ON
+#pragma on(unreferenced)
+#endif
+// $Header: r:/t2repos/thief2/src/portal/recip.h,v 1.2 2000/01/29 13:37:38 adurant Exp $
+#pragma once
+extern fix reciprocal_table_24[];
+//  $Header: r:/t2repos/thief2/src/portal/surfaces.c,v 1.15 2000/02/19 13:18:51 toml Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+
+#include <lg.h>
+#include <r3d.h>
+#include <mprintf.h>
+
+#include <portal_.h>
+#include <portclip.h>
+#include <pt.h>
+#include <pt_clut.h>
+#include <wrdbrend.h>
+
+#include <profile.h>
+#include <oracle.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#ifdef DBG_ON
+  #define STATIC
+#else
+  #define STATIC static
+#endif
+
+
+#define STATS_ON
+
+#ifdef DBG_ON
+  #ifndef STATS_ON
+  #define STATS_ON
+  #endif
+#endif
+
+#define LM_STEP   16
+
+float matrix_norm(mxs_vector *a, mxs_vector *b, mxs_vector *c)
+{
+   return
+      a->x * (b->y * c->z - b->z * c->y)
+    + a->y * (b->z * c->x - b->x * c->z)
+    + a->z * (b->x * c->y - b->y * c->x);
+}
+
+// given the u,v info in r, and the vertex in p, compute the (u,v) coordinates of the corner
+static void compute_uv(float *u, float *v, PortalPolygonRenderInfo *r, mxs_vector *norm, Vertex *p, Vertex *base)
+{
+   // r->tex_u, r->tex_v are the vectors
+   //   the formulas are
+   // base + (u - u_base) * U + (v - v_base) * V = p
+
+   //  u*u->x + v*v->x + d*N->x = p->x - base->x + u_base*U->x + v_base*V->x 
+   //  u*u->y + v*v->y + d*N->y = p->y - base->y + u_base*U->y + v_base*V->y 
+   //  u*u->z + v*v->z + d*N->z = p->z - base->z + u_base*U->z + v_base*V->z 
+
+   mxs_vector right;
+   float denom;
+
+   mx_scale_add_vec(&right, p, &r->tex_u, r->u_base / (16*256.0));
+   mx_scale_addeq_vec(&right, &r->tex_v, r->v_base / (16*256.0));
+   mx_subeq_vec(&right, base);
+
+   // ok, so, now we just want to use cramers rule
+   denom = matrix_norm(&r->tex_u, &r->tex_v, norm);
+   *u = matrix_norm(&right, &r->tex_v, norm) / denom;
+   *v = matrix_norm(&r->tex_u, &right, norm) / denom;
+}
+
+float uv_results[32][2];
+static void compute_uv_light(float *u, float *v, PortalCell *p,
+         int s, int i, int vc)
+{
+   compute_uv(u, v, &p->render_list[s],
+      &p->plane_list[p->poly_list[s].planeid].normal,
+      &p->vpool[p->vertex_list[vc+i]], &p->vpool[p->vertex_list[vc]]);
+
+   *u -= p->light_list[s].base_u / 4.0;
+   *v -= p->light_list[s].base_v / 4.0;
+}
+
+void compute_uv_light_data(PortalCell *p, int s, int vc)
+{
+   int i, n = p->poly_list[s].num_vertices;
+
+   for (i=0; i < n; ++i)
+       compute_uv_light(&uv_results[i][0], &uv_results[i][1], p, s, i, vc);
+}
+
+#ifdef EDITOR
+EXTERN BOOL no_lightmap_assert;
+#endif
+
+void wr_alloc_light_map(PortalCell *p, int s, int vc)
+{
+   // compute (u,v) extents of this surface
+   int n = p->poly_list[s].num_vertices,i;
+   float um[2],vm[2],u,v;
+
+   for (i=0; i < n; ++i) {
+      compute_uv(&u, &v, &p->render_list[s], &p->plane_list[p->poly_list[s].planeid].normal,
+            &p->vpool[p->vertex_list[vc+i]], &p->vpool[p->vertex_list[vc]]);
+                          // TODO: texture_anchor
+      if (i == 0) {
+         um[0] = um[1] = u;
+         vm[0] = vm[1] = v;
+      } else {
+         if (u < um[0]) um[0] = u; else if (u > um[1]) um[1] = u;
+         if (v < vm[0]) vm[0] = v; else if (v > vm[1]) vm[1] = v;
+      }
+   }
+
+   // now these are in individual tmap extents.  so scale by the default tmap scale, divided by light map extent
+
+   um[0] *= 64 / LM_STEP;
+   um[1] *= 64 / LM_STEP;
+   vm[0] *= 64 / LM_STEP;
+   vm[1] *= 64 / LM_STEP;
+
+   p->light_list[s].base_u = floor(um[0]+0.0001);
+   p->light_list[s].base_v = floor(vm[0]+0.0001);
+
+   p->light_list[s].w = ceil(um[1]-0.0001) - floor(um[0]+0.0001) + 1;
+   p->light_list[s].h = ceil(vm[1]-0.0001) - floor(vm[0]+0.0001) + 1;
+
+   if (p->light_list[s].w <= 0 || p->light_list[s].h <= 0) {
+#ifdef EDITOR
+      mprintf("0-sized lightmap: %g %g to %g %g\n", um[0],um[1], vm[0],vm[1]);
+#endif
+      if (p->light_list[s].w <= 0) p->light_list[s].w = 1;
+      if (p->light_list[s].h <= 0) p->light_list[s].h = 1;
+   }
+
+#ifdef EDITOR
+#ifndef BIG_LIGHTMAPS
+   if (!no_lightmap_assert)
+      AssertMsg6( p->light_list[s].w<=17 && p->light_list[s].h<=17,
+         "Yo, homefry.  w %d h %d from %g %g %g %g\n",
+         (int)p->light_list[s].w, (int)p->light_list[s].h,
+         um[0],um[1],vm[0],vm[1]);
+#endif
+#endif
+
+   p->light_list[s].pixel_row = p->light_list[s].w;
+   n = p->light_list[s].w * p->light_list[s].h * sizeof(LightmapEntry);
+   if (p->light_list[s].data != 0)
+      Free(p->light_list[s].data);
+   p->light_list[s].data = Malloc(n);
+   p->light_list[s].dynamic_light = 0;
+   //p->light_list[s].decal = 0;
+
+   if (p->light_list[s].data)
+      memset(p->light_list[s].data, 128, n);
+}
+
+// $Header: r:/t2repos/thief2/src/portal/ptdrawhw.c,v 1.17 2000/02/19 13:18:43 toml Exp $
+
+#include <math.h>
+
+#include <g2pt.h>
+#include <r3d.h>
+#include <lgd3d.h>
+#include <matrix.h>
+#include <memall.h>
+#include <tmpalloc.h>
+
+#include <palmgr.h>
+#include <portwatr.h>
+#include <portal_.h>
+#include <portclip.h>
+#include <porthw.h>
+#include <portsky.h>
+#include <wrdbrend.h>
+
+#include <profile.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#define STATS_ON
+
+#ifdef STATS_ON
+  #define STAT(x)     x
+#else
+  #define STAT(x)
+#endif
+
+#define COLOR_WHITE 0x1ffffff
+
+#define MAX_VERT 32
+
+#ifdef STATS_ON
+extern int stat_num_poly_drawn;
+extern int stat_num_poly_raw;
+extern int stat_num_poly_considered;
+extern int stat_num_backface_tests;
+#endif
+
+int portal_sky_spans = 0;
+
+int portal_hack_blend = BLEND_SRC_DEST;
+
+BOOL pt_lightmap_first = FALSE;
+
+mxs_real two_to_n_minus_fifteen[31] =
+{
+   1.0/32768.0,
+   1.0/16384.0,
+   1.0/8192.0,
+   1.0/4096.0,
+   1.0/2048.0,
+   1.0/1024.0,
+   1.0/512.0,
+   1.0/256.0,
+   1.0/128.0,
+   0.015625,
+   0.03125,
+   0.0625,
+   0.125,
+   0.25,
+   0.5,
+   1.0,
+   2.0,
+   4.0,
+   8.0,
+   16.0,
+   32.0,
+   64.0,
+   128.0,
+   256.0,
+   512.0,
+   1024.0,
+   2048.0,
+   4096.0,
+   8192.0,
+   16384.0,
+   32768.0,
+};
+
+#ifdef DBG
+static mxs_real two_to_n(int n)
+{
+   AssertMsg1((n>=-12) && (n<=12), "two_to_n(): %i is out of range [-12 to 12]", n);
+   return two_to_n_minus_fifteen[n+15];
+}
+#else
+#define two_to_n(n) (two_to_n_minus_fifteen[(n)+15])
+#endif
+
+extern BOOL g_zbuffer;
+extern int max_draw_polys;
+extern bool show_lightmap;
+extern bool portal_clip_poly;
+extern int portal_clip_num;
+extern PortalCell *cur_cell;
+
+extern int portbg_clip_sky(int, r3s_phandle *, r3s_phandle **);
+extern void draw_polygon_wireframe(r3s_phandle *points, int num_points, uint color);
+extern void draw_polygon_vertices(r3s_phandle *points, int num_points, uint color);
+extern void draw_background_hack();
+extern int compute_mip(PortalPolygonRenderInfo *render, PortalPlane *p);
+extern bool poly_outline_by_flags(PortalPolygonCore *poly, r3s_phandle *points,
+                           int MIP_level);
+extern mxs_vector *get_cached_vector(mxs_vector *where, mxs_vector *v);
+
+typedef struct scale_info {
+   double u0, v0, scale_u, scale_v;
+} scale_info;
+
+
+
+// this is to set up the sky hack under lgd3d
+int portal_sky_id=-1;
+static float portal_w_min;
+static float portal_z_max;
+void portal_setup_star_hack(int tex_id)
+{
+   portal_sky_id = tex_id;
+}
+
+void portal_set_znearfar(double z_near, double z_far)
+{
+   portal_w_min = 1.0/z_far;
+   portal_z_max = z_far;
+}
+
+
+
+static void ptlgd3d_calc_uv(int n, r3s_phandle *vlist, scale_info *info)
+{
+   int i;
+   for (i=0; i < n; ++i) {
+      double sx = vlist[i]->grp.sx / 65536.0;
+      double sy = vlist[i]->grp.sy / 65536.0;
+      double c = (g2pt_tmap_data[2] + g2pt_tmap_data[5]*sx + g2pt_tmap_data[8]*sy);
+      double ic = 1/c;
+
+      double u = g2pt_tmap_data[0]+g2pt_tmap_data[3]*sx + g2pt_tmap_data[6]*sy;
+      double v = g2pt_tmap_data[1]+g2pt_tmap_data[4]*sx + g2pt_tmap_data[7]*sy;
+      vlist[i]->grp.u = (u*ic/65536) * info->scale_u + info->u0;
+      vlist[i]->grp.v = (v*ic/65536) * info->scale_v + info->v0;
+      vlist[i]->grp.i = 1.0;
+      // if background hack, fixup w values to match texture not skypoly
+   }
+}
+
+static void ptlgd3d_recalc_uv_vlist(int n, r3s_phandle *vlist, scale_info *info)
+{
+   int i;
+   for (i=0; i < n; ++i) {
+      vlist[i]->grp.u += info->u0;
+      vlist[i]->grp.v += info->v0;
+      vlist[i]->grp.u *= info->scale_u;
+      vlist[i]->grp.v *= info->scale_v;
+   }
+}
+
+static void ptlgd3d_recalc_uv(int n, LGD3D_tex_coord *uvs, scale_info *info)
+{
+   int i;
+   for (i=0; i < n; ++i) {
+      uvs[i].u += info->u0;
+      uvs[i].v += info->v0;
+      uvs[i].u *= info->scale_u;
+      uvs[i].v *= info->scale_v;
+   }
+}
+
+typedef struct water_info {
+   ushort *pal;
+   r3s_texture tex;
+   uchar pal_index;
+   uchar pad;
+   short w;
+} water_info;
+
+
+static water_info *water_info_list=NULL;
+static int num_water_textures = 0;
+
+static void init_water_pal(water_info *info, ushort alpha, ushort argb, uchar *pal24)
+{
+   int i;
+   ushort *pal = info->pal;
+
+   if (pal == NULL) {
+      pal = (ushort *)Malloc(512);
+      info->pal = pal;
+   }
+
+   pal[0] = argb;
+   for (i=1; i<256; i++)
+      pal[i] = alpha + ((pal24[3*i]>>4)<<8) +
+                        ((pal24[3*i+1]>>4)<<4) +
+                        (pal24[3*i+2]>>4);
+}
+
+ushort pt_default_water_texture_flags = BMF_TRANS;
+
+/////////////////////////////////////////////////////////////////////////////
+// Setup water hack. Must be called before water can be rendered in hardware.
+// num_textures = number of water textures;
+// tex_list = pointer to array of pointers to water textures;
+// alpha_list = pointer to array of alpha values for each texture
+// rgb_list = pointer to array of rgb values for each texture
+//
+// Before any water texture can be released, portal_cleanup_water_hack() must be called.
+// Any call to portal_setup_water_hack() effectively calls portal_cleanup_water_hack() first.
+
+EXTERN BOOL g_lgd3d;
+
+void portal_setup_water_hack(int num_textures, r3s_texture *tex_list, float *alpha_list, int *rgb_list)
+{
+   int i;
+
+   if (water_info_list != NULL) {
+      for (i=0; i<num_water_textures; i++) {
+         water_info *info = &water_info_list[i];
+         r3s_texture tex = info->tex;
+         if (info->pal != NULL)
+         {
+            Free(info->pal);
+            info->pal = NULL;
+         }
+         if (tex != NULL)
+         {
+            AssertMsg(tex->w == info->w,
+               "Water info out of synch!\n Probable cause: freed water texture in water info list.");
+            while (tex->w > 0) {
+               tex->align = info->pal_index;
+               tex++;
+            }
+         }
+      }
+      Free(water_info_list);
+      water_info_list = NULL;
+   }
+
+   num_water_textures = num_textures;
+
+   if ((num_water_textures <= 0)||(!g_lgd3d))
+      return;
+
+   water_info_list = Calloc(num_water_textures * sizeof(*water_info_list));
+
+   for (i = 0; i<num_water_textures; i++) {
+      r3s_texture tex;
+      short alpha;
+      short argb;
+      ushort flags;
+      uchar *pal24;
+      water_info *info=&water_info_list[i];
+
+      if (tex_list != NULL) {
+         tex = tex_list[i];
+         info->tex = tex;
+         info->pal_index = tex->align;
+         info->w = tex->w;
+         pal24 = palmgr_get_pal(tex->align);
+         flags = tex->flags;
+         while (tex->w > 0) {
+            tex->align = i;
+            tex++;
+         }
+      } else {
+         info->tex = NULL;
+         pal24 = grd_pal;
+         flags = pt_default_water_texture_flags;
+      }
+
+      alpha = 0xf * alpha_list[i];
+      alpha <<= 12;
+      if (flags & BMF_TRANS) {
+         argb = alpha + ((rgb_list[3*i]>>4)<<8) + ((rgb_list[3*i+1]>>4)<<4) + (rgb_list[3*i+2]>>4);
+         init_water_pal(info, (ushort )0xf000, argb, pal24);
+      } else {
+         argb = alpha + ((pal24[0]>>4)<<8) +
+                        ((pal24[1]>>4)<<4) +
+                        (pal24[2]>>4);
+         init_water_pal(info, alpha, argb, pal24);
+      }
+   }
+}
+
+void portal_cleanup_water_hack(void)
+{
+   portal_setup_water_hack(0, NULL, NULL, NULL);
+}
+
+// this is quite hateful.
+
+#define MAX_WATER_POINTS 1024
+#define MAX_WATER_POLYS 256
+static r3s_point water_points[MAX_WATER_POINTS];
+static int water_polys[MAX_WATER_POLYS];
+static r3s_texture water_textures[MAX_WATER_POLYS];
+static int num_water_points=0;
+float hw_water_tex_scale=1.0;
+
+int num_water_polys=0;
+
+void (*portal_queue_water_poly)() = NULL;
+
+static void queue_water_poly(r3s_texture tex, int n, r3s_phandle *vlist)
+{
+   int i;
+   r3s_point *dest;
+   float u_offset, v_offset;
+
+   if (num_water_polys >= MAX_WATER_POLYS) {
+      Warning(("Too many water polys! increase MAX_WATER_POLYS\n"));
+      return;
+   }
+   if (num_water_points + n > MAX_WATER_POINTS) {
+      Warning(("Too many water points! increase MAX_WATER_POINTS\n"));
+      return;
+   }
+
+   water_textures[num_water_polys] = tex;
+   water_polys[num_water_polys] = n;
+
+   dest = &water_points[num_water_points];
+
+   *dest = *(vlist[0]);
+   dest->grp.u *= hw_water_tex_scale;
+   dest->grp.v *= hw_water_tex_scale;
+
+   u_offset = floor(dest->grp.u);
+   v_offset = floor(dest->grp.v);
+
+   dest->grp.u -= u_offset;
+   dest->grp.v -= v_offset;
+
+   ++dest;
+   for (i=1; i<n; i++) {
+      *dest = *(vlist[i]);
+      dest->grp.u *= hw_water_tex_scale;
+      dest->grp.v *= hw_water_tex_scale;
+      dest->grp.u -= u_offset;
+      dest->grp.v -= v_offset;
+      ++dest;
+   }
+
+   num_water_points += n;
+   num_water_polys++;
+   if (portal_queue_water_poly != NULL)
+      portal_queue_water_poly();
+}
+
+static void render_water_poly(r3s_texture tex, int n, r3s_phandle *vlist)
+{
+   int i;
+   float u_offset, v_offset;
+
+   vlist[0]->grp.u *= hw_water_tex_scale;
+   vlist[0]->grp.v *= hw_water_tex_scale;
+
+   u_offset = floor(vlist[0]->grp.u);
+   v_offset = floor(vlist[0]->grp.v);
+
+   vlist[0]->grp.u -= u_offset;
+   vlist[0]->grp.v -= v_offset;
+
+   for (i=1; i<n; i++) {
+      r3s_phandle p = vlist[i];
+      p->grp.u *= hw_water_tex_scale;
+      p->grp.v *= hw_water_tex_scale;
+      p->grp.u -= u_offset;
+      p->grp.v -= v_offset;
+   }
+
+   gr_set_fill_type(FILL_BLEND);
+   lgd3d_set_blend(TRUE);
+
+   AssertMsg(water_info_list != NULL, "Must call portal_setup_water_hack() before rendering water in hardware!");
+
+   if (tex->align >= num_water_textures)
+      lgd3d_set_alpha_pal(water_info_list[0].pal);
+   else
+      lgd3d_set_alpha_pal(water_info_list[tex->align].pal);
+   r3_set_texture(tex);
+   r3_draw_poly(n, vlist);
+   lgd3d_set_blend(FALSE);
+   gr_set_fill_type(FILL_NORM);
+}
+
+void portal_render_water_polys(int n)
+{
+   static int start=0;
+   static r3s_point *next_poly = water_points;
+   int i, end;
+
+   end = start + n;
+
+   AssertMsg(water_info_list != NULL, "Must call portal_setup_water_hack() before rendering water in hardware!");
+   AssertMsg(end <= num_water_polys, "portal_render_water_polys(): too many polys requested!");
+
+   r3_start_block();
+   r3_set_clipmode(R3_CLIP);
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+   r3d_do_setup = TRUE;
+
+   gr_set_fill_type(FILL_BLEND);
+
+   for (i=start; i < end; i++) {
+      int j, n = water_polys[i];
+      r3s_texture tex = water_textures[i];
+      r3s_phandle *vlist = (r3s_phandle *)temp_malloc(n * sizeof(r3s_phandle));
+
+      for (j=0; j<n; j++)
+         vlist[j] = &next_poly[j];
+      next_poly += n;
+
+      if (tex->align >= num_water_textures)
+         lgd3d_set_alpha_pal(water_info_list[0].pal);
+      else
+         lgd3d_set_alpha_pal(water_info_list[tex->align].pal);
+
+      r3_set_texture(tex);
+      r3_draw_poly(n, vlist);
+      temp_free(vlist);
+   }
+
+   gr_set_fill_type(FILL_NORM);
+
+   r3_end_block();
+
+   if (end < num_water_polys)
+      start = end;
+   else {
+      start = 0;
+      next_poly = water_points;
+      num_water_polys = 0;
+      num_water_points = 0;
+   }
+}
+
+
+extern BOOL bRenderNewSky;
+
+
+void draw_surface_lgd3d(PortalPolygonCore *poly, PortalPolygonRenderInfo *render,
+                        PortalLightMap *lt, int voff, void *clip)
+{
+   int i,n;
+   int desired_mip;
+   hw_render_info hw;
+   r3s_phandle vlist[MAX_VERT], *final;
+   scale_info info;
+   bool motion, post_clip_uv, zsky = FALSE;
+
+   n = poly->num_vertices;
+   AssertMsg (n <= MAX_VERT, "draw_surface: too many vertices.");
+
+   hw.tex = portal_get_texture(render->texture_id);
+   hw.lm = NULL;
+
+   if (!hw.tex && bRenderNewSky)
+   {
+      END_PROF;
+      return;
+   }
+
+   motion = poly->motion_index && portal_cell_motion[poly->motion_index].in_motion;
+   post_clip_uv = (hw.tex == NULL)||portal_clip_num||motion;
+   if (!post_clip_uv)
+   {
+      mxs_real uv;
+      mxs_vector *p_uvec, *p_vvec, *anchor;
+      mxs_real u_scale, v_scale;
+      mxs_real u_base, v_base;
+      mxs_real u2, v2;
+
+      u_scale = two_to_n(6 - hw.tex->wlog);
+      v_scale = two_to_n(6 - hw.tex->hlog);
+
+      p_uvec = &render->tex_u;
+      p_vvec = &render->tex_v;
+      anchor = &(cur_pool[r_vertex_list[voff + render->texture_anchor]]);
+      uv = mx_dot_vec(p_uvec, p_vvec);
+
+      u_base = render->u_base * u_scale / (16.0*256.0); // u translation
+      v_base = render->v_base * v_scale / (16.0*256.0); // v translation
+
+      u2 = mx_mag2_vec(p_uvec);
+      v2 = mx_mag2_vec(p_vvec);
+
+      if (uv == 0.0) {
+         mxs_vector uvec, vvec;
+
+         mx_scale_vec(&uvec, p_uvec, u_scale/u2);
+         mx_scale_vec(&vvec, p_vvec, v_scale/v2);
+         for (i=0; i < n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            vlist[i] = p;
+            p->grp.u = mx_dot_vec(&delta, &uvec) + u_base;
+            p->grp.v = mx_dot_vec(&delta, &vvec) + v_base;
+         }
+      } else {
+         mxs_real uvu, uvv, denom;
+
+         denom = 1.0/(u2*v2 - (uv*uv));
+
+         u2 *= v_scale * denom;
+         v2 *= u_scale * denom;
+         uvu = u_scale * denom * uv;
+         uvv = v_scale * denom * uv;
+         for (i=0; i<n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            mxs_real du, dv;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            du = mx_dot_vec(&delta, p_uvec);
+            dv = mx_dot_vec(&delta, p_vvec);
+            vlist[i] = p;
+            p->grp.u = u_base + v2 * du - uvu * dv;
+            p->grp.v = v_base + u2 * dv - uvv * du;
+         }
+      }
+
+
+      // clip against the view cone
+      r3_set_clip_flags(R3_CLIP_UV);
+   } else {
+      for (i=0; i < n; ++i) {
+         vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+      }
+      r3_set_clip_flags(0); // why isn't there an R3_CLIP_NONE?
+   }
+
+   n = r3_clip_polygon(n, vlist, &final);
+
+   if (n <= 2) { END_PROF; return; }
+   STAT(++stat_num_poly_considered;)
+
+   // check for trivial reject against the portal
+   if (portal_clip_poly &&
+       (portclip_clip_polygon(n, final, NULL, clip) == 0))
+      { END_PROF; return; }
+
+   if (!hw.tex) {
+      draw_background_hack(n, final);
+      END_PROF;
+      return;  // an invisible portal, or background hack
+   }
+
+   if (portal_clip_num) { // only true if it's the sky
+      n = portbg_clip_sky(n, final, &final);
+   } else {
+      desired_mip = compute_mip(render, &cur_cell->plane_list[poly->planeid]);
+      hw.mip_level = 0;
+      while (desired_mip > 0) {
+         if (hw.tex[1].w == 0)
+             break; // not enough mip levels
+         ++hw.mip_level;
+         --desired_mip;
+         ++hw.tex;
+      }
+   }
+
+#ifdef STATS_ON
+   ++stat_num_poly_drawn;
+   if (stat_num_poly_drawn > max_draw_polys) return;
+#endif
+
+#ifndef SHIP
+   if (poly_outline_by_flags(poly, vlist, hw.mip_level)) {
+      END_PROF;
+      return;
+   }
+#endif // ~SHIP
+
+#ifdef DBG_ON
+   if (hw.tex->w & (hw.tex->w - 1))
+      Error(1, "Texture non-power-of-two in w!\n");
+   if (hw.tex->h & (hw.tex->h - 1))
+      Error(1, "Texture non-power-of-two in h!\n");
+#endif
+
+   if ((lt == NULL)||(poly->flags & RENDER_DOESNT_LIGHT)) {
+      hw.lm = NULL;
+   } else {
+      porthw_get_cached_lightmap(&hw, render, lt);
+   }
+
+   if ((render->texture_id == portal_sky_id) && !bRenderNewSky)
+   {
+      // don't need to lightmap!
+      hw.lm = NULL;
+      switch (ptsky_type) {
+      case PTSKY_SPAN:
+         portal_sky_spans += ptsky_calc_spans(n, final);
+         break;
+      case PTSKY_ZBUFFER:
+         zsky = TRUE;
+         break;
+      case PTSKY_NONE:
+         goto poly_done;
+      }
+   }
+   else if (portal_sky_spans > 0)
+   {
+      ptsky_render_stars();
+      portal_sky_spans = 0;
+   }
+
+   if (post_clip_uv) {
+      mxs_vector u_vec, v_vec, pt;
+      if (motion) {
+         portal_position_portal_texture(&u_vec, &v_vec, &pt,
+               &(cur_pool[r_vertex_list[voff + render->texture_anchor]]),
+               render, &cur_cell->plane_list[poly->planeid],
+               &portal_cell_motion[poly->motion_index]);
+
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      } else {
+         mxs_real usc, vsc;
+         usc = ((float) render->u_base) * 1.0 / (16.0*256.0); // u translation
+         vsc = ((float) render->v_base) * 1.0 / (16.0*256.0); // v translation
+
+         get_cached_vector(&u_vec, &render->tex_u);
+         get_cached_vector(&v_vec, &render->tex_v);
+         mx_scale_add_vec(&pt, &(vlist[render->texture_anchor]->p), &u_vec, -usc);
+         mx_scale_add_vec(&pt, &pt, &v_vec, -vsc);
+
+         // This gives us our 3x3 texture perspective correction matrix.
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      }
+
+      if (portal_clip_num) {
+         // for sky, remap coordinates from 0..tex->w to 0.5..tex->w-0.5
+
+         info.scale_u = (hw.tex->w-1) * two_to_n(-hw.tex->wlog);
+         info.scale_v = (hw.tex->h-1) * two_to_n(-hw.tex->hlog);
+         info.u0 = two_to_n(-hw.tex->wlog - 1);
+         info.v0 = two_to_n(-hw.tex->hlog - 1);
+      } else {
+         int mip_log = 6 - hw.mip_level;
+         info.scale_u = two_to_n(mip_log - hw.tex->wlog);
+         info.scale_v = two_to_n(mip_log - hw.tex->hlog);
+         info.u0 = info.v0 = 0.0;
+      }
+      ptlgd3d_calc_uv(n, final, &info);
+   }
+
+   if (hw.lm != NULL) {
+      int pix_per_lm = 4 - hw.mip_level;
+      int log_scale_u = hw.tex->wlog - pix_per_lm;
+      int log_scale_v = hw.tex->hlog - pix_per_lm;
+// This is necessary because wlog is actually log2(row), _not_ log2(w)
+// Shoot me now; it's my own fault. -kevin
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+      info.scale_u = two_to_n(log_scale_u - (hw.lm->wlog - 2));
+#else // RGB_888
+      info.scale_u = two_to_n(log_scale_u - (hw.lm->wlog - 1));
+#endif // RGB_888
+#else
+      info.scale_u = two_to_n(log_scale_u - hw.lm->wlog);
+#endif
+      info.scale_v = two_to_n(log_scale_v - hw.lm->hlog);
+      info.u0 = (hw.lm_u0 - lt->base_u) * two_to_n(-log_scale_u);
+      info.v0 = (hw.lm_v0 - lt->base_v) * two_to_n(-log_scale_v);
+#ifndef SHIP
+      if (pt_lightmap_first) {
+         float *uv_save = temp_malloc(2*n*sizeof(float));
+         int i;
+
+         for (i=0; i<n; i++) {
+            uv_save[2*i] = final[i]->grp.u;
+            uv_save[2*i+1] = final[i]->grp.v;
+         }
+         ptlgd3d_recalc_uv_vlist(n, final, &info);
+         r3_set_texture(hw.lm);
+         r3_draw_poly(n, final);
+         for (i=0; i<n; i++) {
+            final[i]->grp.u = uv_save[2*i];
+            final[i]->grp.v = uv_save[2*i+1];
+         }
+         lgd3d_set_blend(TRUE);
+         lgd3d_blend_multiply(portal_hack_blend);
+         temp_free(uv_save);
+      }
+#endif
+   }
+
+   // Are we a translucent medium border (e.g., water)?
+   if (poly->flags & PORTAL_SPLITS_OBJECT)
+   {
+      if (g_zbuffer)
+         queue_water_poly(hw.tex, n, final);
+      else
+         render_water_poly(hw.tex, n, final);
+      goto poly_done;
+   }
+
+   r3_set_texture(hw.tex);
+
+   if (zsky) {
+      int i;
+      // render it real far away, so stars will render in front
+
+      float *zw_save;
+      zw_save = (float *)temp_malloc(2*n*sizeof(float));
+      for (i=0; i<n; i++) {
+         zw_save[i] = final[i]->p.z;
+         zw_save[i+n] = final[i]->grp.w;
+         final[i]->p.z = portal_z_max;
+         final[i]->grp.w = portal_w_min;
+      }
+      r3_draw_poly(n, final);
+      for (i=0; i<n; i++) {
+         final[i]->p.z =   zw_save[i];
+         final[i]->grp.w = zw_save[i+n];
+      }
+      temp_free(zw_save);
+   }
+   else
+      r3_draw_poly(n, final);
+
+   // is there a lightmap?
+
+   if (hw.lm != NULL)
+   {
+#ifndef SHIP
+      // rendered already?
+      if (pt_lightmap_first) {
+         lgd3d_blend_normal();
+         lgd3d_set_blend(FALSE);
+      } else
+#endif
+      {
+
+         // render it...
+
+         ptlgd3d_recalc_uv_vlist(n, final, &info);
+
+
+#ifndef SHIP
+         if (show_lightmap) {
+            r3_set_texture(hw.lm);
+            r3_draw_poly(n, final);
+         } else
+#endif
+         {
+            lgd3d_blend_multiply(portal_hack_blend);
+            lgd3d_set_blend(TRUE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(0.5);
+#endif
+            r3_set_texture(hw.lm);
+            r3_draw_poly(n, final);
+            lgd3d_blend_normal();
+            lgd3d_set_blend(FALSE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(1.0);
+#endif
+         }
+      }
+   }
+
+poly_done:
+#ifndef SHIP
+   if (draw_wireframe_around_tmap) {
+      draw_polygon_wireframe(final, n, COLOR_WHITE+2);
+      draw_polygon_vertices(final, n, COLOR_WHITE);
+   }
+#endif // ~SHIP
+
+   END_PROF;
+   return;
+}
+
+
+
+void draw_surface_multitexture(PortalPolygonCore *poly, PortalPolygonRenderInfo *render,
+                        PortalLightMap *lt, int voff, void *clip)
+{
+   int i,n;
+   int desired_mip;
+   hw_render_info hw;
+   r3s_phandle vlist[MAX_VERT], *final;
+   scale_info info;
+   bool motion, post_clip_uv, zsky = FALSE;
+
+   n = poly->num_vertices;
+   AssertMsg (n <= MAX_VERT, "draw_surface: too many vertices.");
+
+   hw.tex = portal_get_texture(render->texture_id);
+   hw.lm = NULL;
+
+   if (!hw.tex && bRenderNewSky)
+   {
+      END_PROF;
+      return;
+   }
+
+   motion = poly->motion_index && portal_cell_motion[poly->motion_index].in_motion;
+   post_clip_uv = (hw.tex == NULL)||portal_clip_num||motion;
+   if (!post_clip_uv)
+   {
+      mxs_real uv;
+      mxs_vector *p_uvec, *p_vvec, *anchor;
+      mxs_real u_scale, v_scale;
+      mxs_real u_base, v_base;
+      mxs_real u2, v2;
+
+      u_scale = two_to_n(6 - hw.tex->wlog);
+      v_scale = two_to_n(6 - hw.tex->hlog);
+
+      p_uvec = &render->tex_u;
+      p_vvec = &render->tex_v;
+      anchor = &(cur_pool[r_vertex_list[voff + render->texture_anchor]]);
+      uv = mx_dot_vec(p_uvec, p_vvec);
+
+      u_base = render->u_base * u_scale / (16.0*256.0); // u translation
+      v_base = render->v_base * v_scale / (16.0*256.0); // v translation
+
+      u2 = mx_mag2_vec(p_uvec);
+      v2 = mx_mag2_vec(p_vvec);
+
+      if (uv == 0.0) {
+         mxs_vector uvec, vvec;
+
+         mx_scale_vec(&uvec, p_uvec, u_scale/u2);
+         mx_scale_vec(&vvec, p_vvec, v_scale/v2);
+         for (i=0; i < n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            vlist[i] = p;
+            p->grp.u = mx_dot_vec(&delta, &uvec) + u_base;
+            p->grp.v = mx_dot_vec(&delta, &vvec) + v_base;
+         }
+      } else {
+         mxs_real uvu, uvv, denom;
+
+         denom = 1.0/(u2*v2 - (uv*uv));
+
+         u2 *= v_scale * denom;
+         v2 *= u_scale * denom;
+         uvu = u_scale * denom * uv;
+         uvv = v_scale * denom * uv;
+         for (i=0; i<n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            mxs_real du, dv;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            du = mx_dot_vec(&delta, p_uvec);
+            dv = mx_dot_vec(&delta, p_vvec);
+            vlist[i] = p;
+            p->grp.u = u_base + v2 * du - uvu * dv;
+            p->grp.v = v_base + u2 * dv - uvv * du;
+         }
+      }
+
+
+      // clip against the view cone
+      r3_set_clip_flags(R3_CLIP_UV);
+   } else {
+      for (i=0; i < n; ++i) {
+         vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+      }
+      r3_set_clip_flags(0); // why isn't there an R3_CLIP_NONE?
+   }
+
+   n = r3_clip_polygon(n, vlist, &final);
+
+   if (n <= 2) { END_PROF; return; }
+   STAT(++stat_num_poly_considered;)
+
+   // check for trivial reject against the portal
+   if (portal_clip_poly &&
+       (portclip_clip_polygon(n, final, NULL, clip) == 0))
+      { END_PROF; return; }
+
+   if (!hw.tex) {
+      draw_background_hack(n, final);
+      END_PROF;
+      return;  // an invisible portal, or background hack
+   }
+
+   if (portal_clip_num) { // only true if it's the sky
+      n = portbg_clip_sky(n, final, &final);
+   } else {
+      desired_mip = compute_mip(render, &cur_cell->plane_list[poly->planeid]);
+      hw.mip_level = 0;
+      while (desired_mip > 0) {
+         if (hw.tex[1].w == 0)
+             break; // not enough mip levels
+         ++hw.mip_level;
+         --desired_mip;
+         ++hw.tex;
+      }
+   }
+
+#ifdef STATS_ON
+   ++stat_num_poly_drawn;
+   if (stat_num_poly_drawn > max_draw_polys) return;
+#endif
+
+#ifndef SHIP
+   if (poly_outline_by_flags(poly, vlist, hw.mip_level)) {
+      END_PROF;
+      return;
+   }
+#endif // ~SHIP
+
+#ifdef DBG_ON
+   if (hw.tex->w & (hw.tex->w - 1))
+      Error(1, "Texture non-power-of-two in w!\n");
+   if (hw.tex->h & (hw.tex->h - 1))
+      Error(1, "Texture non-power-of-two in h!\n");
+#endif
+
+   if ((lt == NULL)||(poly->flags & RENDER_DOESNT_LIGHT)) {
+      hw.lm = NULL;
+   } else {
+      porthw_get_cached_lightmap(&hw, render, lt);
+   }
+
+   if ((render->texture_id == portal_sky_id) && !bRenderNewSky)
+   {
+      hw.lm = NULL;
+      switch (ptsky_type) {
+      case PTSKY_SPAN:
+         portal_sky_spans += ptsky_calc_spans(n, final);
+         break;
+      case PTSKY_ZBUFFER:
+         zsky = TRUE;
+         break;
+      case PTSKY_NONE:
+         goto poly_done_multi;
+      }
+   }
+   else if (portal_sky_spans > 0)
+   {
+      ptsky_render_stars();
+      portal_sky_spans = 0;
+   }
+
+   if (post_clip_uv) {
+      mxs_vector u_vec, v_vec, pt;
+      if (motion) {
+         portal_position_portal_texture(&u_vec, &v_vec, &pt,
+               &(cur_pool[r_vertex_list[voff + render->texture_anchor]]),
+               render, &cur_cell->plane_list[poly->planeid],
+               &portal_cell_motion[poly->motion_index]);
+
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      } else {
+         mxs_real usc, vsc;
+         usc = ((float) render->u_base) * 1.0 / (16.0*256.0); // u translation
+         vsc = ((float) render->v_base) * 1.0 / (16.0*256.0); // v translation
+
+         get_cached_vector(&u_vec, &render->tex_u);
+         get_cached_vector(&v_vec, &render->tex_v);
+         mx_scale_add_vec(&pt, &(vlist[render->texture_anchor]->p), &u_vec, -usc);
+         mx_scale_add_vec(&pt, &pt, &v_vec, -vsc);
+
+         // This gives us our 3x3 texture perspective correction matrix.
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      }
+
+      if (portal_clip_num) {
+         // for sky, remap coordinates from 0..tex->w to 0.5..tex->w-0.5
+
+         info.scale_u = (hw.tex->w-1) * two_to_n(-hw.tex->wlog);
+         info.scale_v = (hw.tex->h-1) * two_to_n(-hw.tex->hlog);
+         info.u0 = two_to_n(-hw.tex->wlog - 1);
+         info.v0 = two_to_n(-hw.tex->hlog - 1);
+      } else {
+         int mip_log = 6 - hw.mip_level;
+         info.scale_u = two_to_n(mip_log - hw.tex->wlog);
+         info.scale_v = two_to_n(mip_log - hw.tex->hlog);
+         info.u0 = info.v0 = 0.0;
+      }
+      ptlgd3d_calc_uv(n, final, &info);
+   }
+
+   if (hw.lm != NULL) {
+      int pix_per_lm = 4 - hw.mip_level;
+      int log_scale_u = hw.tex->wlog - pix_per_lm;
+      int log_scale_v = hw.tex->hlog - pix_per_lm;
+// This is necessary because wlog is actually log2(row), _not_ log2(w)
+// Shoot me now; it's my own fault. -kevin
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+      info.scale_u = two_to_n(log_scale_u - (hw.lm->wlog - 2));
+#else // RGB_888
+      info.scale_u = two_to_n(log_scale_u - (hw.lm->wlog - 1));
+#endif // RGB_888
+#else
+      info.scale_u = two_to_n(log_scale_u - hw.lm->wlog);
+#endif
+      info.scale_v = two_to_n(log_scale_v - hw.lm->hlog);
+      info.u0 = (hw.lm_u0 - lt->base_u) * two_to_n(-log_scale_u);
+      info.v0 = (hw.lm_v0 - lt->base_v) * two_to_n(-log_scale_v);
+      {
+         LGD3D_tex_coord *uv2 = temp_malloc(n*sizeof(*uv2));
+         LGD3D_tex_coord **puv2 = temp_malloc(n*sizeof(*puv2));
+         int i;
+
+         for (i=0; i<n; i++) {
+            uv2[i].u = final[i]->grp.u;
+            uv2[i].v = final[i]->grp.v;
+            puv2[i] = &uv2[i];
+         }
+         // lgd3d_set_light_map_method(LGD3DTB_MODULATE);
+         lgd3d_set_light_map_method( LGD3D_MULTITEXTURE_COLOR );
+         ptlgd3d_recalc_uv(n, uv2, &info);
+
+         lgd3d_set_texture_level(1);
+         lgd3d_set_texture(hw.lm);
+         lgd3d_set_texture_level(0);
+         lgd3d_set_texture(hw.tex);
+         lgd3d_TrifanMTD(n, final, puv2);
+         temp_free(puv2);
+         temp_free(uv2);
+         r3d_do_setup = TRUE;
+      }
+   } else {
+      if (poly->flags & PORTAL_SPLITS_OBJECT)
+      {
+         if (g_zbuffer)
+            queue_water_poly(hw.tex, n, final);
+         else
+            render_water_poly(hw.tex, n, final);
+      } else {
+         r3_set_texture(hw.tex);
+         if (zsky) {
+            int i;
+            // render it real far away, so stars will render in front
+
+            float *zw_save;
+            zw_save = (float *)temp_malloc(2*n*sizeof(float));
+            for (i=0; i<n; i++) {
+               zw_save[i] = final[i]->p.z;
+               zw_save[i+n] = final[i]->grp.w;
+               final[i]->p.z = portal_z_max;
+               final[i]->grp.w = portal_w_min;
+            }
+            r3_draw_poly(n, final);
+            for (i=0; i<n; i++) {
+               final[i]->p.z =   zw_save[i];
+               final[i]->grp.w = zw_save[i+n];
+            }
+            temp_free(zw_save);
+         }
+         else
+            r3_draw_poly(n, final);
+      }
+   }
+poly_done_multi:
+#ifndef SHIP
+   if (draw_wireframe_around_tmap) {
+      draw_polygon_wireframe(final, n, COLOR_WHITE+2);
+      draw_polygon_vertices(final, n, COLOR_WHITE);
+   }
+#endif // ~SHIP
+
+   END_PROF;
+   return;
+}
+
+
+void draw_surface_texture_only(PortalPolygonCore *poly, PortalPolygonRenderInfo *render, int voff, void *clip)
+{
+   int i,n;
+   int desired_mip;
+   hw_render_info hw;
+   r3s_phandle vlist[MAX_VERT], *final;
+   scale_info info;
+   bool motion, post_clip_uv, zsky = FALSE;
+
+   n = poly->num_vertices;
+   AssertMsg (n <= MAX_VERT, "draw_surface: too many vertices.");
+
+   hw.tex = portal_get_texture(render->texture_id);
+   hw.lm = NULL;
+
+   if (!hw.tex && bRenderNewSky)
+   {
+      END_PROF;
+      return;
+   }
+
+   motion = poly->motion_index && portal_cell_motion[poly->motion_index].in_motion;
+   post_clip_uv = (hw.tex == NULL)||portal_clip_num||motion;
+   if (!post_clip_uv)
+   {
+      mxs_real uv;
+      mxs_vector *p_uvec, *p_vvec, *anchor;
+      mxs_real u_scale, v_scale;
+      mxs_real u_base, v_base;
+      mxs_real u2, v2;
+
+      u_scale = two_to_n(6 - hw.tex->wlog);
+      v_scale = two_to_n(6 - hw.tex->hlog);
+
+      p_uvec = &render->tex_u;
+      p_vvec = &render->tex_v;
+      anchor = &(cur_pool[r_vertex_list[voff + render->texture_anchor]]);
+      uv = mx_dot_vec(p_uvec, p_vvec);
+
+      u_base = render->u_base * u_scale / (16.0*256.0); // u translation
+      v_base = render->v_base * v_scale / (16.0*256.0); // v translation
+
+      u2 = mx_mag2_vec(p_uvec);
+      v2 = mx_mag2_vec(p_vvec);
+
+      if (uv == 0.0) {
+         mxs_vector uvec, vvec;
+
+         mx_scale_vec(&uvec, p_uvec, u_scale/u2);
+         mx_scale_vec(&vvec, p_vvec, v_scale/v2);
+         for (i=0; i < n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            vlist[i] = p;
+            p->grp.u = mx_dot_vec(&delta, &uvec) + u_base;
+            p->grp.v = mx_dot_vec(&delta, &vvec) + v_base;
+         }
+      } else {
+         mxs_real uvu, uvv, denom;
+
+         denom = 1.0/(u2*v2 - (uv*uv));
+
+         u2 *= v_scale * denom;
+         v2 *= u_scale * denom;
+         uvu = u_scale * denom * uv;
+         uvv = v_scale * denom * uv;
+         for (i=0; i<n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            mxs_real du, dv;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            du = mx_dot_vec(&delta, p_uvec);
+            dv = mx_dot_vec(&delta, p_vvec);
+            vlist[i] = p;
+            p->grp.u = u_base + v2 * du - uvu * dv;
+            p->grp.v = v_base + u2 * dv - uvv * du;
+         }
+      }
+      r3_set_clip_flags(R3_CLIP_UV);
+   } else {
+      for (i=0; i < n; ++i) {
+         vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+      }
+      r3_set_clip_flags(0); // why isn't there an R3_CLIP_NONE?
+   }
+
+   // clip against the view cone
+   n = r3_clip_polygon(n, vlist, &final);
+
+   if (n <= 2) { END_PROF; return; }
+   STAT(++stat_num_poly_considered;)
+
+   // check for trivial reject against the portal
+   if (portal_clip_poly &&
+       (portclip_clip_polygon(n, final, NULL, clip) == 0))
+      { END_PROF; return; }
+
+   if (!hw.tex) {
+      draw_background_hack(n, final);
+      END_PROF;
+      return;  // an invisible portal, or background hack
+   }
+
+   if (portal_clip_num) { // only true if it's the sky
+      n = portbg_clip_sky(n, final, &final);
+   } else {
+      desired_mip = compute_mip(render, &cur_cell->plane_list[poly->planeid]);
+      hw.mip_level = 0;
+      while (desired_mip > 0) {
+         if (hw.tex[1].w == 0)
+             break; // not enough mip levels
+         ++hw.mip_level;
+         --desired_mip;
+         ++hw.tex;
+      }
+   }
+
+#ifdef STATS_ON
+   ++stat_num_poly_drawn;
+   if (stat_num_poly_drawn > max_draw_polys) return;
+#endif
+
+#ifndef SHIP
+   if (poly_outline_by_flags(poly, vlist, hw.mip_level)) {
+      END_PROF;
+      return;
+   }
+#endif // ~SHIP
+
+#ifdef DBG_ON
+   if (hw.tex->w & (hw.tex->w - 1))
+      Error(1, "Texture non-power-of-two in w!\n");
+   if (hw.tex->h & (hw.tex->h - 1))
+      Error(1, "Texture non-power-of-two in h!\n");
+#endif
+
+   if ((render->texture_id == portal_sky_id) && !bRenderNewSky)
+   {
+      switch (ptsky_type) {
+      case PTSKY_SPAN:
+         portal_sky_spans += ptsky_calc_spans(n, final);
+         break;
+      case PTSKY_ZBUFFER:
+         zsky = TRUE;
+         break;
+      case PTSKY_NONE:
+         goto poly_done_texture;
+      }
+   }
+   else if (portal_sky_spans > 0)
+   {
+      ptsky_render_stars();
+      portal_sky_spans = 0;
+   }
+
+   if (post_clip_uv) {
+      mxs_vector u_vec, v_vec, pt;
+      if (motion) {
+         portal_position_portal_texture(&u_vec, &v_vec, &pt,
+               &(cur_pool[r_vertex_list[voff + render->texture_anchor]]),
+               render, &cur_cell->plane_list[poly->planeid],
+               &portal_cell_motion[poly->motion_index]);
+
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      } else {
+         mxs_real usc, vsc;
+         usc = ((float) render->u_base) * 1.0 / (16.0*256.0); // u translation
+         vsc = ((float) render->v_base) * 1.0 / (16.0*256.0); // v translation
+
+         get_cached_vector(&u_vec, &render->tex_u);
+         get_cached_vector(&v_vec, &render->tex_v);
+         mx_scale_add_vec(&pt, &(vlist[render->texture_anchor]->p), &u_vec, -usc);
+         mx_scale_add_vec(&pt, &pt, &v_vec, -vsc);
+
+         // This gives us our 3x3 texture perspective correction matrix.
+         g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      }
+
+      if (portal_clip_num) {
+         // for sky, remap coordinates from 0..tex->w to 0.5..tex->w-0.5
+
+         info.scale_u = (hw.tex->w-1) * two_to_n(-hw.tex->wlog);
+         info.scale_v = (hw.tex->h-1) * two_to_n(-hw.tex->hlog);
+         info.u0 = two_to_n(-hw.tex->wlog - 1);
+         info.v0 = two_to_n(-hw.tex->hlog - 1);
+      } else {
+         int mip_log = 6 - hw.mip_level;
+         info.scale_u = two_to_n(mip_log - hw.tex->wlog);
+         info.scale_v = two_to_n(mip_log - hw.tex->hlog);
+         info.u0 = info.v0 = 0.0;
+      }
+      ptlgd3d_calc_uv(n, final, &info);
+   }
+
+   // Are we a translucent medium border (e.g., water)?
+   if (poly->flags & PORTAL_SPLITS_OBJECT)
+   {
+      if (g_zbuffer)
+         queue_water_poly(hw.tex, n, final);
+      else
+         render_water_poly(hw.tex, n, final);
+      goto poly_done_texture;
+   }
+
+   r3_set_texture(hw.tex);
+
+   if (zsky) {
+      int i;
+      // render it real far away, so stars will render in front
+
+      float *zw_save;
+      zw_save = (float *)temp_malloc(2*n*sizeof(float));
+      for (i=0; i<n; i++) {
+         zw_save[i] = final[i]->p.z;
+         zw_save[i+n] = final[i]->grp.w;
+         final[i]->p.z = portal_z_max;
+         final[i]->grp.w = portal_w_min;
+      }
+      r3_draw_poly(n, final);
+      for (i=0; i<n; i++) {
+         final[i]->p.z =   zw_save[i];
+         final[i]->grp.w = zw_save[i+n];
+      }
+      temp_free(zw_save);
+   }
+   else
+      r3_draw_poly(n, final);
+
+poly_done_texture:
+#ifndef SHIP
+   if (draw_wireframe_around_tmap) {
+      draw_polygon_wireframe(final, n, COLOR_WHITE+2);
+      draw_polygon_vertices(final, n, COLOR_WHITE);
+   }
+#endif // ~SHIP
+
+   END_PROF;
+   return;
+}
+
+
+
+void draw_surface_lightmap_only(PortalPolygonCore *poly, PortalPolygonRenderInfo *render,
+                        PortalLightMap *lt, int voff, void *clip)
+{
+   int i,n;
+   hw_render_info hw;
+   r3s_phandle vlist[MAX_VERT], *final;
+
+   // water or sky poly?
+   if ((poly->flags & PORTAL_SPLITS_OBJECT)||
+       (render->texture_id == portal_sky_id))
+      {END_PROF; return;}
+
+   // sky hack?
+   if (portal_get_texture(render->texture_id) == NULL)
+      {END_PROF; return;}
+
+   porthw_get_cached_lightmap(&hw, render, lt);
+   n = poly->num_vertices;
+   AssertMsg (n <= MAX_VERT, "draw_surface: too many vertices.");
+
+   {
+      mxs_real uv;
+      mxs_vector *p_uvec, *p_vvec, *anchor;
+      mxs_real u_scale, v_scale;
+      mxs_real u_base, v_base;
+      mxs_real u2, v2;
+
+      p_uvec = &render->tex_u;
+      p_vvec = &render->tex_v;
+      anchor = &(cur_pool[r_vertex_list[voff + render->texture_anchor]]);
+      uv = mx_dot_vec(p_uvec, p_vvec);
+
+// This is necessary because wlog is actually log2(row), _not_ log2(w)
+// Shoot me now; it's my own fault. -kevin
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+      u_scale = two_to_n(2-(hw.lm->wlog-2));
+#else // RGB_888
+      u_scale = two_to_n(2-(hw.lm->wlog-1));
+#endif // RGB_888
+#else
+      u_scale = two_to_n(2-hw.lm->wlog);
+#endif
+
+      v_scale = two_to_n(2-hw.lm->hlog);
+
+      u_base = u_scale * (render->u_base/(16.0*256.0) + (hw.lm_u0 - lt->base_u)/4.0); // u translation
+      v_base = v_scale * (render->v_base/(16.0*256.0) + (hw.lm_v0 - lt->base_v)/4.0); // v translation
+
+      u2 = mx_mag2_vec(p_uvec);
+      v2 = mx_mag2_vec(p_vvec);
+
+      if (uv == 0.0) {
+         mxs_vector uvec, vvec;
+
+         mx_scale_vec(&uvec, p_uvec, u_scale/u2);
+         mx_scale_vec(&vvec, p_vvec, v_scale/v2);
+         for (i=0; i < n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            vlist[i] = p;
+            p->grp.u = mx_dot_vec(&delta, &uvec) + u_base;
+            p->grp.v = mx_dot_vec(&delta, &vvec) + v_base;
+         }
+      } else {
+         mxs_real uvu, uvv, denom;
+
+         denom = 1.0/(u2*v2 - (uv*uv));
+
+         u2 *= v_scale * denom;
+         v2 *= u_scale * denom;
+         uvu = u_scale * denom * uv;
+         uvv = v_scale * denom * uv;
+         for (i=0; i<n; ++i) {
+            mxs_vector *wvec = &cur_pool[r_vertex_list[voff + i]];
+            mxs_vector delta;
+            mxs_real du, dv;
+            r3s_phandle p = &cur_ph[r_vertex_list[voff + i]];
+
+            mx_sub_vec(&delta, wvec, anchor);
+            du = mx_dot_vec(&delta, p_uvec);
+            dv = mx_dot_vec(&delta, p_vvec);
+            vlist[i] = p;
+            p->grp.u = u_base + v2 * du - uvu * dv;
+            p->grp.v = v_base + u2 * dv - uvv * du;
+         }
+      }
+      r3_set_clip_flags(R3_CLIP_UV);
+   }
+
+   // clip against the view cone
+   n = r3_clip_polygon(n, vlist, &final);
+
+   if (n <= 2)
+      { END_PROF; return; }
+
+   // check for trivial reject against the portal
+   if (portal_clip_poly &&
+       (portclip_clip_polygon(n, final, NULL, clip) == 0))
+      { END_PROF; return; }
+
+#ifndef SHIP
+   if (show_lightmap) {
+      r3_set_texture(hw.lm);
+      r3_draw_poly(n, final);
+   } else
+#endif
+   {
+      r3_set_texture(hw.lm);
+      r3_draw_poly(n, final);
+   }
+
+   END_PROF;
+   return;
+}
+
+
+void do_poly_linear(r3s_texture tex, int n, r3s_phandle *vpl, fix u_offset, fix v_offset)
+{
+   scale_info info;
+
+   info.scale_u = 1.0 / tex->w;
+   info.scale_v = 1.0 / tex->h;
+
+   info.u0 = u_offset * info.scale_u / 65536.0;
+   info.v0 = v_offset * info.scale_v / 65536.0;
+
+   ptlgd3d_calc_uv(n, vpl, &info);
+   g2_lin_umap_setup(tex);
+   {
+      static g2s_point *ppl[20];
+      int i;
+
+      for (i=0; i<n; i++)
+         ppl[i] = (g2s_point *)&(vpl[i]->grp);
+
+      g2_draw_poly_func(n, ppl);
+   }
+}
+
+; $Header: r:/t2repos/thief2/src/portal/ptfloat.asm,v 1.3 1996/12/16 15:15:24 buzzard Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptfloat.asm
+;
+; Floating point routines to compute (u,v) and (du,dv)
+; from (a,b,c) and (c*da - a*dc, c*db - b*dc)
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+_DATA	segment	para public USE32 'DATA'
+
+	align	8
+
+_u_offset dq 0
+_v_offset dq 0
+_two_to_52_power dd 059900000h
+
+externdef _gda:qword
+externdef _gdb:qword
+externdef _gdc:qword
+externdef _fdc:qword
+externdef _u_step_data:qword
+externdef _v_step_data:qword
+externdef _one:qword
+externdef float_buf:qword
+externdef float_buf2:qword
+externdef _two_to_52_power:dword
+externdef _int_table:dword
+externdef _u_offset:qword
+externdef _v_offset:qword
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+extn tmap_float_uv_start_part_one
+extn tmap_float_uv_start_part_two
+extn tmap_float_uv_start_part_two_b
+extn tmap_float_uv_start_part_two_c
+extn tmap_float_uv_start
+extn tmap_float_uv_iterate
+extn tmap_float_uv_iterate_n
+extn tmap_float_uv_cleanup
+
+;
+;
+;   Compute U&V values using overlapped floating point ops
+;
+;
+
+;
+;   compute a single u,v value directly (no waiting),
+;   and setup for next iterative step based on a passed-in
+;   step size for c
+
+tmap_float_uv_start_part_one:
+         fld     _two_to_52_power
+
+         fld     qword ptr [eax]
+
+         fld     qword ptr 8[eax]
+
+         fld     qword ptr 16[eax]    ;   c b a hack
+
+         fld     _one     ;  1 c b a hack
+
+         fld     st(1)    ;  c 1 c b a hack
+         fxch    st(2)    ;  c 1 c b a hack
+
+         fdiv             ;  z c b a hack
+         fxch    st(3)    ;  a c b z hack
+
+         ret
+
+; pass in eax == integer to multiply dc by
+tmap_float_uv_start_part_two:
+
+    ; while waiting for the divide, prefetch
+         cmp     eax,_int_table[eax*4]       ; fetch it
+         lea     eax,_int_table[eax*4]       ; preaddress
+
+         fmul    st,st(3) ; 1    u c b z hack
+         fxch    st(1)    ;      c (1)u b z hack
+
+         fld     st(0)    ; 2    c c (1)u b z hack
+         fxch    st(3)    ;      b c (1)u c z hack
+
+         fmulp   st(4),st ; 3    c (1)u c (3)v hack
+
+         fld     _fdc     ;
+
+         fmul    dword ptr [eax]  ; number of steps
+
+         fadd             ;  4   (4)c' (1)u c (3)v hack
+         fxch    st(1)    ;      (1)u (4)c' c (3)v hack
+
+         fadd    _u_offset ; 5   (5)iu (4)c' c (3)v hack
+         fxch    st(3)    ;      (3)v (4)c' c (5)iu hack
+
+         fadd    _v_offset ; 6   (6)iv (4)c' c (5)iu hack
+         fxch    st(1)    ;      (4)c' (6)iv c (5)iu hack
+
+         fmul    st(2),st ; 7    (4)c' (6)iv (7)c*c' (5)iu hack
+         fxch    st(1)    ;      (6)iv (4)c' (7)c*c' (5)iu hack
+
+         fld     _one     ; 8    1 (6)iv (4)c' (7)c*c' (5)iu hack
+         fxch    st(4)    ;      (5)iu (6)iv (4)c' (7)c*c' 1 hack
+
+         fstp    float_buf ; 9   (6)iv c' (7)c*c' 1 hack
+
+         fstp    float_buf2 ; 11  c' (7)c*c' 1 hack
+
+         fxch    st(2)      ;     1 (7)c*c' c' hack
+
+         fdivr              ;     zz c' hack
+         ret
+         
+tmap_float_uv_start:
+         call    tmap_float_uv_start_part_one
+         lea     eax,_gdc
+         call    tmap_float_uv_start_part_two
+         ret
+
+; compute final u,v values,
+;  and start next computation going
+
+tmap_float_uv_iterate:
+        fld     st(0)    ;  zz zz c hack
+        fxch    st(2)    ;  c zz zz hack
+
+        fld     st(0)    ;  c c zz zz hack
+        fxch    st(2)    ;  zz c c zz hack
+
+        fmul    _u_step_data ; du c c zz hack
+        fxch    st(1)    ;  c du c zz hack
+
+        fadd    _gdc     ;  c' du c zz hack
+        fxch    st(3)    ;  zz du c c' hack
+ 
+        fmul    _v_step_data ; dv du c c' hack
+        fxch    st(1)    ;  du dv c c' hack
+        
+        fadd    st,st(4) ;  idu dv c c' hack
+        fxch    st(2)    ;  c dv idu c' hack
+
+        fmul    st,st(3) ;  c*c' dv idu c' hack
+        fxch    st(1)    ;  dv c*c' idu c' hack
+
+        fadd    st,st(4) ;  idv c*c' idu c' hack
+        fxch    st(2)    ;  idu c*c' idv c' hack
+
+        fstp    float_buf ; c*c' idv c' hack
+
+        fld     _one     ;  1 c*c' idv c hack
+        fxch    st(2)    ;  idv c*c' 1 c hack
+
+        fstp    float_buf2 ; c*c' 1 c' hack
+
+        fdiv             ;  zz c hack
+
+        ret
+
+tmap_float_uv_iterate_n:
+        fld     st(0)    ;  zz zz c hack
+        fxch    st(2)    ;  c zz zz hack
+
+        fld     st(0)    ;  c c zz zz hack
+        fxch    st(2)    ;  zz c c zz hack
+
+        fmul    _u_step_data ; du c c zz hack
+        fxch    st(1)    ;  c du c zz hack
+
+        fld     _fdc
+
+        fmul    dword ptr _int_table[eax*4]
+
+        fadd             ;  c' du c zz hack
+        fxch    st(3)    ;  zz du c c' hack
+ 
+        fmul    _v_step_data ; dv du c c' hack
+        fxch    st(1)    ;  du dv c c' hack
+        
+        fadd    st,st(4) ;  idu dv c c' hack
+        fxch    st(2)    ;  c dv idu c' hack
+
+        fmul    st,st(3) ;  c*c' dv idu c' hack
+        fxch    st(1)    ;  dv c*c' idu c' hack
+
+        fadd    st,st(4) ;  idv c*c' idu c' hack
+        fxch    st(2)    ;  idu c*c' idv c' hack
+
+        fstp    float_buf ; c*c' idv c' hack
+
+        fld     _one     ;  1 c*c' idv c hack
+        fxch    st(2)    ;  idv c*c' 1 c hack
+
+        fstp    float_buf2 ; c*c' 1 c' hack
+
+        fdiv             ;  zz c hack
+
+        ret
+
+; clean up the stack
+;  is this really necessary given the circular stack?
+tmap_float_uv_cleanup:
+         fstp     float_buf
+         fstp     float_buf
+         fstp     float_buf
+         ret
+
+_TEXT   ends
+
+END
+; $Header: r:/t2repos/thief2/src/portal/ptlinear.asm,v 1.6 1997/02/11 19:30:22 buzzard Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptlinear.asm
+;
+; linear outer (per 8 pixel) loops
+
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+        extd  _pt_tmap_mask
+        extd  _pt_tmap_ptr
+        extd  _pt_buffer
+        extd  _pt_lit_buffer
+
+        extd  _pt_light
+        extd  _pt_dlight
+
+        extd   _pt_func_n
+        extd   _pt_func_8
+
+        extd   pt_dest
+
+_DATA	segment	dword public USE32 'DATA'
+
+	align	4
+
+dlight_8 dd 0
+
+pixel_count dd 0
+scanline_count dd 0
+
+dest_save dd 0
+count_save dd 0
+pixel_save dd 0
+
+save_ebp dd 0
+save_edx dd 0
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+;extn    ptmap_run_
+;extn    ptmap_flat_run_
+;extn    ptmap_lit_run_
+extn    ptmap_setup_uv
+extn    ptmap_setup_duv
+extn    ptmap_setup_uvduv
+extn    compute_light_n
+extn    compute_light_8
+
+;  PTMAP_AFFINE_DUV
+;     eax = DU
+;     edx = DV
+
+  _FUNCDEF ptmap_affine_duv,2
+      push  ebp
+      push  ecx
+
+      mov   ecx,edx
+      mov   edx,eax
+
+      call  ptmap_setup_duv
+
+      mov   save_ebp,ebp
+      mov   save_edx,edx
+
+      pop   ecx
+      pop   ebp
+
+      ret
+
+
+;     edx = DU
+;     ecx = DV
+
+;  PTMAP_RUN
+;
+;  old parms:
+;     esi = count
+;     eax = V
+;     ebx = U
+;     edi = dest
+;
+;  new parms:
+;     eax = dest
+;     edx = count
+;     ebx = U
+;     ecx = V
+
+  _FUNCDEF ptmap_run,4
+        push    ebp
+        push    esi
+        push    edi
+
+        mov     pixel_count,edx
+
+        mov     edi,eax
+        mov     eax,ecx
+
+        mov     edx,save_edx
+        mov     ebp,save_ebp
+
+        call    ptmap_setup_uv
+
+        mov     ecx,pixel_count
+
+; check if whole thing is short
+
+        cmp     ecx,16
+        jg      pr_handle_long_case
+
+        mov     al,cl
+        call    [_pt_func_n]
+
+        pop     edi
+        pop     esi
+        pop     ebp
+
+        ret
+
+pr_handle_long_case:
+
+; now pick up a leading run of 1-7 pixels
+; the length is equal to 8-(edi&7), except
+; we want 0 if edi&7 is 0.  This is just
+; (-edi)&7
+
+        mov     ecx,edi
+
+        neg     ecx
+
+        and     ecx,7
+        jz      pr_no_leading_run
+
+; stuff length of leading run
+
+        mov     al,cl
+        neg     ecx
+
+        add     pixel_count,ecx     ; SLOW!
+        call    [_pt_func_n]
+        
+pr_no_leading_run:
+
+        mov     ecx,pixel_count
+        mov     pt_dest,edi
+
+        shr     ecx,3
+
+pr_pixel_8_loop:
+        push    ecx
+        call    [_pt_func_8]
+
+        pop     ecx
+        mov     pt_dest,edi
+
+        mov     edx,save_edx
+        mov     ebp,save_ebp
+
+        dec     ecx
+        jnz     pr_pixel_8_loop
+
+        mov     ecx,pixel_count
+
+        and     ecx,7
+        jz      pr_no_trailing_run
+
+        mov     al,cl
+        call    [_pt_func_n]
+
+pr_no_trailing_run:
+        pop     edi
+        pop     esi
+        pop     ebp
+
+        ret
+
+
+;
+;  PTMAP_LIT_RUN
+;
+;    This has two entry points,
+;    one for C and one for assembly.
+;
+; This is broken under MSVC, cause it
+; takes 6 parameters.  Can we not change
+; this calling convention, like CDECL it
+; or pass in a structure pointer or something
+; or even write a separate entry point
+; for MSVC and ifdef it?
+; BROKEN BROKEN BROKEN
+;
+;  old parms:
+;     edi: dest
+;     esi: count
+;     ebx: u
+;     eax: v
+;     edx: du
+;     ecx: dv
+;
+;  new parms:
+;     eax = dest
+;     edx = count
+;     ebx = U
+;     ecx = V
+
+
+   _FUNCDEF ptmap_lit_run,4
+        push    ebp
+        push    esi
+        push    edi
+        mov     pixel_count,edx
+
+        mov     edi,eax
+        mov     eax,ecx
+
+        mov     edx,save_edx     ; du,dv
+        mov     ebp,save_ebp
+
+        call    ptmap_setup_uv
+
+; check if whole thing is short
+
+        mov     ecx,pixel_count
+
+        cmp     ecx,16
+        jg      pl_handle_long_case
+
+        mov     al,cl
+        call    compute_light_n
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+
+        pop     edi
+        pop     esi
+        pop     ebp
+        ret
+
+pl_handle_long_case:
+
+; now pick up a leading run of 1-7 pixels
+; the length is equal to 8-(edi&7), except
+; we want 0 if edi&7 is 0.  This is just
+; (-edi)&7
+
+        mov     save_edx,edx
+        mov     ecx,edi
+
+        mov     save_ebp,ebp
+        neg     ecx
+
+        and     ecx,7
+        jz      pl_no_leading_run
+
+; stuff length of leading run
+
+        mov     al,cl
+        neg     ecx
+
+        add     pixel_count,ecx     ; SLOW!
+        call    compute_light_n
+
+        mov     edx,save_edx
+        mov     ebp,save_ebp
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+        
+pl_no_leading_run:
+
+        mov     ecx,_pt_dlight
+
+        shl     ecx,3
+ 
+        mov     dlight_8,ecx
+        mov     ecx,pixel_count
+
+        shr     ecx,3
+
+pl_pixel_8_loop:
+        mov     count_save,ecx
+        call    compute_light_8
+
+        mov     edx,save_edx
+        mov     ebp,save_ebp
+
+        mov     pt_dest,edi
+        call    [_pt_func_8]
+
+        mov     ecx,count_save
+
+        dec     ecx
+        jnz     pl_pixel_8_loop
+
+cleanup:
+        mov     ecx,pixel_count
+
+        and     ecx,7
+        jz      pl_no_trailing_run
+
+        mov     al,cl
+        call    compute_light_n
+
+        mov     edx,save_edx
+        mov     ebp,save_ebp
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+
+pl_no_trailing_run:
+        pop     edi
+        pop     esi
+        pop     ebp
+        ret
+
+_TEXT   ends
+
+END
+; $Header: r:/t2repos/thief2/src/portal/ptmap.asm,v 1.5 1996/12/07 20:31:14 buzzard Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptmap.asm
+;   support functions
+
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+        extd    _pt_buffer
+        extd    _pt_lit_buffer
+        extd _pt_tmap_mask,_pt_tmap_row,_pt_tmap_ptr
+        extd _pt_row_table
+        extd _pt_light
+        extd _pt_dlight
+        extd _pt_toggle
+        extd _dither
+        extd _scanline
+        extd _pt_step_table
+        extb _pt_arb_size
+
+_DATA	segment	para public USE32 'DATA'
+
+	align	8
+
+float_buf dq 0
+float_buf2 dq 0
+
+dlight_8 dd 0
+externdef dlight_8:dword
+
+flat_flag dd 0
+
+scanline_count dd 0
+
+dest_save dd 0
+count_save dd 0
+pixel_save dd 0
+
+save_eax dd 0
+save_ebx dd 0
+save_esi dd 0
+
+pt_dest dd 0
+externdef pt_dest:dword
+
+start_len_table db 8,7,6,9,8,7,6,9
+
+externdef _gda:qword
+externdef _gdb:qword
+externdef _gdc:qword
+externdef _u_step_data:qword
+externdef _v_step_data:qword
+externdef _one:qword
+externdef _dc_table:dword
+externdef float_buf:qword
+externdef float_buf2:qword
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+
+extn    compute_light_8
+extn    compute_light_n
+extn    ptmap_float_uv
+extn    ptmap_float_duv
+extn    ptmap_float_duv_b
+extn    ptmap_float_duv_c
+extn    ptmap_float_duv_d
+extn    ptmap_setup_uv
+extn    ptmap_setup_duv ; currently desupported
+extn    ptmap_setup_uvduv
+
+
+;  PTMAP_FLOAT_UV
+;  get u,v values from our iterative process
+;  and arrange them in registers for mapping
+
+ptmap_float_uv:
+        mov     ebx,dword ptr float_buf
+        mov     ecx,dword ptr float_buf2
+
+;    fall through
+
+
+;  PTMAP_SETUP_UV
+;  arrange u,v values into registers
+;     ebx = u
+;     ecx = v
+;   we output into  ebx, esi, eax
+
+ptmap_setup_uv:
+        mov     al,_pt_arb_size
+        cmp     al,0
+        jne     pt_setup_arb_uv
+
+        ror     ebx,16        ; align fraction high and integer low
+        mov     eax,ecx
+
+        shr     ecx,16
+        mov     esi,ebx
+
+        shl     eax,16
+        mov     bh,cl
+
+        mov     ecx,_pt_tmap_mask
+
+        and     ebx,ecx       ; mask to stay wrapped in texture map
+        ret
+
+pt_setup_arb_uv:
+        mov     eax,ecx              ;  eax = v
+        mov     esi,_pt_tmap_row     ;  esi = row
+
+        sar     eax,16               ;  eax = v_hi
+
+        imul    eax,esi              ;  eax = v_hi * row
+
+        shl     ecx,16               ;  ecx = v_lo
+        mov     esi,ebx              ;  esi = u
+
+        sar     ebx,16               ;  ebx = u_hi
+        
+        shl     esi,16               ;  esi = u_lo
+        add     ebx,eax              ;  ebx = u_hi + v_hi*row
+
+        mov     eax,ecx              ;  eax = v_lo
+        mov     ecx,_pt_tmap_ptr     ;  ecx = texture
+
+        add     ebx,ecx              ;  ebx = texture + u_hi + v_hi*row
+        ret
+
+
+;  PTMAP_FLOAT_DUV
+;  get results of last FP computation
+;  and use them to compute our deltas
+;  and arrange them in registers
+
+ptmap_float_duv:
+        mov    dl,_pt_arb_size
+        cmp    dl,0
+        jnz    pt_float_arb_duv
+
+        mov    edx,dword ptr float_buf
+        mov    ebp,dword ptr float_buf2
+
+        ror    edx,16
+
+        shl    ebp,16
+        mov    ecx,dword ptr float_buf2
+
+        sar    ecx,16
+        
+        mov    dh,cl
+        ret
+
+; output:
+;    pt_step_table[0] = ((dv_hi+1) * row) + (du_hi)
+;    pt_step_table[1] = ((dv_hi * row) + (du_hi)
+
+;  EAX  =  v_lo << 16
+;  ESI  =  u_lo << 16
+;  EBP  = dv_lo << 16
+;  EDX  = du_lo << 16
+;  EBX  = source + u_hi + v_hi * source_row
+
+pt_float_arb_duv:
+        push   eax
+        mov    edx,dword ptr float_buf2      ; edx = dv
+
+        sar    edx,16                        ; edx = dv_hi
+        mov    eax,dword ptr float_buf       ; eax = du
+
+        sar    eax,16                        ; eax = du_hi
+        mov    ebp,_pt_tmap_row              ; ebp = row
+
+        mov    edx,_pt_row_table[edx*4+32*4] ; edx = dv_hi * row
+
+        add    edx,eax                       ; edx = dv_hi * row + du_hi
+        pop    eax
+
+        mov    _pt_step_table+4,edx          ; pt_step_table[1] = dv*row+du
+        add    edx,ebp                       ; edx = (dv_hi+1) * row + du_hi
+
+        mov    _pt_step_table,edx            ; pt_step_table[0] = ...
+        mov    edx,dword ptr float_buf       ; edx = du
+
+        shl    edx,16                        ; edx = du_lo
+        mov    ebp,dword ptr float_buf2      ; ebp = dv
+
+        shl    ebp,16                        ; ebp = dv_lo
+        ret
+
+
+;  PTMAP_SETUP_DUV
+;  arrange du,dv values into registers
+;     edx = du
+;     ecx = dv
+;  we output into edx, edx, ebp
+ptmap_setup_duv:
+        ror     edx,16
+        mov     ebp,ecx
+
+        ror     ecx,16
+        
+        shl     ebp,16
+        mov     dh,cl
+
+        ret
+
+
+;  PTMAP_SETUP_UVDUV
+;  arrange u,v,du,dv values into registers
+;     ebx = u
+;     eax = v
+;     edx = du
+;     ecx = dv
+
+ptmap_setup_uvduv:
+        ror     ecx,16
+
+        ror     edx,16
+        mov     ebp,ecx
+
+        ror     ebx,16
+        mov     dh,cl
+
+        ror     eax,16
+        mov     esi,ebx
+
+        mov     ecx,_pt_tmap_mask
+        mov     bh,al
+
+        and     ebp,0ffff0000h
+        and     ebx,ecx       ; mask to stay wrapped in texture map
+
+        ret
+
+
+;
+;   compute lighting values
+;
+
+;  COMPUTE_LIGHT_N
+;  computes n values of lighting found in al
+;  preserves all registers except ecx
+
+compute_light_n:
+        push    ebx
+        push    eax
+
+        push    edi
+        push    esi
+
+        mov     esi,_dither
+
+        test    esi,esi
+        jnz     compute_light_dither_n
+
+        mov     ebx,_pt_light
+
+        ror     ebx,16
+        mov     ecx,_pt_dlight
+
+        shr     ecx,16
+        mov     esi,_pt_dlight
+
+        shl     esi,16
+        lea     edi,_pt_lit_buffer
+
+ptmap_cn_loop:
+        mov     [edi],bl
+        add     ebx,esi
+        
+        adc     ebx,ecx
+        inc     edi
+
+        dec     al
+        jnz     ptmap_cn_loop
+
+; clean up to compute final value
+        ror     ebx,16
+        mov     _pt_light,ebx
+
+        pop     esi
+        pop     edi
+
+        pop     eax
+        pop     ebx
+
+        ret
+
+
+compute_light_dither_n:
+        push    edx
+        mov     ebx,_pt_light
+
+        mov     esi,_pt_dlight
+        mov     ecx,_pt_toggle
+
+        lea     edi,_pt_lit_buffer
+        nop
+
+ptmap_cdn_loop:
+        mov     edx,ebx
+        add     ebx,esi
+
+        shr     edx,17
+        xor     esi,ecx
+
+        mov     [edi],dl
+        inc     edi
+
+        dec     al
+        jnz     ptmap_cdn_loop
+
+        mov     _pt_light,ebx
+        mov     _pt_dlight,esi
+
+        pop     edx
+        pop     esi
+
+        pop     edi
+        pop     eax
+
+        pop     ebx
+        ret
+
+         
+;  COMPUTE_LIGHT_8
+;  computes 8 values of lighting
+;  stomps ebp,edx,ecx
+
+compute_light_8:
+        mov    ebp,_pt_light
+        mov    edx,_pt_toggle
+
+        test   edx,edx
+        jnz    compute_light_dither_8
+
+        mov    edx,_pt_dlight
+        nop
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+1,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+2,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+3,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+4,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+5,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+6,cl
+
+        mov    ecx,ebp
+        shr    ecx,16
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+7,cl
+
+        mov    _pt_light,ebp
+        ret
+
+compute_light_dither_8:
+        push   eax
+        mov    eax,_pt_dlight
+
+        xor    edx,eax
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,eax
+        mov    byte ptr _pt_lit_buffer,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+1,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,eax
+        mov    byte ptr _pt_lit_buffer+2,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+3,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,eax
+        mov    byte ptr _pt_lit_buffer+4,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+5,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,eax
+        mov    byte ptr _pt_lit_buffer+6,cl
+
+        mov    ecx,ebp
+        shr    ecx,17
+        add    ebp,edx
+        mov    byte ptr _pt_lit_buffer+7,cl
+
+        mov    _pt_light,ebp
+        pop    eax
+
+        ret
+
+
+_TEXT   ends
+
+END
+#pragma once
+
+#include <lg.h>
+#include <fix.h>
+#include <dev2d.h>
+
+extern uchar *pt_tmap_ptr;
+extern ulong pt_tmap_mask;
+extern fix pt_light, pt_dlight, pt_toggle;
+extern int dither;
+
+//extern void ptmap_do_8x8_lit(uchar *dest, int row, fix *u_data, fix *v_data);
+//extern void ptmap_do_8x8_flat(uchar *dest, int row, fix *u_data, fix *v_data, fix color);
+//extern void ptmap_light_8x8(fix tl, fix tstep, fix bl, fix bstep);
+
+extern void ptmap_run(uchar *dest, int n, fix u, fix v);
+extern void ptmap_affine_duv(fix du, fix dv);
+//extern void ptmap_flat_run(uchar *dest, int n, fix u, fix v, fix du, fix dv);
+extern void ptmap_lit_run(uchar *dest, int n, fix u, fix v);
+
+extern void ptmap_perspective_run(int n, double *, uchar *dest);
+
+#define ptmap_do_run(dest,n,u,v,du,dv)  \
+    do { ptmap_affine_duv(du,dv); ptmap_run(dest, n, u,v); } while (0)
+
+#define ptmap_do_flat_run(dest,n,u,v,du,dv,lt)  \
+    do { pt_light = (lt); ptmap_flat_run(dest, n, u,v,du,dv); } while (0)
+
+#define ptmap_do_lit_run(dest,n,u,v,du,dv,lt,dlt)  \
+    do {                                           \
+       ptmap_set_lighting(lt, dlt, dest);          \
+       ptmap_affine_duv(du,dv);                    \
+       ptmap_lit_run(dest, n, u,v);                \
+    } while (0)
+
+#ifdef DITHERING
+
+#define ptmap_set_lighting(lt,dlt,dest)    \
+   do {                                     \
+     if (!dither) {                          \
+       pt_light = (lt);                       \
+       pt_dlight = (dlt);                      \
+       pt_toggle = 0;                           \
+     } else {                                    \
+       if ((((int) (dest)) ^ (scanline)) & 1) {   \
+          pt_light = (lt) + 65536;                 \
+          pt_dlight = (dlt) - 65536;                \
+       } else {                                      \
+          pt_light = (lt);                            \
+          pt_dlight = (dlt) + 65536;                   \
+       }                                                \
+       pt_toggle = ((dlt) - 65536) ^ ((dlt)+65536);      \
+     }                                                    \
+   }                                                       \
+   while (0)
+
+#else
+
+#define ptmap_set_lighting(lt,dlt,dest) \
+      (pt_light = (lt), pt_dlight = (dlt))
+
+#endif
+
+#define ptmap_do_lit_run_implicit(dest,n,u,v,du,dv) \
+   do { ptmap_lit_run(dest, n, u, v, du, dv); } while (0)
+
+#define ptmap_do_perspective_lit_run_implicit(dest,n,a,b,c) \
+   do { double z[3];z[0]=(a);z[1]=(b);z[2]=(c); ptmap_perspective_run(n, z, dest); } while (0)
+
+extern void ptmap_setup(grs_bitmap *bm);
+; $Header: r:/t2repos/thief2/src/portal/ptmapper.asm,v 1.5 1997/01/31 14:43:38 JAEMZ Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptmap.asm
+;   support functions
+
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+_DATA	segment	para public USE32 'DATA'
+
+	align	8
+
+tmap_loc  dq 0,0,0
+ma  dq 0
+mb  dq 0
+mc  dq 0
+dumb_scale  dd 65536
+x_step dd 0
+dxdy dd 0
+u dd 0
+v dd 0
+du dd 0,0
+dv dd 0,0
+span_end dd 0
+y_pos dd 0
+
+externdef _fda:qword
+externdef _fdb:qword
+externdef _fdc:qword
+externdef _u_step_data:qword
+externdef _v_step_data:qword
+externdef _tmap_data:qword
+externdef _dest_row:dword
+externdef _stat_num_dest_pixels:dword
+externdef _clip_alloc:dword
+
+externdef _slist_count:dword
+externdef _snext:dword
+externdef _start_y:dword
+externdef _last_y:dword
+ 
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+;extn pt_scan_convert
+;extn pt_asm_outer_loop
+extn ptmap_perspective_run_asm
+
+;
+; PT_SCAN_CONVERT
+;
+;  EAX = x
+;  EBX = dx
+;  ECX = count
+;  EDI = destination
+
+  _FUNCDEF pt_scan_convert,4
+
+;  convert to split 16:16
+
+    push   ebp
+    push   edi
+    
+    mov    edi,edx
+    mov    edx,ebx
+
+    shl    edx,16
+    add    eax,65535    ; let truncation be fix_cint
+
+    sar    ebx,16
+    mov    ebp,eax
+
+    shl    ebp,16
+
+    sar    eax,16
+
+scan_loop:
+    mov    [edi],eax
+    add    ebp,edx
+
+    adc    eax,ebx
+    add    edi,8
+
+    dec    ecx
+    jnz    scan_loop
+
+    pop    edi
+    pop    ebp
+    ret
+
+; PT_SCAN_CONVERT_UV
+;
+;  EAX = uv_scan_info
+;  EBX = &uvdata
+;  ECX = count
+;  EDX = &xdata
+
+  _FUNCDEF pt_scan_convert_uv,4
+       push  ebp
+       push  esi
+
+       push  edi
+       mov   esi,eax
+
+       mov   edi,edx
+       push  ecx
+
+; EAX,ECX,EDX temps
+;  EDX = this_x around the loop
+
+       mov   eax,[esi+4]
+       mov   edx,[esi]
+
+       sar   eax,16
+       add   edx,65535
+
+       sar   edx,16
+       mov   ecx,[esi+4]
+       mov   dxdy,ecx
+       mov   ecx,[esi+8]
+       mov   u,ecx
+       mov   ecx,[esi+12]
+       mov   v,ecx
+       mov   ecx,[esi+16]
+       mov   du,ecx
+       mov   ecx,[esi+20]
+       mov   dv,ecx
+       mov   ecx,[esi+24]
+       mov   du[4],ecx
+       mov   ecx,[esi+28]
+       mov   dv[4],ecx
+
+       mov   ebp,[esi]
+       mov   x_step,eax
+
+;  EBX = uvdata
+;  EDI = xdata
+;  EBP = x
+
+scan_uv_loop:
+       mov   [edi],edx    ; xdata[y][0] = this_x
+       add   edi,8        ; ++xdata
+
+       mov   eax,dxdy     ; EAX = dx
+
+       add   eax,ebp      ; x += dx
+       mov   ecx,x_step
+
+       mov   ebp,eax      ; ebp = new_x
+       add   eax,65535
+       
+       sar   eax,16       ; eax = this_x
+       add   ecx,edx      ; edx = prev_x + x_step
+
+       mov   esi,eax
+       mov   edx,eax
+
+       sub   esi,ecx      ; edx = (prev_x + x_step != this_x)
+       mov   eax,u        ; u
+
+       mov   ecx,v
+       mov   [ebx],eax    ; uvdata[y][0]
+
+       mov   [ebx+4],ecx  ; uvdata[y][1]
+       add   ebx,8        ; ++uvdata
+      
+       add   eax,du[esi*4]
+       add   ecx,dv[esi*4]
+
+       ; 2-cycle instructions stall
+
+       mov   u,eax
+       mov   v,ecx
+
+       pop   eax
+
+       dec   eax          ; decrement & test count
+
+       push  eax
+       jnz   scan_uv_loop
+
+       pop   eax
+       pop   edi
+
+       pop   esi
+       pop   ebp
+
+       ret
+       
+
+; EAX = starting (a,b,c)
+; EDI = destcore
+; ESI = &xdata[i][0]
+; ECX = # of lines
+
+  _FUNCDEF pt_asm_outer_loop,4
+        push  esi
+        push  edi
+
+        mov   edi,edx
+        mov   esi,ebx
+
+        fld   qword ptr [eax]
+        fld   qword ptr [eax+8]
+        fld   qword ptr [eax+16]
+        fxch  st(2)
+        fstp  ma
+        fstp  mb
+        fstp  mc
+        jmp   outer_scan_loop
+
+;  outer loop:
+;    ESI = xdata[i]
+;    ECX = # of lines left
+;    EDI = destcore
+;    ma,mb,mc are globals
+
+no_draw:
+        dec    ecx
+        jz     all_done
+
+        fld    ma
+        fadd   _tmap_data+6*8
+        fld    mb
+        fadd   _tmap_data+7*8
+        fld    mc
+        fadd   _tmap_data+8*8
+        fxch   st(2)
+        fstp   ma
+        fstp   mb
+        fstp   mc
+
+        mov    eax,_dest_row
+        add    esi,8
+
+        add    edi,eax
+        nop
+
+outer_scan_loop:
+        mov    eax,[esi]
+        mov    ebx,[esi+4]
+
+        sub    ebx,eax
+        jle    no_draw
+
+; EBX = len
+; EAX = x
+
+        push   ecx
+        push   esi
+        push   edi
+        mov    ecx,_stat_num_dest_pixels
+        add    ecx,ebx
+        mov    _stat_num_dest_pixels,ecx
+
+        fild   dword ptr [esi]        ; 0   x
+
+        ; the above instruction has some latency (7?!!)
+        ; so let's make sure some stuff is in cache
+
+        mov    ecx,dword ptr tmap_loc
+        mov    edx,dword ptr ma
+
+        mov    ecx,dword ptr _fda
+        mov    edx,dword ptr _fdc
+
+        mov    ecx,dword ptr _fdb
+        mov    edx,dword ptr mb
+
+        mov    ecx,dword ptr mc
+        mov    edx,dword ptr tmap_loc+16
+
+        fld    st(0)                  ; 1   x x
+
+        fmul   _fda                   ; 2   (2)fda*x x
+        fxch   st(1)                  ;     x (2)fda*x
+
+        fld    st(0)                  ; 3   x x (2)fda*x
+
+        fmul   _fdb                   ; 4   (4)fdb*x x (2)fda*x
+        fxch   st(2)                  ;     (2)fda*x x (4)fdb*x
+
+        fadd   ma                     ; 5   (5)a x (4)fdb*x
+        fxch   st(1)                  ;     x (5)a (4)fdb*x
+
+        fmul   _fdc                   ; 6   (6)fdc*x (5)a (4)fdb*x
+        fxch   st(2)                  ;     (4)fdb*x (5)a (6)fdc*x
+
+        fadd   mb                     ; 7   (7)b (5)a (6)fdc*x
+        fxch   st(1)                  ;     (5)a (7)b (6)fdc*x
+
+        fld    _fdc                   ; 8   fdc (5)a (7)b (6)fdc*x
+
+        fmul   st,st(1)               ; 9   (9)a*fdc (5)a (7)b (6)fdc*x
+        fxch   st(3)                  ;     (6)fdc*x (5)a (7)b (9)a*fdc
+
+        fadd   mc                     ; 10  (10)c (5)a (7)b (9)a*fdc
+        fxch   st(1)                  ;     (5)a (10)c (7)b (9)a*fdc
+
+        fstp   tmap_loc               ; 11  (10)c (7)b (9)a*fdc
+
+        fxch   st(1)                  ; 13  (7)b (10)c (9)a*fdc
+
+        fstp   tmap_loc+8             ; 15  (10)c (9)a*fdc
+
+        fst    tmap_loc+16            ; 17  c a*fdc
+
+        ; reset counter to 3
+
+        fmul   _fda                   ; 3   (3)c*fda a*fdc
+        fxch   st(1)                  ;     a*fdc (3)c*fda
+
+        fld    tmap_loc+16            ; 4   c a*fdc (3)c*fda
+
+        fmul   _fdb                   ; 5   (5)c*fdb a*fdc (3)c*fda
+        fxch   st(1)                  ;     a*fdc (5)c*fdb (3)c*fda
+
+        fsubp  st(2),st               ; 6   (5)c*fdb (6)u_step
+
+        fld    tmap_loc+8             ; 7   b (5)c*fdb (6)u_step
+
+        fmul   _fdc                   ; 8   (8)b*fdc (5)c*fdb (6)u_step
+        fxch   st(2)                  ;     (6)u_step (5)c*fdb (8)b*fdc
+
+        fld    ma                     ; 9   ma (6)u_step (5)c*fdb (8)b*fdc
+
+        fadd   _tmap_data+6*8         ; 10  ma' (6)u_step (5)c*fdb (8)b*fdc
+        fxch   st(2)                  ;     (5)c*fdb (6)u_step ma' (8)b*fdc
+
+        fsubrp  st(3),st              ; 11  (6)u_step ma' (11)v_step
+
+        fstp   _u_step_data           ; 12  ma' (11)v_step
+
+        fld    mb                     ; 14  mb ma' (11)v_step
+
+        fadd   _tmap_data+7*8         ; 15  mb' ma' (11)v_step
+        fxch   st(2)                  ;     (11)v_step ma' mb'
+
+        fstp   _v_step_data           ; 16  (10)ma' (15)mb'
+        
+        fld    mc                     ; 18  mc (10)ma' (15)mb'
+
+        fadd   _tmap_data+8*8         ; 19  (19)mc' (10)ma' (15)mb'
+        fxch   st(2)                  ;     (15)mb' (10)ma' (19)mc'
+
+        fstp   mb
+
+        fstp   ma
+
+        fstp   mc
+
+        add    edi,eax 
+        mov    esi,ebx
+
+        lea    eax,tmap_loc
+        call   ptmap_perspective_run_asm
+
+        pop    edi
+        pop    esi
+        pop    ecx
+        mov    eax,_dest_row
+
+        add    esi,8
+        add    edi,eax
+
+        dec    ecx
+        jnz    outer_scan_loop
+
+all_done:
+        pop    edi
+        pop    esi
+
+        ret
+
+;
+;  RENDER_RPI_UNLIT_ASM
+;
+;     EAX: pointer to span info
+;     EDX: pointer to ma,mb,mc
+;     EBX: dest
+;     ECX: span_end
+;
+;  span: 2 bytes x
+;        1 byte  len
+;        1 byte  delta y
+
+   _FUNCDEF pt_render_rpi_unlit_asm,4
+      push   esi
+      push   edi
+      push   ebp
+
+      mov    esi,eax
+      mov    edi,ebx
+
+      mov    span_end,ecx
+
+      fld   qword ptr [edx]
+      fld   qword ptr [edx+8]
+      fld   qword ptr [edx+16]
+      fxch  st(2)
+      fstp  ma
+      fstp  mb
+      fstp  mc
+
+rrua_loop_top:
+      mov    al,byte ptr 2[esi]    ; get length in eax
+      xor    ebx,ebx
+
+      cmp    al,0
+      je     rrua_big_skip_y       ; length == 0 means skip vertically a bunch
+       
+      mov    bx,word ptr [esi]
+      and    eax,0ffh
+
+      cmp    al,255
+      jne    rrua_good_length      ; length == 255 means length encoded in next
+
+      mov    ax,word ptr 4[esi]
+      add    esi,4
+
+rrua_good_length:
+
+      ; compute a,b,c,u_step_data,v_step_data
+
+      mov    x_step,ebx
+
+      fild   x_step    ;  x
+
+      fld    st(0)     ;  x x
+
+      fmul   _fdc      ;  fdc*x  x
+
+      fld    st(1)     ;  x  fdc*x  x
+
+      fmul   _fda      ;  fda*x  fdc*x  x
+      fxch   st(1)     ;  fdc*x  fda*x  x
+
+      fadd   mc        ;  c  fda*x  x
+      fxch   st(2)     ;  x  fda*x  c
+
+      fmul   _fdb      ;  fdb*x  fda*x  c
+      fxch   st(1)     ;  fda*x  fdb*x  c
+
+      fadd   ma        ;  a  fdb*x c
+      fxch   st(1)     ;  fdb*x  a  c
+
+      fadd   mb        ;  b  a  c
+      fxch   st(2)     ;  c  a  b
+
+      fst    qword ptr tmap_loc+16
+
+      fxch   st(1)     ;  a  c  b
+
+      fstp   qword ptr tmap_loc   ; c b
+
+      fxch   st(1)
+
+      fstp   qword ptr tmap_loc+8
+
+      fld    st(0)
+
+      fmul   _fda      ; c*fda c
+
+      fld    _fdc      ; fdc c*fda c
+
+      fmul   qword ptr tmap_loc ; a*fdc c*fda c
+      fxch   st(2)     ; c c*fda a*fdc
+
+      fld    _fdc      ; fdc c c*fda a*fdc
+
+      fmul   qword ptr tmap_loc+8 ; b*fdc c c*fda a*fdc
+      fxch   st(2)     ; c*fda c b*fdc a*fdc
+
+      fsubrp  st(3),st  ; c b*fdc u_step_data
+
+      fmul   _fdb      ; c*fdb b*fdc u_step_data
+      fxch   st(2)     ; u_step_data b*fdc c*fdb
+
+      fstp   _u_step_data    ; b*fdc c*fdb
+
+      fsub
+
+      fstp   _v_step_data
+      
+      push   edi
+      push   esi
+
+      add    edi,ebx
+      mov    esi,eax
+
+      lea    eax,tmap_loc
+      call   ptmap_perspective_run_asm
+
+      pop    esi
+      xor    eax,eax
+
+      pop    edi
+      mov    al,byte ptr 3[esi]
+
+      cmp    al,1          ; fast common case: one span per scanline
+      jne    rrua_not_one
+
+      fld    ma
+
+      fld    mb
+
+      fld    mc
+      fxch   st(2)     ;  a b c
+
+      fadd   _tmap_data+6*8    ; a' b c
+      fxch   st(2)
+
+      fadd   _tmap_data+8*8    ; c' b a'
+      fxch   st(1)
+
+      fadd   _tmap_data+7*8    ; b' c' a'
+      fxch   st(2)             ; a' c' b'
+
+      fstp   ma
+
+      fstp   mc
+
+      fstp   mb
+
+      mov    eax,_dest_row
+
+      add    edi,eax
+      jmp    rrua_next      
+
+rrua_big_skip_y:
+      mov    ax,word ptr [esi]
+      jmp    rrua_skipped
+
+rrua_not_one:
+      cmp    al,0        ; other fast case: multiple spans per scanline
+      je     rrua_next
+
+      ; slow case: skipped a scanline
+      ;   length skipped is in eax
+rrua_skipped:
+
+      mov    x_step,eax
+      mov    ebx,_dest_row
+
+      imul   eax,ebx
+
+      add    edi,eax
+
+      fild   x_step    ; dy
+
+      fld    st(0)
+
+      fmul   _tmap_data+6*8    ; dy*dady dy
+      fxch   st(1)             ; dy dy*dady
+
+      fld    st(0)
+
+      fmul   _tmap_data+7*8    ; dy*dbdy dy dy*dady
+      fxch   st(2)
+
+      fadd   ma                ; ma' dy dy*dbdy
+      fxch   st(1)
+
+      fmul   _tmap_data+8*8    ; dy*dcdy ma' dy*dbdy
+      fxch   st(2)             ; dy*dbdy ma' dy*dcdy
+
+      fadd   mb                ; mb' ma' dy*dcdy
+      fxch   st(1)             ; ma' mb' dy*dcdy
+
+      fstp   ma
+      fxch   st(1)
+      fadd   mc
+      fxch   st(1)
+      fstp   mb
+      fstp   mc
+
+rrua_next:
+      mov    eax,span_end
+      add    esi,4
+
+      cmp    esi,eax
+      jnz    rrua_loop_top
+
+      pop    ebp
+      pop    edi
+      pop    esi
+
+      ret
+
+;
+;  PT_ADD_UNCLIPPED_RUN_ASM
+;
+;   EAX = x0
+;   EDX = x1
+;   EBX = y
+;
+;  span: 2 bytes x
+;        1 byte  len
+;        1 byte  delta y
+
+   _FUNCDEF pt_add_unclipped_run_asm,3
+
+        push   ebp
+        push   esi
+        push   edi
+
+        mov    esi,_slist_count
+        mov    edi,_snext
+
+        cmp    esi,0
+        jz     aura_first      ;  if (slist_count)
+
+        mov    ebp,_last_y
+        mov    _last_y,ebx     ;  last_y = y
+
+        sub    ebx,ebp
+
+        mov    [edi-1],bl      ; snext[-1].dy = y - last_y
+        add    ebx,ebp
+
+        jmp    aura_cont
+
+aura_first:
+        mov    _start_y,ebx
+        mov    _last_y,ebx
+
+aura_cont:
+        sub    edx,eax
+
+        cmp    edx,254
+        jle    aura_short
+
+        mov    [edi],ax
+        mov    al,255
+
+        mov    2[edi],al
+        mov    4[edi],dx
+
+        mov    eax,_snext
+        mov    ebx,_slist_count
+
+        add    eax,8
+        add    ebx,2
+
+        mov    _snext,eax
+        mov    _slist_count,ebx
+
+        jmp    aura_done
+
+aura_short:
+        mov    [edi],ax
+        mov    [edi+2],dl
+
+        mov    eax,_snext
+        mov    ebx,_slist_count
+
+        add    eax,4
+        add    ebx,1
+
+        mov    _snext,eax
+        mov    _slist_count,ebx
+
+aura_done:
+
+        pop    edi
+        pop    esi
+        pop    ebp
+
+        ret
+
+
+;
+;  PT_ADD_CLIPPED_RUN_ASM
+;
+;    EAX = last    (RunClipData **)
+;    EDX = x0
+;    EBX = x1
+;    ECX = y
+;
+;      0 start_x
+;      2 end_x
+;      4 next
+
+  _FUNCDEF  pt_add_clipped_run_asm,4
+
+        push   ebp
+        push   esi
+
+        push   edi
+        mov    esi,[eax]     ; z = *last
+        
+        mov    edi,eax       ; last = &clip[y]
+        mov    y_pos,ecx
+
+        cmp    esi,0
+        jz     acra_done     ; while (z)
+
+acra_looptop:
+        xor    eax,eax
+        xor    ecx,ecx
+
+        mov    ax,[esi]      ; eax = z->start_x
+
+        cmp    ebx,eax       ; if (x1 <= z->start_x)
+        jle    acra_done     ;      return
+
+        mov    cx,2[esi]     ; ecx = z->end_x
+
+        cmp    edx,ecx       ; if (x0 < z->end_x)
+        jl     acra_visible
+
+acra_next:
+        lea    edi,4[esi]    ; last = &z->next
+        mov    esi,4[esi]    ; z = z->next
+
+        cmp    esi,0
+        jnz    acra_looptop
+
+acra_done:
+        pop    edi
+        pop    esi
+
+        pop    ebp
+
+        ret
+
+acra_visible:
+         ;  there are four cases:
+         ;  we fill over it (and keep going)
+         ;  we fit snug against the left
+         ;  we fit snug against the right (and keep going)
+         ;  we are in the middle
+
+        cmp    edx,eax            ; if (x0 <= z->start_x)
+        jg     acra_notleft
+
+         ;  we fill up against the left side
+
+        nop                  ; give the branch prediction a break
+        nop
+
+        cmp    ebx,ecx            ; if (x1 >= z->end_x)
+        jl     acra_only_left
+
+         ;  we totally fill this gap
+
+        push   edx
+        push   ebx
+
+        mov    edx,ecx
+        mov    ebx,y_pos
+        call   pt_add_unclipped_run_asm_
+        pop    ebx
+        pop    edx
+        ;add_unclipped_run(eax,ecx,y_pos);
+
+         ;  delete the existing run
+        mov    esi,4[esi]          ; z = z->next
+        mov    [edi],esi           ; *last = z->next;
+
+        cmp    esi,0
+        jnz    acra_looptop
+
+        jmp    acra_done
+
+acra_only_left:
+        mov    0[esi],bx            ; z->start_x = x1
+        push   edx
+        push   ebx
+        mov    edx,ebx
+        mov    ebx,y_pos
+        call   pt_add_unclipped_run_asm_
+        pop    ebx
+        pop    edx
+        ;add_unclipped_run(eax,ebx,y_pos);
+        jmp    acra_done
+
+acra_notleft:
+        cmp    ebx,ecx
+        jl     acra_inside
+
+        mov    2[esi],dx            ; z->end_x = x0
+        push   edx
+        push   ebx
+        mov    eax,edx
+        mov    edx,ecx
+        mov    ebx,y_pos
+        call   pt_add_unclipped_run_asm_
+        pop    ebx
+        pop    edx
+        ;add_unclipped_run(edx,ecx,y_pos);
+        jmp    acra_next
+
+acra_inside:
+        mov    ebp,_clip_alloc
+        mov    eax,4[esi]
+
+        mov    0[ebp],bx
+        mov    4[ebp],eax
+
+        mov    4[esi],ebp           ; z->next = clip_alloc
+        mov    2[ebp],cx
+
+        mov    2[esi],dx           ; z->end_x = x0
+        add    ebp,8               ; ++clip_alloc
+
+        mov    _clip_alloc,ebp
+        push   edx
+        push   ebx
+        mov    eax,edx
+        mov    edx,ebx
+        mov    ebx,y_pos
+        call   pt_add_unclipped_run_asm_
+        pop    ebx
+        pop    edx
+        ;add_unclipped_run(edx,ebx,y_pos);
+        jmp    acra_done
+
+_TEXT   ends
+
+END
+// $Header: r:/t2repos/thief2/src/portal/ptmapper.h,v 1.5 2000/01/29 13:37:32 adurant Exp $
+#pragma once
+
+extern void pt_scan_convert(fix x, int *p, fix dx, int count);
+extern void pt_asm_outer_loop(double *uv, uchar *dest, int *xdata, int height);
+
+typedef struct
+{
+   fix x,dx;
+   fix u,v;
+   fix du,dv;
+   fix du2,dv2;
+} uv_scan_info;
+
+extern void pt_scan_convert_uv(uv_scan_info *p, int *xdata, fix *uvdata, int count);
+
+extern void pt_render_rpi_unlit_asm(void *span_info, double *abc, uchar *dest, void *span_end);
+
+extern void pt_add_unclipped_run_asm(int x0, int x1, int y);
+extern void pt_add_clipped_run_asm(void *span_last, int x0, int x1, int y);
+; $Header: r:/t2repos/thief2/src/portal/ptmap_8.asm,v 1.10 1997/02/07 15:30:23 KEVIN Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptmap_8.asm
+;
+; 8-pixel loops which write to _pt_buffer;
+; filters transparent, translucent,
+; and generic all write to edi
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+extd    _pt_tmap_ptr,_pt_tmap_mask
+extd    _pt_clut, _pt_tluc_table, _pt_light_table
+extd    _pt_buffer, _pt_lit_buffer
+extd    _pt_light, _pt_dlight, dlight_8
+extd    _pt_step_table
+
+extd    _pt_unlit_8_chain
+extd    _pt_pallit_8_chain
+extd    _pt_palflat_8_chain
+extd    _pt_lit_8_chain
+extd    _pt_clut_8_chain
+extd    _pt_transp_8_chain
+extd    _pt_tluc_8_chain
+extd    _pt_generic_8_chain
+extd    _pt_generic_8_2_chain
+
+extd    pt_dest
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+_DATA	segment	dword public USE32 'DATA'
+
+	align	4
+
+pt_dummy_buffer    dd 0,0,0,0
+
+count_save dd 0
+dest_save  dd 0
+
+externdef float_buf:qword
+externdef float_buf2:qword
+externdef _gdc:qword
+externdef _u_step_data:qword
+externdef _v_step_data:qword
+externdef _one:qword
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+; import
+extn    tmap_float_uv_iterate
+extn    pt_dest_pallit_n_
+extn    pt_unlit_arb_n_
+
+; export
+;extn    pt_unlit_8,pt_unlit_8_setup
+;extn    pt_palflat_8,pt_palflat_8_setup,pt_palflat_direct_8
+;extn    pt_lit_8,pt_lit_8_setup
+;extn    pt_pallit_8,pt_pallit_store_8
+;extn    pt_clut_8
+;extn    pt_pallit_clut_store_8
+;extn    pt_transp_8
+;extn    pt_tluc_8
+;extn    pt_generic_8, pt_generic_8_2
+;extn    pt_generic_preload_8, pt_generic_preload_8_2
+;extn    pt_dest_pallit_8
+;extn    pt_unlit_arb_8
+;extn    pt_pallit_perspective_core
+;extn    pt_unlit_perspective_unrolled
+
+
+;  first we have all of the texture mappers themselves
+;
+;  Basically, all of these mappers may have extra state
+;  in self-modified things or in global variables, but
+;  since they're called there can't be any other state
+;  preserved.  They are also free to trash the other
+;  registers not listed:
+
+;    U is stored as  8.24  in  BL and ESI
+;    V is stored as  8.24  in  BH and EAX
+;   DU is stored as  8.24  in  DL and EDX
+;   DV is stored as  8.24  in  DH and EBP
+
+;  If the tmapper must read the source (or not write
+;  some of it), then the source/destination is pt_dest.  We only
+;  have this for the outer filters: transparent, translucent,
+;  and generic (which just is a wrapper that redirects to
+;  pt_dest).
+
+;  Lighting is stored in a static buffer.
+;  These routines are not C callable and therefore
+;  don't preserve EBP.
+
+
+;
+;  UNLIT 8-RUN
+;
+
+ _FUNCDEF_ASM pt_unlit_8
+        mov    edi,_pt_tmap_ptr
+        mov    ecx,ebx
+
+        add    esi,edx
+        ; V pipe stall
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer,al
+        and    ebx,0babebeach
+pt_u8_mask_1:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+1,al
+        and    ebx,0babebeach
+pt_u8_mask_2:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+2,al
+        and    ebx,0babebeach
+pt_u8_mask_3:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+3,al
+        and    ebx,0babebeach
+pt_u8_mask_4:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+4,al
+        and    ebx,0babebeach
+pt_u8_mask_5:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+5,al
+        and    ebx,0babebeach
+pt_u8_mask_6:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+6,al
+        and    ebx,0babebeach
+pt_u8_mask_7:
+
+        add    esi,edx
+        mov    ecx,ebx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    al,[edi+ecx]
+
+        mov    byte ptr _pt_buffer+7,al
+        and    ebx,0babebeach
+pt_u8_mask_8:
+
+        jmp    [_pt_unlit_8_chain]
+
+
+; setup
+ _FUNCDEF pt_unlit_8_setup,0
+
+        push   eax
+        push   ebx
+
+        mov    eax,_pt_tmap_mask
+        mov    ebx,dword ptr ds:pt_u8_mask_1-4
+
+        cmp    eax,ebx
+        je     pt_u8_setup_done
+
+        mov    dword ptr ds:pt_u8_mask_1-4,eax
+        mov    dword ptr ds:pt_u8_mask_2-4,eax
+        mov    dword ptr ds:pt_u8_mask_3-4,eax
+        mov    dword ptr ds:pt_u8_mask_4-4,eax
+        mov    dword ptr ds:pt_u8_mask_5-4,eax
+        mov    dword ptr ds:pt_u8_mask_6-4,eax
+        mov    dword ptr ds:pt_u8_mask_7-4,eax
+        mov    dword ptr ds:pt_u8_mask_8-4,eax
+
+pt_u8_setup_done:
+        pop    ebx
+        pop    eax
+
+        ret
+
+;
+;  PALETTE FLATLIT 8-RUN
+;
+;     cycle 0:   write bl   add  ebp
+;     cycle 1:   write bh                                    write al
+;     cycle 2:   copy ebx->ecx           al = [ecx]
+;     cycle 3:   mask ecx                add  eax
+
+  _FUNCDEF_ASM pt_palflat_8
+        mov    ecx,ebp
+        mov    edi,_pt_tmap_ptr
+
+        mov    ch,byte ptr _pt_lit_buffer
+
+        add    eax,ecx
+        mov    ebp,ecx
+
+        mov    ah,[edi+ebx]
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_1:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_2:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+1,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_3:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+2,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_4:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+3,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_5:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+4,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_6:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+5,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_pf8_mask_7:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+6,ah
+
+        and    ebx,0deadbeefh
+pt_pf8_mask_8:
+        mov    ah,[edi+ecx]
+
+        push   eax
+        add    eax,ebp
+
+        and    ebp,0ffff0000h
+        mov    byte ptr _pt_buffer+7,ah
+
+        pop    eax
+        jmp    [_pt_palflat_8_chain]
+
+
+; setup
+  _FUNCDEF pt_palflat_8_setup,0
+        push   eax
+        push   ebx
+
+        mov    eax,_pt_tmap_mask
+        mov    ebx,dword ptr ds:pt_pf8_mask_1-4
+
+        cmp    eax,ebx
+        je     pt_pf8_setup_done
+
+        mov    dword ptr ds:pt_pf8_mask_1-4,eax
+        mov    dword ptr ds:pt_pf8_mask_2-4,eax
+        mov    dword ptr ds:pt_pf8_mask_3-4,eax
+        mov    dword ptr ds:pt_pf8_mask_4-4,eax
+        mov    dword ptr ds:pt_pf8_mask_5-4,eax
+        mov    dword ptr ds:pt_pf8_mask_6-4,eax
+        mov    dword ptr ds:pt_pf8_mask_7-4,eax
+        mov    dword ptr ds:pt_pf8_mask_8-4,eax
+
+        mov    dword ptr ds:pt_if8_mask_1-4,eax
+        mov    dword ptr ds:pt_if8_mask_2-4,eax
+        mov    dword ptr ds:pt_if8_mask_3-4,eax
+        mov    dword ptr ds:pt_if8_mask_4-4,eax
+        mov    dword ptr ds:pt_if8_mask_5-4,eax
+        mov    dword ptr ds:pt_if8_mask_6-4,eax
+        mov    dword ptr ds:pt_if8_mask_7-4,eax
+        mov    dword ptr ds:pt_if8_mask_8-4,eax
+
+pt_pf8_setup_done:
+        pop    ebx
+        pop    eax
+
+        ret
+
+
+;
+;  LIGHTING TABLE LIT 8-RUN
+;
+
+  _FUNCDEF_ASM pt_lit_8
+        mov    edi,_pt_tmap_ptr
+        xor    ecx,ecx
+
+        add    esi,edx
+        mov    ch,byte ptr _pt_lit_buffer
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_1:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_1:
+        mov    byte ptr _pt_buffer,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+1
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_2:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_2:
+        mov    byte ptr _pt_buffer+1,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+2
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_3:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_3:
+        mov    byte ptr _pt_buffer+2,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+3
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_4:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_4:
+        mov    byte ptr _pt_buffer+3,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+4
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_5:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_5:
+        mov    byte ptr _pt_buffer+4,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+5
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_6:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_6:
+        mov    byte ptr _pt_buffer+5,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+6
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_7:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_7:
+        mov    byte ptr _pt_buffer+6,ch
+
+        mov    ch,byte ptr _pt_lit_buffer+7
+        add    esi,edx
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    ch,0babebeach[ecx]
+pt_l8_light_table_8:
+
+        and    ebx,0deadbeefh
+pt_l8_mask_8:
+        mov    byte ptr _pt_buffer+7,ch
+
+        jmp    [_pt_lit_8_chain]
+
+
+; setup
+  _FUNCDEF pt_lit_8_setup,0
+        push   eax
+        push   ebx
+
+        mov    eax,_pt_tmap_mask
+        mov    ebx,dword ptr ds:pt_l8_mask_1-4
+
+        cmp    eax,ebx
+        je     pt_l8_dolight
+
+        mov    dword ptr ds:pt_l8_mask_1-4,eax
+        mov    dword ptr ds:pt_l8_mask_2-4,eax
+        mov    dword ptr ds:pt_l8_mask_3-4,eax
+        mov    dword ptr ds:pt_l8_mask_4-4,eax
+        mov    dword ptr ds:pt_l8_mask_5-4,eax
+        mov    dword ptr ds:pt_l8_mask_6-4,eax
+        mov    dword ptr ds:pt_l8_mask_7-4,eax
+        mov    dword ptr ds:pt_l8_mask_8-4,eax
+
+pt_l8_dolight:
+        mov    eax,_pt_light_table
+        mov    ebx,dword ptr ds:pt_l8_light_table_1-4
+
+        cmp    eax,ebx
+        je     pt_l8_setup_done
+
+        mov    dword ptr ds:pt_l8_light_table_1-4,eax
+        mov    dword ptr ds:pt_l8_light_table_2-4,eax
+        mov    dword ptr ds:pt_l8_light_table_3-4,eax
+        mov    dword ptr ds:pt_l8_light_table_4-4,eax
+        mov    dword ptr ds:pt_l8_light_table_5-4,eax
+        mov    dword ptr ds:pt_l8_light_table_6-4,eax
+        mov    dword ptr ds:pt_l8_light_table_7-4,eax
+        mov    dword ptr ds:pt_l8_light_table_8-4,eax
+
+pt_l8_setup_done:
+        pop    ebx
+        pop    eax
+
+        ret
+
+
+; NEXT WE HAVE THE 8-BYTE FILTERS
+
+; these are called with identical
+; parameters as above, and have to
+; process things without stomping
+; registers
+
+;
+;  PALETTE LIT 8-RUN FILTER
+;
+
+  _FUNCDEF_ASM pt_pallit_8
+        mov    edi,_pt_buffer
+        mov    ecx,_pt_lit_buffer
+
+        add    edi,ecx
+        mov    ecx,_pt_lit_buffer+4
+
+        mov    _pt_buffer,edi
+        mov    edi,_pt_buffer+4
+
+        add    edi,ecx
+
+        mov    _pt_buffer+4,edi
+        jmp    [_pt_pallit_8_chain]
+
+  _FUNCDEF_ASM pt_pallit_store_8
+        mov    edi,pt_dest
+        mov    ecx,_pt_buffer
+
+        mov    edx,_pt_lit_buffer
+        mov    ebp,_pt_buffer+4
+
+        add    ecx,edx
+        mov    edx,_pt_lit_buffer+4
+
+        mov    [edi],ecx
+        add    edx,ebp
+
+        mov    [edi+4],edx
+        add    edi,8
+
+        ret
+
+  _FUNCDEF_ASM pt_clut_8
+        push   esi
+        push   edx
+
+        push   ebx
+        push   eax
+
+        mov    esi,_pt_clut
+        nop
+
+        xor    ecx,ecx
+        xor    eax,eax
+
+        xor    ebx,ebx
+        xor    edx,edx
+
+        mov    al,byte ptr _pt_buffer
+        mov    bl,byte ptr _pt_buffer+1
+
+        mov    cl,byte ptr _pt_buffer+2
+        mov    dl,byte ptr _pt_buffer+3
+
+        mov    al,[esi+eax]
+        mov    bl,[esi+ebx]
+
+        mov    byte ptr _pt_buffer,al
+        mov    cl,[esi+ecx]
+
+        mov    byte ptr _pt_buffer+1,bl
+        mov    dl,[esi+edx]
+
+        mov    byte ptr _pt_buffer+2,cl
+        mov    al,byte ptr _pt_buffer+4
+
+        mov    byte ptr _pt_buffer+3,dl
+        mov    bl,byte ptr _pt_buffer+5
+
+        mov    cl,byte ptr _pt_buffer+6
+        mov    dl,byte ptr _pt_buffer+7
+
+        mov    al,[esi+eax]
+        mov    bl,[esi+ebx]
+
+        mov    byte ptr _pt_buffer+4,al
+        mov    cl,[esi+ecx]
+
+        mov    byte ptr _pt_buffer+5,bl
+        mov    dl,[esi+edx]
+
+        mov    byte ptr _pt_buffer+6,cl
+        mov    byte ptr _pt_buffer+7,dl
+
+        pop    eax
+        pop    ebx
+
+        pop    edx
+        pop    esi
+
+        jmp    [_pt_clut_8_chain]
+
+; we use the following chain for clutted surfaces:
+;   pt_unlit_8 -> pt_pallit_8 -> pt_clut_8 -> pt_generic_8;
+;   so here is the last three in one step
+
+  _FUNCDEF_ASM pt_pallit_clut_store_8
+        push   edx
+        push   eax
+
+        push   ebx
+        push   esi
+
+        push   ebp
+        mov    esi,_pt_clut
+
+        mov    ecx,_pt_buffer
+        mov    ebp,_pt_lit_buffer
+
+;   edi = final dest
+;   esi = clut
+
+        add    ecx,ebp
+        xor    eax,eax
+
+        mov    al,cl
+        xor    ebx,ebx
+
+        mov    edi,pt_dest
+        mov    bl,ch
+
+        shr    ecx,16
+        mov    dl,[esi+eax]
+
+        mov    al,cl
+        mov    dh,[esi+ebx]
+
+        shl    edx,16
+        mov    bl,ch
+
+        mov    dl,[esi+eax]
+        mov    ecx,_pt_buffer+4
+
+        mov    dh,[esi+ebx]
+        mov    ebp,_pt_lit_buffer+4
+
+        ror    edx,16
+        add    ecx,ebp
+
+        mov    [edi],edx
+        mov    al,cl
+
+        mov    bl,ch
+        add    edi,8
+
+        shr    ecx,16
+        mov    dl,[esi+eax]
+
+        mov    al,cl
+        mov    dh,[esi+ebx]
+
+        shl    edx,16
+        mov    bl,ch
+
+        mov    dl,[esi+eax]
+        pop    ebp
+
+        mov    dh,[esi+ebx]
+        pop    esi
+
+        ror    edx,16
+        pop    ebx
+
+        mov    [edi-4],edx
+        pop    eax
+
+        pop    edx
+        ret
+
+
+;
+;   8 pixels of transparency
+;  edi is the destination
+
+  _FUNCDEF_ASM pt_transp_8
+        mov    edi,pt_dest
+        push   ebx
+
+        push   eax
+        mov    eax,_pt_buffer
+
+; if all four pixels are transparent, don't do anything more
+
+        test   eax,eax
+        jz     pt_t8_long_1
+
+; check for all four non-zero
+        mov    ecx,eax
+        and    eax,07f7f7f7fh
+
+        sub    eax,01010101h
+
+        and    eax,080808080h
+        jnz    pt_t8_byte_test_1
+
+        mov    [edi],ecx
+        jmp    pt_t8_long_1
+
+pt_t8_byte_test_1:
+        cmp    cl,0
+        je     pt_t8_byte_1
+
+        mov    [edi],cl
+        nop
+
+pt_t8_byte_1:
+        cmp    ch,0
+        je     pt_t8_byte_2
+
+        mov    1[edi],ch
+        nop
+
+pt_t8_byte_2:
+        shr    ecx,16
+
+        cmp    cl,0
+        je     pt_t8_byte_3
+
+        mov    2[edi],cl
+        nop
+
+pt_t8_byte_3:
+        cmp    ch,0
+        je     pt_t8_byte_4
+
+        mov    3[edi],ch
+        nop
+
+pt_t8_byte_4:
+pt_t8_long_1:
+
+        mov    eax,_pt_buffer+4
+        nop
+
+; if all four pixels are transparent, don't do anything more
+
+        test   eax,eax
+        jz     pt_t8_long_2
+
+        mov    ecx,eax
+        and    eax,07f7f7f7fh
+
+        sub    eax,001010101h
+
+        and    eax,080808080h
+        jnz    pt_t8_byte_test_2
+
+        mov    [edi+4],ecx
+        jmp    pt_t8_long_2
+
+pt_t8_byte_test_2:
+        cmp    cl,0
+        je     pt_t8_byte_5
+
+        mov    4[edi],cl
+        nop
+
+pt_t8_byte_5:
+        cmp    ch,0
+        je     pt_t8_byte_6
+
+        mov    5[edi],ch
+        nop
+
+pt_t8_byte_6:
+        shr    ecx,16
+
+        cmp    cl,0
+        je     pt_t8_byte_7
+
+        mov    6[edi],cl
+        nop
+
+pt_t8_byte_7:
+        cmp    ch,0
+        je     pt_t8_byte_8
+
+        mov    7[edi],ch
+        nop
+
+pt_t8_byte_8:
+pt_t8_long_2:
+
+        pop    eax
+        pop    ebx
+
+        add    edi,8
+        ret
+
+
+;   8 pixels of translucency
+;  this must come last in chain since it needs to read from real buffer
+
+  _FUNCDEF_ASM pt_tluc_8
+        ; save the final destination; we don't want to
+        ; write temp data there in case it's the screen
+        ; so we redirect to the buffer
+
+        push   eax
+
+        push   ebx
+        push   esi
+
+        mov    edi,pt_dest
+        mov    esi,_pt_tluc_table
+
+        xor    eax,eax
+        xor    ebx,ebx
+
+        xor    ecx,ecx
+        xor    edx,edx
+
+        mov    al,2[edi]
+        mov    bl,3[edi]
+
+        mov    ah,byte ptr _pt_buffer+2
+        mov    bh,byte ptr _pt_buffer+3
+
+        mov    cl,0[edi]
+        mov    dl,1[edi]
+
+        mov    al,[esi+eax]
+        mov    ch,byte ptr _pt_buffer+0
+
+        mov    ah,[esi+ebx]
+        mov    dh,byte ptr _pt_buffer+1
+
+        shl    eax,16
+        mov    cl,[esi+ecx]
+
+        mov    ch,[esi+edx]
+        mov    dl,5[edi]
+
+        or     eax,ecx
+        mov    cl,4[edi]
+
+        mov    [edi],eax
+        mov    ch,byte ptr _pt_buffer+4
+
+        xor    eax,eax
+        mov    dh,byte ptr _pt_buffer+5
+
+        mov    al,6[edi]
+        mov    cl,[esi+ecx]
+
+        mov    bl,7[edi]
+        mov    ah,byte ptr _pt_buffer+6
+
+        mov    bh,byte ptr _pt_buffer+7
+        mov    ch,[esi+edx]
+
+        mov    al,[esi+eax]
+
+        mov    ah,[esi+ebx]
+        pop    esi
+
+        shl    eax,16
+        pop    ebx
+
+        or     eax,ecx
+
+        mov    4[edi],eax
+        add    edi,8
+
+        pop    eax
+        ret
+
+
+  _FUNCDEF_ASM pt_generic_8
+        mov    edi,pt_dest
+        mov    ecx,_pt_buffer
+
+        mov    edx,_pt_buffer+4
+
+        mov    [edi],ecx
+        mov    4[edi],edx
+
+        add    edi,8
+        ret
+
+
+  _FUNCDEF_ASM pt_generic_preload_8
+        mov    edi,pt_dest
+
+        mov    ecx,_pt_buffer
+        mov    edx,_pt_buffer+4
+
+        mov    [edi],ecx
+        mov    4[edi],edx
+
+        mov    ecx,8[edi]
+        add    edi,8
+
+        ret
+
+  _FUNCDEF_ASM pt_dest_pallit_8
+        mov    edi,pt_dest
+        mov    al,8
+
+        add    edi,8
+
+        mov    pt_dest,edi
+        sub    edi,8
+
+        jmp    pt_dest_pallit_n_
+
+; UNLIT N-RUN, non-power of two, non-wrapping
+;
+;  EAX  =  v_lo << 16
+;  ESI  =  u_lo << 16
+;  EBP  = dv_lo << 16
+;  EDX  = du_lo << 16
+;  EBX  = source + u_hi + v_hi * source_row
+
+  _FUNCDEF_ASM pt_unlit_arb_8
+        mov    dl,[ebx]
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer,dl
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+1,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+2,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+3,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+4,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+5,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+
+        adc    ebx,edi
+        add    eax,ebp
+
+        sbb    edi,edi   ; save v carry
+        add    esi,edx   ; update u
+
+        mov    byte ptr _pt_buffer+6,al
+        mov    al,[ebx]
+
+        mov    edi,_pt_step_table[edi*4+4]
+        mov    byte ptr _pt_buffer+7,al
+
+        adc    ebx,edi
+        jmp    [_pt_unlit_8_chain]
+
+
+; massively unrolled pallit core
+
+  _FUNCDEF_ASM pt_pallit_perspective_core
+        mov    al,cl       ; number of 8 pixels blocks to do
+        nop
+
+pt_pallit_perspective_loop:
+        nop
+        nop
+
+        fld     st(0)    ;  zz zz c hack
+        fxch    st(2)    ;  c zz zz hack
+
+        fld     st(0)    ;  c c zz zz hack
+        fxch    st(2)    ;  zz c c zz hack
+
+        fmul    _u_step_data ; du c c zz hack
+        fxch    st(1)    ;  c du c zz hack
+
+        fadd    _gdc     ;  c' du c zz hack
+        fxch    st(3)    ;  zz du c c' hack
+ 
+        fmul    _v_step_data ; dv du c c' hack
+        fxch    st(1)    ;  du dv c c' hack
+        
+        fadd    st,st(4) ;  idu dv c c' hack
+        fxch    st(2)    ;  c dv idu c' hack
+
+        fmul    st,st(3) ;  c*c' dv idu c' hack
+        fxch    st(1)    ;  dv c*c' idu c' hack
+
+        fadd    st,st(4) ;  idv c*c' idu c' hack
+        fxch    st(2)    ;  idu c*c' idv c' hack
+
+        fstp    float_buf ; c*c' idv c' hack
+
+        fld     _one     ;  1 c*c' idv c hack
+        fxch    st(2)    ;  idv c*c' 1 c hack
+
+        fstp    float_buf2 ; c*c' 1 c' hack
+
+        fdiv             ;  zz c hack
+
+    ; update lighting
+
+        mov    edx,_pt_light
+        mov    ebp,dlight_8
+
+        add    edx,ebp
+        mov    cl,byte ptr _pt_light+2      ; compute previous light level
+
+        mov    _pt_light,edx
+
+        shr    edx,16
+
+        cmp    cl,dl
+        jne    pt_pallit_core_do_lit_run
+
+        mov    byte ptr _pt_lit_buffer,cl
+        mov    edx,dword ptr float_buf
+
+        ror    edx,16
+        mov    ecx,dword ptr float_buf2
+
+        shr    ecx,16
+        mov    ebp,dword ptr float_buf2
+        
+        shl    ebp,16
+        mov    dh,cl
+
+        mov    ecx,ebp
+        mov    edi,_pt_tmap_ptr
+
+        mov    ch,byte ptr _pt_lit_buffer
+
+        add    eax,ecx
+        mov    ebp,ecx
+
+        mov    ah,[edi+ebx]
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_1:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_2:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+1,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_3:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+2,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_4:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+3,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_5:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+4,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_6:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+5,ah
+
+        mov    ah,[edi+ecx]
+        mov    ecx,ebx
+
+        and    ecx,0deadbeefh
+pt_if8_mask_7:
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    byte ptr _pt_buffer+6,ah
+
+        and    ebx,0deadbeefh
+pt_if8_mask_8:
+        mov    ah,[edi+ecx]
+
+        mov    [esp-128],eax
+        add    eax,ebp
+
+        and    ebp,0ffff0000h
+        mov    byte ptr _pt_buffer+7,ah
+
+        mov    edi,pt_dest
+        mov    ecx,_pt_buffer
+
+        mov    eax,[esp-128]
+        mov    edx,_pt_buffer+4
+
+        mov    [edi],ecx
+        mov    4[edi],edx
+
+        add    edi,8
+        dec    al
+
+        mov    pt_dest,edi
+        jnz    pt_pallit_perspective_loop
+
+        ret
+
+pt_pallit_core_do_lit_run:
+
+        mov    byte ptr count_save,al
+        mov    edx,_pt_light
+
+        mov    ebp,_pt_dlight
+        sub    edx,ebp
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+7,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+6,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+5,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+4,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+3,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+2,cl
+        mov    ecx,edx
+        shr    ecx,16
+        sub    edx,ebp
+        mov    byte ptr _pt_lit_buffer+1,cl
+        mov    ecx,edx
+        shr    ecx,16
+        mov    byte ptr _pt_lit_buffer,cl
+
+        mov    ebp,dword ptr float_buf2
+        mov    edx,dword ptr float_buf
+
+        ror    edx,16
+        mov    ecx,ebp
+
+        ror    ecx,16
+        
+        shl    ebp,16
+        mov    dh,cl
+
+        call   pt_unlit_8_
+
+        mov    pt_dest,edi
+        mov    al,byte ptr count_save
+
+        dec    al
+        jnz    pt_pallit_perspective_loop
+
+        ret
+
+
+  _FUNCDEF_ASM pt_unlit_perspective_unrolled
+        mov    al,cl
+        mov    edi,_pt_tmap_ptr
+
+ptup_top:
+        fld     st(0)    ;  zz zz c hack
+        fxch    st(2)    ;  c zz zz hack
+
+        fld     st(0)    ;  c c zz zz hack
+        fxch    st(2)    ;  zz c c zz hack
+
+        fmul    _u_step_data ; du c c zz hack
+        fxch    st(1)    ;  c du c zz hack
+
+        fadd    _gdc     ;  c' du c zz hack
+        fxch    st(3)    ;  zz du c c' hack
+ 
+        fmul    _v_step_data ; dv du c c' hack
+        fxch    st(1)    ;  du dv c c' hack
+        
+        fadd    st,st(4) ;  idu dv c c' hack
+        fxch    st(2)    ;  c dv idu c' hack
+
+        fmul    st,st(3) ;  c*c' dv idu c' hack
+        fxch    st(1)    ;  dv c*c' idu c' hack
+
+        fadd    st,st(4) ;  idv c*c' idu c' hack
+        fxch    st(2)    ;  idu c*c' idv c' hack
+
+        fstp    float_buf ; c*c' idv c' hack
+
+        fld     _one     ;  1 c*c' idv c hack
+        fxch    st(2)    ;  idv c*c' 1 c hack
+
+        fstp    float_buf2 ; c*c' 1 c' hack
+
+        fdiv             ;  zz c hack
+
+        mov    edx,dword ptr float_buf
+        mov    ebp,dword ptr float_buf2
+
+        ror    edx,16
+
+        shl    ebp,16
+        mov    ecx,dword ptr float_buf2
+
+        sar    ecx,16
+        add    esi,edx
+        
+        mov    dh,cl
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        nop
+        nop
+
+        mov    ch,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+
+        shl    ecx,16
+
+        mov    cl,[edi+ebx]
+        add    esi,edx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        nop
+
+        nop
+        nop
+
+        mov    ch,[edi+ebx]
+
+        ror    ecx,16
+
+        mov    _pt_buffer,ecx
+        add    esi,edx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        nop
+        nop
+
+        mov    cl,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        add    esi,edx
+
+        nop
+        nop
+
+        mov    ch,[edi+ebx]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+
+        shl    ecx,16
+
+        mov    cl,[edi+ebx]
+        add    esi,edx
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        add    eax,ebp
+
+        mov    ebp,pt_dest
+        nop
+
+        mov    ch,[edi+ebx]
+
+        adc    bh,dh
+        add    esi,edx
+
+        adc    bl,dl
+        mov    edx,_pt_buffer
+
+        mov    [ebp],edx
+        add    ebp,8
+
+        ror    ecx,16
+
+        mov    [ebp-4],ecx
+        mov    pt_dest,ebp
+
+        dec    al
+        jnz    ptup_top
+
+        mov    edi,pt_dest
+        ret
+
+
+_TEXT   ends
+
+END
+; $Header: r:/t2repos/thief2/src/portal/ptmap_n.asm,v 1.6 1997/02/07 15:30:26 KEVIN Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptmap_n.asm
+;
+; Variable length n-pixel loops
+; (at most 16 pixels due to buffer constraints)
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+extd    _pt_tmap_ptr,_pt_tmap_mask
+extd    _pt_clut, _pt_tluc_table, _pt_light_table
+extd    _pt_buffer, _pt_lit_buffer
+
+extd    _pt_clut_n_chain
+extd    _pt_transp_n_chain
+extd    _pt_tluc_n_chain
+
+extd    _pt_step_table
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+_DATA	segment	dword public USE32 'DATA'
+
+	align	4
+
+temp_ebp dd 0
+du_frac  dd 0
+dv_frac  dd 0
+dv       dd 0
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+;extn    pt_unlit_n,pt_unlit_n_setup
+;extn    pt_pallit_n,pt_pallit_n_setup
+;extn    pt_dest_pallit_n,pt_dest_pallit_n_setup
+;extn    pt_palflat_n,pt_palflat_n_setup
+;extn    pt_lit_n,pt_lit_n_setup
+;extn    pt_clut_n
+;extn    pt_transp_n
+;extn    pt_tluc_n
+;extn    pt_unlit_256_n, pt_unlit_256_n_setup
+;extn    pt_unlit_arb_n
+
+
+;  first we have all of the texture mappers themselves
+;
+;  Basically, all of these mappers may have extra state
+;  in self-modified things or in global variables, but
+;  since they're called there can't be any other state
+;  preserved.  They are also free to trash the other
+;  registers not listed:
+
+;    U is stored as  8.16  in  BL and ESI
+;    V is stored as  8.16  in  BH and EAX
+;   DU is stored as  8.16  in  DL and EDX
+;   DV is stored as  8.16  in  DH and EBP
+
+;  The number of bytes to write is found in AL, and the
+;  destination is in EDI.  The tmapper must preserve
+;  EDI and return with EDI = EDI + AL; it can trash AL & AH.
+
+;  Lighting is stored starting at ECX.
+;  Regardless, ECX can be trashed on return.
+
+;  VARIABLE LENGTH MAPPERS
+
+;
+;  UNLIT N-RUN
+;
+
+  _FUNCDEF_ASM pt_unlit_n
+pt_unlit_n_top:
+        mov    cl,0babebeach[ebx]   ; sample pixel
+pt_un_texture:
+        add    esi,edx              ; u_frac += du_frac
+
+        adc    bl,dl                ; u_int  += du_int
+        add    eax,ebp              ; v_frac += dv_frac
+
+        adc    bh,dh                ; v_int  += dv_int
+        mov    [edi],cl             ; write out pixel
+
+        and    ebx,0babebeach       ; mask for wrapping
+pt_un_mask:
+        inc    edi                  ; go to next output loc
+
+        dec    al                   ; AL is # of pixels
+        jnz    pt_unlit_n_top
+
+        ret
+
+
+; setup
+;
+;  this self-modifies the various constants in the loop
+;  the code is reused by other routines so takes 2 pointers
+
+  _FUNCDEF pt_unlit_n_setup,0
+        push   esi
+        push   edi
+        push   eax
+        push   ebx
+        push   ecx
+        push   edx
+
+        lea    esi,dword ptr ds:pt_un_texture-4
+        lea    edi,dword ptr ds:pt_un_mask-4
+
+pt_setup_core:
+        mov    eax,_pt_tmap_ptr
+        mov    ebx,_pt_tmap_mask
+        mov    ecx,[esi]
+        mov    edx,[edi]
+        cmp    eax,ecx
+        je     pt_un_domask
+        mov    [esi],eax
+pt_un_domask:
+        cmp    ebx,edx
+        je     pt_un_done
+        mov    [edi],ebx
+pt_un_done:
+        pop    edx
+        pop    ecx
+        pop    ebx
+        pop    eax
+        pop    edi
+        pop    esi
+        ret
+
+
+;  special case w=h=256
+
+  _FUNCDEF_ASM pt_unlit_256_n
+        xor    ecx,ecx
+
+        mov    cl,al
+
+        add    edi,ecx
+        neg    ecx
+
+pt_unlit_256_n_top:
+        mov    al,0babebeach[ebx]   ; sample pixel
+pt_un_256_texture:
+        add    esi,edx              ; u_frac += du_frac
+
+        adc    bl,dl                ; u_int  += du_int
+        add    eax,ebp              ; v_frac += dv_frac
+
+        adc    bh,dh                ; v_int  += dv_int
+        mov    [edi+ecx],al         ; write out pixel
+
+        inc    ecx                  ; go to next output loc
+        jnz    pt_unlit_256_n_top
+
+        ret
+
+  _FUNCDEF pt_unlit_256_n_setup,0
+        push   eax
+        push   ecx
+        push   esi
+
+        lea    esi,dword ptr ds:pt_un_256_texture-4
+        mov    eax,_pt_tmap_ptr
+        mov    ecx,[esi]
+        cmp    eax,ecx
+        je     pt_un_256_done
+        mov    [esi],eax
+pt_un_256_done:
+        pop    esi
+        pop    ecx
+        pop    eax
+
+        ret
+
+;
+;  PALETTE LIT N-RUN
+;
+
+  _FUNCDEF_ASM pt_pallit_n
+        mov    temp_ebp,ebp
+        mov    ebp,ecx
+
+        mov    ecx,temp_ebp
+        xor    cl,cl
+
+pt_pn_loop:
+        mov    ah,0babebeach[ebx]   ; add in pixel color
+pt_pn_texture:
+        mov    ch,[ebp]         ; fetch lighting
+
+        add    esi,edx
+        inc    ebp
+
+        adc    bl,dl
+        add    eax,ecx
+
+        adc    bh,dh
+        mov    [edi],ah
+
+        and    ebx,0deadbeefh
+pt_pn_mask:
+        inc    edi
+
+        dec    al
+        jnz    pt_pn_loop
+
+        mov    ebp,temp_ebp
+        ret
+
+; setup
+  _FUNCDEF pt_pallit_n_setup,0
+        push   esi
+        push   edi
+        push   eax
+        push   ebx
+        push   ecx
+        push   edx
+        lea    esi,dword ptr ds:pt_pn_texture-4
+        lea    edi,dword ptr ds:pt_pn_mask-4
+        jmp    pt_setup_core
+
+
+  _FUNCDEF_ASM pt_dest_pallit_n
+        mov    ecx,ebp
+        mov    ebp,eax
+
+        and    ebp,0ffh
+        mov    ch,[edi]             ; sample color
+
+        add    edi,ebp
+        neg    ebp
+
+pt_dpn_loop:
+        mov    ah,0babebeach[ebx]   ; sample pixel
+pt_dpn_texture:
+        add    esi,edx              ; u_frac += du_frac
+
+        adc    bl,dl                ; u_int  += du_int
+        add    eax,ecx              ; v_frac += dv_frac
+
+        adc    bh,dh                ; v_int  += dv_int
+        mov    ch,[edi+ebp+1]       ; sample color for next iteration
+
+        and    ebx,0babebeach       ; mask for wrapping
+pt_dpn_mask:
+        mov    [edi+ebp],ah         ; write out pixel
+
+        inc    ebp                  ; go to next output loc
+        jnz    pt_dpn_loop
+
+        ret
+
+; setup
+  _FUNCDEF pt_dest_pallit_n_setup,0
+        push   esi
+        push   edi
+        push   eax
+        push   ebx
+        push   ecx
+        push   edx
+        lea    esi,dword ptr ds:pt_dpn_texture-4
+        lea    edi,dword ptr ds:pt_dpn_mask-4
+        jmp    pt_setup_core
+
+
+;
+;  PALETTE FLAT-LIT N-RUN
+; lighting is first byte in _pt_lit_buffer
+;
+; so we move it into the second byte of ebp so
+; we get the lighting for free
+
+  _FUNCDEF_ASM pt_palflat_n
+        mov    ecx,ebp
+
+        mov    ch,byte ptr _pt_lit_buffer
+
+pt_pfn_loop:
+        mov    ah,0babebeach[ebx]    ; fetch pixel color
+pt_pfn_texture:
+        add    esi,edx
+
+        adc    bl,dl
+        add    eax,ecx
+
+        adc    bh,dh
+        mov    [edi],ah
+
+        and    ebx,0babebeach
+pt_pfn_mask:
+        inc    edi
+
+        dec    al
+        jnz    pt_pfn_loop
+
+        and    ebp,0ffff0000h
+        ret
+
+; setup
+  _FUNCDEF pt_palflat_n_setup,0
+        push   esi
+        push   edi
+        push   eax
+        push   ebx
+        push   ecx
+        push   edx
+        lea    esi,dword ptr ds:pt_pfn_texture-4
+        lea    edi,dword ptr ds:pt_pfn_mask-4
+        jmp    pt_setup_core
+
+;
+;  LIGHTING TABLE LIT N-RUN
+;
+
+  _FUNCDEF_ASM pt_lit_n
+        sub    ecx,edi
+        mov    dword ptr ds:(pt_ln_lighting-4),ecx
+        xor    ecx,ecx
+
+pt_ln_loop:
+        mov    cl,0babebeach[ebx]
+pt_ln_texture:
+        add    esi,edx
+
+        mov    ch,0babebeach[edi]         ; ch = sample light here
+pt_ln_lighting:
+        lea    edi,1[edi]
+
+        adc    bl,dl
+        add    eax,ebp
+
+        adc    bh,dh
+        mov    cl,0babebeach[ecx]         ; CL = light_table[light][color]
+pt_ln_light_table:
+
+        and    ebx,0deadbeefh
+pt_ln_mask:
+        mov    [edi-1],cl
+
+        dec    al
+        jnz    pt_ln_loop
+
+        ret
+
+
+; setup
+  _FUNCDEF pt_lit_n_setup,0
+        push   esi
+        push   edi
+        push   eax
+        push   ebx
+        push   ecx
+        push   edx
+        mov    eax,_pt_light_table
+        lea    esi,dword ptr ds:pt_ln_texture-4
+
+        cmp    eax,dword ptr ds:pt_ln_light_table-4
+        je     pt_ln_setup_skip
+
+        mov    dword ptr ds:pt_ln_light_table-4,eax
+
+pt_ln_setup_skip:
+        lea    edi,dword ptr ds:pt_ln_mask-4
+        jmp    pt_setup_core     
+
+
+; UNLIT N-RUN, non-power of two, non-wrapping
+;
+;  EAX  =  v_lo << 16
+;  ESI  =  u_lo << 16
+;  EBP  = dv_lo << 16
+;  EDX  = du_lo << 16
+;  EBX  = source + u_hi + v_hi * source_row
+;
+;   AL  = run length
+;
+; these registers are arranged so we have to save
+; the exact same registers as the normal mapper
+
+
+  _FUNCDEF_ASM pt_unlit_arb_n
+        add    eax,ebp
+        jmp    pt_uan_middle
+
+pt_uan_top:
+        mov    ecx,_pt_step_table[ecx*4+4]
+        add    esi,edx   ; update u
+
+        adc    ebx,ecx
+        add    eax,ebp   ; update v
+
+        mov    [edi],ah
+        inc    edi
+
+pt_uan_middle:
+        sbb    ecx,ecx   ; save v carry
+        mov    ah,[ebx]
+
+        dec    al
+        jnz    pt_uan_top
+
+        mov    ecx,_pt_step_table[ecx*4+4]
+        add    esi,edx
+
+        adc    ebx,ecx
+        mov    [edi],ah
+
+        inc    edi
+        ret
+
+
+; NEXT WE HAVE THE VARIABLE
+; LENGTH FILTERS
+
+; these are called with identical
+; parameters as above, and have to
+; process things without stomping
+; registers
+
+
+  _FUNCDEF_ASM pt_clut_n
+        ; save the final destination; we don't want to
+        ; write temp data there in case it's the screen
+        ; so we redirect to the buffer
+
+        push   edi
+        push   eax
+
+        lea    edi,_pt_buffer
+        call   [_pt_clut_n_chain]
+
+        pop    ecx            ; restore size
+        pop    edi            ; restore dest
+
+        mov    al,cl          ; get size back in al
+        xor    ecx,ecx
+
+        push   ebx
+        push   esi
+ 
+        mov    esi,_pt_clut
+        lea    ebx,_pt_buffer
+
+        mov    cl,[ebx]     ; this code has rotated up out of the loop
+        inc    ebx          ; this code has rotated up out of the loop
+
+        sub    edi,ebx
+        mov    ah,[esi+ecx] ; this code has rotated up out of the loop
+
+pt_clut_loop:
+        mov    [edi+ebx],ah  ; write output pixel
+        mov    cl,[ebx]      ; sample pixel from buffer
+
+        inc    ebx           ; increment output/input index
+        dec    al            ; count of pixels
+
+        mov    ah,[esi+ecx]  ; sample pixel from clut
+        jnz    pt_clut_loop
+        
+        pop    esi
+        add    edi,ebx
+
+        pop    ebx
+        ret
+
+;
+;   n-pixels of transparency
+;  this must come last in chain since it needs to write to real buffer
+
+  _FUNCDEF_ASM pt_transp_n
+
+        push   edi
+        push   eax
+
+        lea    edi,_pt_buffer
+        call   [_pt_transp_n_chain]
+
+        pop    ecx            ; restore size
+        pop    edi            ; restore dest
+
+        mov    al,cl
+        lea    ecx,_pt_buffer
+ 
+pt_transp_loop:
+
+        mov    ah,[ecx]
+        inc    ecx
+
+        or     ah,ah
+        jz     pt_transp_skip
+
+        mov    [edi],ah
+pt_transp_skip:
+        inc    edi
+
+        dec    al
+        jnz    pt_transp_loop
+
+        ret
+
+
+;   n-pixels of translucency
+;  this must come last in chain since it needs to read from real buffer
+
+ _FUNCDEF_ASM pt_tluc_n
+        ; save the final destination; we don't want to
+        ; write temp data there in case it's the screen
+        ; so we redirect to the buffer
+
+        push   edi
+        push   eax
+
+        lea    edi,_pt_buffer
+        call   [_pt_tluc_n_chain]
+
+        pop    ecx            ; restore size
+        pop    edi            ; restore dest
+
+        push   ebx
+
+        push   esi
+        push   ebp
+
+        mov    ebp,ecx
+        xor    ecx,ecx
+        mov    cl,[edi]        ; load up for first iteration
+
+        and    ebp,0ffh
+
+        neg    ebp             ; increment ebp to step through buffer
+        lea    ebx,_pt_buffer
+
+        sub    edi,ebp         ; use edi+ebp to access dest
+        mov    ch,byte ptr _pt_buffer   ; load up for first iteration
+
+        mov    esi,_pt_tluc_table
+        sub    ebx,ebp         ; use ebx+ebp to access source
+
+;
+;  this loop doesn't quite work out to 3 cycles because
+;  I couldn't get rid of all of the AGIs.  I believe it's
+;  impossible to avoid them all without using another register,
+;  which would involve another copy and thus push us over 3 cycles
+;  I could unroll it once possibly, might be worth exploring, because
+;  with only 4 real ops maybe we can end up at 5 cycles/2 instead
+;  of 4 cycles/1
+
+pt_tluc_loop:
+        mov    ah,[esi+ecx]
+        mov    cl,1[edi+ebp]
+
+        mov    [edi+ebp],ah
+        mov    ch,1[ebx+ebp]
+
+        inc    ebp
+        jnz    pt_tluc_loop
+        
+        add    edi,ebp
+        pop    ebp
+
+        pop    esi
+        pop    ebx
+
+        ret
+
+_TEXT   ends
+
+END
+; $Header: r:/t2repos/thief2/src/portal/ptpersp.asm,v 1.9 1997/02/07 15:30:27 KEVIN Exp $
+;
+; PORTAL Texture Mappers
+;
+; ptpersp.asm
+;
+; perspective-correct outer (per 8 pixel) loops
+
+.486
+	.nolist
+
+	include	macros.inc
+	include	lg.inc
+        include fix.inc
+        include thunks.inc
+
+	.list
+
+	assume	cs:_TEXT, ds:_DATA
+
+        extd  _pt_tmap_mask
+        extd  _pt_tmap_ptr
+        extd  _pt_buffer
+        extd  _pt_lit_buffer
+
+        extd  _pt_light
+        extd  _pt_dlight
+
+        extd  _pt_func_n
+        extd  _pt_func_8
+        extd  _pt_func_n_flat
+        extd  _pt_func_8_flat
+        extd  _pt_func_perspective_core
+        extd  _pt_func_perspective_run
+        extd  dlight_8
+
+        extd  pt_dest
+        extd  _pt_toggle
+
+_DATA	segment	dword public USE32 'DATA'
+
+	align	4
+
+two_to_52_power dd 059900000h
+
+flat_flag dd 0
+
+pixel_count dd 0
+scanline_count dd 0
+
+dest_save dd 0
+count_save dd 0
+pixel_save dd 0
+
+save_eax dd 0
+save_ebx dd 0
+save_esi dd 0
+
+start_len_table db 8,7,6,9,8,7,6,9
+
+externdef _gda:qword
+externdef _gdb:qword
+externdef _gdc:qword
+externdef _u_step_data:qword
+externdef _v_step_data:qword
+externdef _one:qword
+externdef float_buf:qword
+externdef float_buf2:qword
+
+_DATA	ends
+
+
+_TEXT	segment para public USE32 'CODE'
+
+extn    tmap_float_uv_start_part_one
+extn    tmap_float_uv_start_part_two
+extn    tmap_float_uv_start
+extn    tmap_float_uv_iterate
+extn    tmap_float_uv_iterate_n
+extn    tmap_float_uv_cleanup
+
+extn    ptmap_perspective_run_asm
+;extn    ptmap_perspective_run
+;extn    pt_lit_perspective_run
+;extn    pt_unlit_perspective_run
+;extn    pt_lit_perspective_core
+;extn    pt_unlit_perspective_core
+extn    compute_light_n
+extn    compute_light_8
+extn    ptmap_float_uv
+extn    ptmap_float_duv
+
+
+ _FUNCDEF ptmap_perspective_run,3
+        push    ebp
+        push    esi
+        push    edi
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        mov     esi,eax
+        mov     eax,edx
+        mov     edi,ebx
+        jmp     [_pt_func_perspective_run]
+
+ ptmap_perspective_run_asm:
+        push    ebp
+        push    esi
+        push    edi
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        jmp     [_pt_func_perspective_run]
+
+;  PT_LIT_PERSPECTIVE_RUN
+;
+;     esi = info table
+;     eax = pointer to floating (a,b,c)
+;     edi = dest
+
+ _FUNCDEF_ASM pt_lit_perspective_run
+        call    tmap_float_uv_start_part_one
+
+; now we have a floating point divide running in
+; the background while we set up for our other stuff
+
+; compute length of leading run from starting position
+
+        mov     ecx,_pt_dlight
+        mov     eax,_pt_toggle
+
+        xor     eax,ecx
+
+        add     ecx,eax
+        mov     eax,edi
+
+        shl     ecx,2
+;  we're going to compute a starting length as follows:
+;  bottom bits of edi:   0  1  2  3  4  5  6  7
+;  starting length:      8  7  6  9  8  7  6  9
+        and     eax,7
+
+        mov     dlight_8,ecx
+        mov     ecx,esi
+
+        mov     count_save,ecx
+
+;  if we don't have at least one aligned run of 8,
+; we're a "short" run.  Actually testing for this is
+; complicated, but basically our worst case is 9 pixels
+; on the front, 8 pixels aligned, and then 5 pixels at
+; the end, which is 22 pixels
+
+        cmp     ecx,23
+        jge     pt_lpr_long_run
+
+; there are two kinds of short runs.  one kind of short
+; run is so short that we just do it all by itself.  The other
+; kind is long enough that it needs to be subdivided.
+
+        cmp     ecx,12
+        jl      pt_lpr_short_run
+
+; we need to subdivide.   what we'll do is leverage the 8-pixel
+; unrolled stuff but we won't bother being aligned (still faster
+; than not using it at all).
+; rather than do any work, we'll just skip the "leading run" code
+; for long runs, and jump straight into where it does 8 pixels at
+; a time.  Then the trailing code support for it will handle
+; the remaining pixels
+
+        mov     eax,8                        ; the first step will be by 8
+        call    tmap_float_uv_start_part_two ; so use the precomputed one
+        mov     eax,esi                      ; get the full size
+        sub     ecx,1
+        sub     eax,1
+        shr     ecx,3                        ; compute the # of 8-byte blocks
+        and     eax,7                        ; compute the remainder
+        add     eax,1
+        mov     pixel_save,eax
+        mov     count_save,ecx
+        call    ptmap_float_uv               ; get the initial step values
+        mov     save_eax,eax                 ; load our tmapping state and go
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+        jmp     plp_entry
+
+; lets just do a single run by itself
+pt_lpr_short_run:
+
+        mov     eax,ecx
+        mov     count_save,ecx
+
+        dec     eax
+
+        call    tmap_float_uv_start_part_two
+
+        call    ptmap_float_uv   ; let's check out the starting values
+
+        mov     al,byte ptr count_save  ; put initial run count in bottom bits of al
+
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+        mov     save_eax,eax
+
+        call    tmap_float_uv_iterate
+
+        mov     eax,count_save      ; get count into al
+        call    compute_light_n
+
+        call    ptmap_float_duv
+        
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+        mov     esi,save_esi
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+
+        call    tmap_float_uv_cleanup
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        pop     edi
+        pop     esi
+        pop     ebp
+
+        ret
+
+pt_lpr_long_run:
+        mov     al,start_len_table[eax]
+
+        mov     ecx,eax          ; save our initial length
+
+        call    tmap_float_uv_start_part_two
+
+        mov     eax,ecx          ; restore our initial length
+        mov     ecx,count_save
+
+        sub     ecx,eax      ; less the leading run
+
+        mov     pixel_save,ecx
+        sub     ecx,6        ; our extra run will be at least 6 pixels
+
+        shr     ecx,3
+
+        mov     count_save,ecx
+
+        shl     ecx,3
+
+        sub     pixel_save,ecx
+
+        mov     edx,eax      ; put leading run count back in ecx
+        call    ptmap_float_uv
+
+        mov     al,dl         ; put initial run count in bottom bits of al
+        mov     ecx,edx
+
+        mov     save_eax,eax
+
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+
+; ok, we're all set to go and do the leading run
+
+        call    tmap_float_uv_iterate
+
+        mov     eax,ecx       ; get count into al
+        call    compute_light_n
+
+        call    ptmap_float_duv
+        
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+        mov     esi,save_esi
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+
+        mov     save_eax,eax
+
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+
+plp_entry:
+        mov     ecx,count_save
+
+        dec     ecx
+        jz      plp_post
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        mov     pt_dest,edi
+
+        call    [_pt_func_perspective_core]
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     save_esi,esi
+        nop
+
+plp_post:
+
+; do the last run of 8, and start
+; a divide for some other length
+
+        mov     eax,pixel_save
+        dec     eax
+
+        call    tmap_float_uv_iterate_n
+
+        call    compute_light_8
+
+        call    ptmap_float_duv
+
+        mov     pt_dest,edi
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        call    [_pt_func_8]
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     save_esi,esi
+        
+        mov     eax,pixel_save
+        
+        cmp     eax,0
+        je      plp_done
+
+        call    tmap_float_uv_iterate
+
+        call    compute_light_n
+
+        call    ptmap_float_duv
+
+        mov     ecx,pixel_save
+        mov     eax,save_eax
+
+        mov     al,cl
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+
+        lea     ecx,_pt_lit_buffer
+        call    [_pt_func_n]
+
+plp_done:
+        call    tmap_float_uv_cleanup
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        pop     edi
+        pop     esi
+        pop     ebp
+        ret
+
+
+; the main inner loop which does 8 pixels at a time
+; and overlaps a computation of the stepsize for the
+; NEXT 8 pixels at a time; this is modularized out
+; so we can instantiate ultra-fast ones for particular
+; types (which is only a win if we have big polys)
+
+ _FUNCDEF_ASM pt_lit_perspective_core
+        mov     count_save,ecx
+        call    tmap_float_uv_iterate
+
+        call    compute_light_8
+
+        call    ptmap_float_duv
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        call    [_pt_func_8]
+
+        mov     pt_dest,edi
+        mov     save_esi,esi
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     ecx,count_save
+
+        dec     ecx
+        jnz     pt_lit_perspective_core_
+
+        ret
+
+
+
+
+;  PT_UNLIT_PERSPECTIVE_RUN
+;
+;     esi = info table
+;     eax = pointer to floating (a,b,c)
+;     edi = dest
+
+ _FUNCDEF_ASM pt_unlit_perspective_run
+        call    tmap_float_uv_start_part_one
+
+; now we have a floating point divide running in
+; the background while we set up for our other stuff
+
+; compute length of leading run from starting position
+
+        mov     eax,edi
+
+;  we're going to compute a starting length as follows:
+;  bottom bits of edi:   0  1  2  3  4  5  6  7
+;  starting length:      8  7  6  9  8  7  6  9
+        and     eax,7
+        mov     ecx,esi
+
+        mov     count_save,ecx
+
+;  if we don't have at least one aligned run of 8,
+; we're a "short" run.  Actually testing for this is
+; complicated, but basically our worst case is 9 pixels
+; on the front, 8 pixels aligned, and then 5 pixels at
+; the end, which is 22 pixels
+
+        cmp     ecx,23
+        jge     pt_pr_long_run
+
+; there are two kinds of short runs.  one kind of short
+; run is so short that we just do it all by itself.  The other
+; kind is long enough that it needs to be subdivided.
+
+        cmp     ecx,12
+        jl      pt_pr_short_run
+
+; we need to subdivide.   what we'll do is leverage the 8-pixel
+; unrolled stuff but we won't bother being aligned (still faster
+; than not using it at all).
+; rather than do any work, we'll just skip the "leading run" code
+; for long runs, and jump straight into where it does 8 pixels at
+; a time.  Then the trailing code support for it will handle
+; the remaining pixels
+
+        mov     eax,8                        ; the first step will be by 8
+        call    tmap_float_uv_start_part_two ; so use the precomputed one
+        mov     eax,esi                      ; get the full size
+        sub     ecx,1
+        sub     eax,1
+        shr     ecx,3                        ; compute the # of 8-byte blocks
+        and     eax,7                        ; compute the remainder
+        add     eax,1
+        mov     pixel_save,eax
+        mov     count_save,ecx
+        call    ptmap_float_uv               ; get the initial step values
+        mov     save_eax,eax                 ; load our tmapping state and go
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+        jmp     pp_entry
+
+; lets just do a single run by itself
+pt_pr_short_run:
+
+        mov     eax,ecx
+        mov     count_save,ecx
+
+        dec     eax
+
+        call    tmap_float_uv_start_part_two
+
+        call    ptmap_float_uv   ; let's check out the starting values
+
+        mov     al,byte ptr count_save  ; put initial run count in bottom bits of al
+
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+        mov     save_eax,eax
+
+        call    tmap_float_uv_iterate
+
+        mov     eax,count_save      ; get count into al
+        call    ptmap_float_duv
+        
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+        mov     esi,save_esi
+
+        call    [_pt_func_n]
+
+        call    tmap_float_uv_cleanup
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        pop     edi
+        pop     esi
+        pop     ebp
+        ret
+
+pt_pr_long_run:
+        mov     al,start_len_table[eax]
+
+        mov     ecx,eax          ; save our initial length
+
+        call    tmap_float_uv_start_part_two
+
+        mov     eax,ecx          ; restore our initial length
+        mov     ecx,count_save
+
+        sub     ecx,eax      ; less the leading run
+
+        mov     pixel_save,ecx
+        sub     ecx,6        ; our extra run will be at least 6 pixels
+
+        shr     ecx,3
+
+        mov     count_save,ecx
+
+        shl     ecx,3
+
+        sub     pixel_save,ecx
+
+        mov     edx,eax      ; put leading run count back in ecx
+        call    ptmap_float_uv
+
+        mov     ecx,edx
+        mov     al,dl         ; put initial run count in bottom bits of al
+
+        mov     save_ebx,ebx
+        mov     save_eax,eax
+        mov     save_esi,esi
+
+; ok, we're all set to go and do the leading run
+
+        call    tmap_float_uv_iterate
+
+        call    ptmap_float_duv
+        
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+        mov     esi,save_esi
+
+        call    [_pt_func_n]
+
+        mov     save_eax,eax
+
+        mov     save_ebx,ebx
+        mov     save_esi,esi
+
+pp_entry:
+        mov     ecx,count_save
+
+        dec     ecx
+        jz      pp_post
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        mov     pt_dest,edi
+
+        call    [_pt_func_perspective_core]
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     save_esi,esi
+        nop
+
+pp_post:
+
+; do the last run of 8, and start
+; a divide for some other length
+
+        mov     eax,pixel_save
+        dec     eax
+
+        call    tmap_float_uv_iterate_n
+
+        call    ptmap_float_duv
+
+        mov     pt_dest,edi
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        call    [_pt_func_8]
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     save_esi,esi
+        
+        mov     eax,pixel_save
+        
+        cmp     eax,0
+        je      pp_done
+
+        call    tmap_float_uv_iterate
+
+        call    ptmap_float_duv
+
+        mov     ecx,pixel_save
+        mov     eax,save_eax
+
+        mov     al,cl
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+
+        call    [_pt_func_n]
+
+pp_done:
+        call    tmap_float_uv_cleanup
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        pop     edi
+        pop     esi
+        pop     ebp
+        ret
+
+
+; the main inner loop which does 8 pixels at a time
+; and overlaps a computation of the stepsize for the
+; NEXT 8 pixels at a time; this is modularized out
+; so we can instantiate ultra-fast ones for particular
+; types (which is only a win if we have big polys)
+
+ _FUNCDEF_ASM pt_unlit_perspective_core
+        mov     count_save,ecx
+        call    tmap_float_uv_iterate
+
+        call    ptmap_float_duv
+
+        mov     eax,save_eax
+        mov     ebx,save_ebx
+
+        mov     esi,save_esi
+        call    [_pt_func_8]
+
+        mov     pt_dest,edi
+        mov     save_esi,esi
+
+        mov     save_eax,eax
+        mov     save_ebx,ebx
+
+        mov     ecx,count_save
+
+        dec     ecx
+        jnz     pt_unlit_perspective_core_
+
+        ret
+
+
+_TEXT   ends
+
+END
+// $Header: r:/t2repos/thief2/src/portal/porthw.h,v 1.5 2000/01/29 13:37:26 adurant Exp $
+#pragma once
+#ifndef __PORTHW_H
+#define __PORTHW_H
+
+#include <r3ds.h>
+#include <wrdb.h>
+
+typedef struct hw_render_info {
+   r3s_texture tex, lm;          // pointers to base texture and
+                                 // lightmap texture (possibly an aggregation of many lightmaps)
+   float lm_u0, lm_v0;           // offset within lm to start of lightmap
+                                 // always at least 0.5 to facilitate bilinear
+                                 // filtering
+   int flags;
+   int mip_level;
+} hw_render_info;
+
+#define HWRIF_NOT_LIGHT 1
+#define HWRIF_SKY       2
+#define HWRIF_WATER     4
+
+// True when lightmap aggregation enabled
+extern BOOL pt_aggregate_lightmaps;
+
+// invalidate a lightmap (e.g., when we want to animate)
+extern void porthw_uncache_lightmap(PortalPolygonRenderInfo *render);
+
+extern void porthw_preload_lightmap(PortalPolygonRenderInfo *render,
+      PortalLightMap *lt);
+
+// sets hw->lm, hw->lm_u0, and hw->lm_v0;
+// allocates and frees lightmaps as necessary
+extern void porthw_get_cached_lightmap(hw_render_info *hw,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *lt);
+
+
+extern ushort *pt_alpha_pal;
+#endif
+//  $Header: r:/t2repos/thief2/src/portal/portlit.c,v 1.51 2000/01/26 16:11:27 BFarquha Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <string.h>
+#include <math.h>
+
+#include <lg.h>
+#include <r3d.h>
+#include <mprintf.h>
+
+#include <portal_.h>
+#include <portclip.h>
+#include <portdraw.h>
+#include <pt.h>
+#include <wrdbrend.h>
+#include <objcast.h>
+
+#include <animlit.h>
+
+// Have you heard?  This has to be the last header.
+#include <dbmem.h>
+
+#define LMSIZE    sizeof(LightmapEntry)
+
+//////////////////////////////////////////////////////////////////////////////
+
+//  The following sections of code are variations on
+//  draw_region and draw_surface which are used for doing
+//  lighting.  Lighting works by rendering from the point
+//  of view of the light; when we get to actually needing
+//  to "draw" a surface, we paint light onto it.
+
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+
+extern int hack_red;
+extern int hack_green;
+extern int hack_blue;
+
+LightmapEntry rgb_add_clamp(LightmapEntry cur, int add)
+{
+   int c;
+
+   c = cur.A[0] + ((add * hack_red) >> 8);
+   if (c > 255)
+      c = 255;
+   cur.A[0] = c;
+
+   c = cur.A[1] + ((add * hack_green) >> 8);
+   if (c > 255)
+      c = 255;
+   cur.A[1] = c;
+
+   c = cur.A[2] + ((add * hack_blue) >> 8);
+   if (c > 255)
+      c = 255;
+   cur.A[2] = c;
+
+   return cur;
+}
+
+
+// @TODO: If we want to use this for real we need to know the ambient
+// light level rather than clamping to 0.
+LightmapEntry rgb_sub_clamp(LightmapEntry cur, int add)
+{
+   int c;
+
+   c = cur.A[0] - ((add * hack_red) >> 8);
+   if (c < 0)
+      c = 0;
+   cur.A[0] = c;
+
+   c = cur.A[1] - ((add * hack_green) >> 8);
+   if (c < 0)
+      c = 0;
+   cur.A[1] = c;
+
+   c = cur.A[2] - ((add * hack_blue) >> 8);
+   if (c < 0)
+      c = 0;
+   cur.A[2] = c;
+
+   return cur;
+}
+
+#else // RGB_888
+
+// for each light we process, we write out the following tables
+// so we can compute things fast
+ulong pl_red_color[256], pl_green_color[256], pl_blue_color[256];
+ulong pl_red_mask, pl_green_mask, pl_blue_mask;
+LightmapEntry rgb_add_clamp(LightmapEntry cur, int add)
+{
+   int r = pl_red_color[add] + (cur & pl_red_mask);
+   int g = pl_green_color[add] + (cur & pl_green_mask);
+   int b = pl_blue_color[add] + (cur & pl_blue_mask);
+   if (r > pl_red_mask) r = pl_red_mask; else r &= pl_red_mask;
+   if (g > pl_green_mask) g = pl_green_mask; else g &= pl_green_mask;
+   if (b > pl_blue_mask) b = pl_blue_mask; else b &= pl_blue_mask;
+   return r | g | b;
+}
+
+LightmapEntry rgb_sub_clamp(LightmapEntry cur, int add)
+{
+   int r = (cur & pl_red_mask) - pl_red_color[add];
+   int g = (cur & pl_green_mask) - pl_green_color[add];
+   int b = (cur & pl_blue_mask) - pl_blue_color[add];
+   if (r < 0) r = 0; else r &= pl_red_mask;
+   if (g < 0) g = 0; else g &= pl_green_mask;
+   if (b < 0) b = 0; else b &= pl_blue_mask;
+   return r | g | b;
+}
+#endif // RGB_888
+
+#endif
+
+////////////////////////////////////////
+//
+// dynamic light map lighting system
+
+typedef struct dyn_lm_bits dyn_lm_bits;
+struct dyn_lm_bits {
+   PortalLightMap *lm;
+   dyn_lm_bits *next;
+   LightmapEntry first_byte[1];
+};
+
+
+// This points to the first element of a linked list.
+static dyn_lm_bits *dyn_lm_base;
+
+
+void reset_dynamic_lm(void)
+{
+   dyn_lm_bits *next;
+
+   while (dyn_lm_base) {
+      dyn_lm_base->lm->dynamic_light = NULL;
+      next = dyn_lm_base->next;
+      Free(dyn_lm_base);
+      dyn_lm_base = next;
+   }
+}
+
+
+void reset_dynamic_lights(void)
+{
+   reset_dynamic_lm();
+}
+
+
+void get_dynamic_lm(PortalLightMap *lm)
+{
+   int size = lm->pixel_row * lm->h * LMSIZE;
+   dyn_lm_bits *new_lm = Malloc(sizeof(dyn_lm_bits) - LMSIZE + size);
+
+   AssertMsg1(new_lm, "Could not allocate dynamic lightmap of size %d.", size);
+
+   new_lm->next = dyn_lm_base;
+   dyn_lm_base = new_lm;
+
+   new_lm->lm = lm;
+   lm->dynamic_light = new_lm->first_byte;
+   memcpy(lm->dynamic_light, lm->data, size);
+}
+
+
+void unget_dynamic_lm(PortalLightMap *lm)
+{
+   dyn_lm_bits *next;
+
+   AssertMsg1(dyn_lm_base, "Failed to unget dynamic lightmap for %x", lm);
+
+   dyn_lm_base->lm->dynamic_light = 0;
+   next = dyn_lm_base->next;
+   Free(dyn_lm_base);
+   dyn_lm_base = next;
+}
+
+extern bool PortalTestLocationInsidePlane(PortalPlane *p, Location *loc);
+
+// information about the current light
+
+#define MAX_DIST 8.0
+float max_dist = MAX_DIST;
+float max_dist_2 = (MAX_DIST * MAX_DIST);
+float inner_dist, dist_diff_recip;
+static Location *light_loc;
+static float bright;
+static unsigned char start_medium;
+
+void PortalSetLightInfo(Location *l, float br, uchar start)
+{
+   light_loc = l;
+   bright = br;
+   start_medium = start;
+}
+
+int num_bad;
+
+extern bool debug_raycast;
+
+void portal_raycast_light_poly(PortalCell *r, PortalPolygonCore *p, Location *lt, int voff)
+{
+   int i,n = p->num_vertices;
+   Location temp;
+
+   for (i=0; i < n; ++i) {
+      int k = r->vertex_list[voff+i];   // get which vertex pool entry it is
+      MakeLocationFromVector(&temp, &r->vpool[k]);
+   }
+}
+
+bool dynamic_light;
+
+float ambient_weight;
+
+#if 0
+void light_surface(PortalPolygonCore *poly, PortalPlane *plane, int voff, void *clip)
+{
+   int i,n = poly->num_vertices;
+   mxs_vector *norm;
+
+   norm = &plane->normal;
+
+   // now iterate over all of the vertices
+   for (i=0; i < n; ++i) {
+      int k = r_vertex_list[voff+i];
+        // check if this vertex is visible
+      if (!cur_ph[k].ccodes  && PortClipTestPoint(clip, cur_ph[k].grp.sx, cur_ph[k].grp.sy))
+      {
+         // compute the lighting on this vertex
+         //   lighting is:  let L = light - point
+         //                     N = surface normal
+         //          light = intensity * (L . N) / (L . L)
+         mxs_vector lvec;
+
+         if (dynamic_light) {
+            float result2;
+            int result;
+            mx_sub_vec(&lvec, &light_loc->vec, &cur_pool[k]);
+            result2 = mx_dot_vec(&lvec, norm) / mx_mag2_vec(&lvec);
+            if (result2 > 0) {
+               result = bright * result2;
+               result += r_vertex_lighting[voff+i];
+               if (result > 255) result = 255;
+               if (result < 0) result = 0;
+               r_vertex_lighting[voff+i] = result;
+            }
+         } else {
+            float result, result2;
+            mx_sub_vec(&lvec, &light_loc->vec, &cur_pool[k]);
+            result = mx_dot_vec(&lvec, norm) / mx_mag2_vec(&lvec);
+            if (result < 0) result = 0; else result = result * bright;
+            result2 = bright*0.25 / sqrt(mx_mag_vec(&lvec));
+            result = result + ambient_weight * (result2 - result);
+            if (result > 255) result = 255;
+//            if (result < -1 || result > 1)
+//               LightAtVertex(voff+i, result);
+         }
+      }
+   }
+}
+#endif
+
+// If the light level is less than this then we pretend our raycast
+// didn't reach.
+static int illumination_cutoff;
+static bool illumination_reached_polygon;
+
+float compute_light_at_point(mxs_vector *pt, mxs_vector *norm, mxs_vector *lt)
+{
+   float result,len;
+   mxs_vector lvec;
+   lvec.x = lt->x - pt->x;
+   lvec.y = lt->y - pt->y;
+   lvec.z = lt->z - pt->z;
+   result = lvec.x * norm->x + lvec.y * norm->y + lvec.z * norm->z;
+
+   if (result < 0) return 0;
+
+   len = mx_mag_vec(&lvec);
+   if (max_dist != 0.0 && len > max_dist)
+      return 0.0;
+   result = (result/len/2 + 0.5);
+
+      // copy quake's angle remapping
+     // bright * result / length(vec)^2 / 2, bright / length(vec)
+
+   if (inner_dist && len > inner_dist)
+      result *= (max_dist - len) * dist_diff_recip;
+
+   result = result * bright / len;
+
+   if (result > illumination_cutoff) {
+      illumination_reached_polygon = TRUE;
+      return result;
+   } else
+      return 0;
+}
+
+// now, for any point on the plane, the _unnormalized dot product_
+// above (the first result) is just the distance of the light from
+// the plane; it's a constant!
+
+float fast_compute_light_at_point(mxs_vector *pt, mxs_vector *lt, float dist)
+{
+   float result;
+   mxs_vector lvec;
+   lvec.x = lt->x - pt->x;
+   lvec.y = lt->y - pt->y;
+   lvec.z = lt->z - pt->z;
+
+   result = dist * bright /
+        (lvec.x*lvec.x + lvec.y*lvec.y + lvec.z*lvec.z);
+
+   return result;
+}
+
+float fast_precompute_light(mxs_vector *pt, mxs_vector *norm, mxs_vector *lt)
+{
+   mxs_vector lvec;
+   lvec.x = lt->x - pt->x;
+   lvec.y = lt->y - pt->y;
+   lvec.z = lt->z - pt->z;
+   return lvec.x * norm->x + lvec.y * norm->y + lvec.z * norm->z;
+}
+
+float fast_compute_light_at_center(float dist)
+{
+   return bright / dist;
+}
+
+float dynamic_light_min = 16.0;
+
+float fast_compute_dynamic_light_at_point(mxs_vector *pt, mxs_vector *lt, float dist)
+{
+   float result;
+   mxs_vector lvec;
+   lvec.x = lt->x - pt->x;
+   lvec.y = lt->y - pt->y;
+   lvec.z = lt->z - pt->z;
+
+   result = lvec.x * lvec.x + lvec.y * lvec.y + lvec.z * lvec.z;
+   // we want to clamp it so things disappear by the distance max_dist_2
+   if (result > max_dist_2) return 0;
+
+   result = (dist * bright) * (max_dist_2 - result) / (max_dist_2 * result);
+   return result;
+}
+
+float fast_compute_dynamic_light_at_center(float dist)
+{
+   float result = dist * dist;
+   if (result > max_dist_2) return 0;
+   return bright * (max_dist_2 - dist) / (dist * max_dist_2);
+}
+
+float fast_compute_dynamic_light_at_dist(float dist, float plane_dist)
+{
+   float result = dist * dist;
+   if (result > max_dist_2) return 0;
+   result = plane_dist * bright * (max_dist_2 - result) / (max_dist_2 * result);
+   return result;
+}
+
+void portal_light_poly(int r, int p)
+{
+   int i, voff=0;
+   PortalPolygonCore *poly = WR_CELL(r)->poly_list;
+
+   for (i=0; i < p; ++i)
+      voff += poly++->num_vertices;
+}
+
+#define LIGHT_MAP_SIZE  0.25
+
+bool record_movement;
+
+extern int cur_raycast_cell;
+
+uchar *portal_anim_light_intensity;
+int num_anim_lights;
+
+void (*failed_light_callback)(Location *hit, Location *dest);
+void (*lightmap_point_callback)(mxs_vector *loc, bool lit);
+void (*lightmap_callback)(PortalLightMap *lightmap);
+
+
+#define DIST_IN_FROM_POLYGON .025
+
+
+#ifdef EDITOR
+extern ObjID *g_pObjCastList;
+extern int    g_ObjCastListSize;
+#endif
+
+// This finds the level of illumination on a point from a light
+// source.  If our point is outside the world rep, we approximate it
+// using the point we reach when we raycast to our intended point
+// from the middle of the polygon.
+static int portal_illumination_from_light(Location *point_being_lit,
+                                          Location *light,
+                                          Location *point_in_poly,
+                                          PortalCell *cell,
+                                          int polygon_index,
+                                          bool objcast)
+{
+   Location dest;
+   Location dummy;
+
+#ifdef EDITOR
+   if (objcast)
+   {
+      if (!PortalRaycast(point_in_poly, point_being_lit, &dest, 1))
+         point_being_lit = &dest;
+
+      if (ObjRaycastC(light, point_being_lit, &dummy, TRUE,
+                     g_pObjCastList, g_ObjCastListSize, 0, FALSE) == kObjCastNone)
+      {
+         return compute_light_at_point(&point_being_lit->vec,
+                  &cell->plane_list[cell->poly_list[polygon_index].planeid].normal,
+                  &light->vec);
+      }
+   }
+   else
+#endif
+   {
+      if (!PortalRaycast(point_in_poly, point_being_lit, &dest, 1))
+         point_being_lit = &dest;
+      if (PortalRaycast(light, point_being_lit, &dummy, 0))
+      {
+         return compute_light_at_point(&point_being_lit->vec,
+                  &cell->plane_list[cell->poly_list[polygon_index].planeid].normal,
+                  &light->vec);
+      }
+   }
+
+   return 0;
+}
+
+
+// large vector in direction of sunlight
+mxs_vector portal_sunlight;
+// unit vector in opposite direction from sunlight
+mxs_vector portal_sunlight_norm;
+
+float compute_sunlight_at_point(mxs_vector *norm)
+{
+   float result = -mx_dot_vec(&portal_sunlight, norm) * ambient_weight;
+
+   if (result < 0)
+      return 0;
+
+   if (result > illumination_cutoff) {
+      illumination_reached_polygon = TRUE;
+      return result;
+   } else
+      return 0;
+}
+
+
+static BOOL TouchedTheSky()
+{
+   int iPoly = PortalRaycastFindPolygon();
+   int iTex = (WR_CELL(PortalRaycastCell)->render_list + iPoly)->texture_id;
+
+   return iTex >= 249;  // @HACK: value is from texmem.h: BACKHACK_IDX
+}
+
+
+BOOL portal_loc_has_sunlight(Location *point_being_lit)
+{
+   Location light, dummy;
+   mx_sub_vec(&light.vec, &point_being_lit->vec, &portal_sunlight);
+
+   if (PortalRaycast(point_being_lit, &light, &dummy, 0)) {
+      Warning(("portlit: sunlight cast hit nothing!.\n"));
+      return 0;
+   }
+
+   return TouchedTheSky();
+}
+
+
+static BOOL sunlight_move_axis_in(float fDiff, float *pAxis)
+{
+   if (fDiff > DIST_IN_FROM_POLYGON) {
+      *pAxis -= DIST_IN_FROM_POLYGON;
+      return TRUE;
+   }
+
+   if (fDiff < -DIST_IN_FROM_POLYGON) {
+      *pAxis += DIST_IN_FROM_POLYGON;
+      return TRUE;
+   }
+
+   return FALSE;
+}
+
+
+// This finds the level of illumination on a point from sunlight.
+static int portal_illumination_from_sunlight(Location *point_being_lit,
+                                             Location *point_in_poly,
+                                             PortalCell *cell,
+                                             int polygon_index,
+                                             bool objcast)
+{
+   Location source;
+   Location dummy;
+   Location light;
+   mxs_vector diff;
+
+   ComputeCellForLocation(point_being_lit);
+
+   // if necessary, move in from lightmap point
+   if (!PortalRaycast(point_in_poly, point_being_lit, &source, 1)) {
+      source.cell = source.hint = point_in_poly->cell;
+      point_being_lit = &source;
+      ComputeCellForLocation(point_being_lit);
+   }
+
+   // We need to make sure our point is in the world before we raycast
+   // from it.
+   if (point_being_lit->cell == CELL_INVALID) {
+      // move contact point towards middle of polygon to try to get it
+      // into the world--if we can't move it we use the middle of the
+      // polygon since that's *got* to be in the world
+      BOOL moved_point = FALSE;
+      mx_sub_vec(&diff, &point_being_lit->vec, &point_in_poly->vec);
+
+      moved_point |= sunlight_move_axis_in(diff.x, &point_being_lit->vec.x);
+      moved_point |= sunlight_move_axis_in(diff.y, &point_being_lit->vec.y);
+      moved_point |= sunlight_move_axis_in(diff.z, &point_being_lit->vec.z);
+
+      if (moved_point)
+         ComputeCellForLocation(point_being_lit);
+
+      if (point_being_lit->cell == CELL_INVALID)
+         point_being_lit = point_in_poly;
+   }
+
+   mx_sub_vec(&light.vec, &point_being_lit->vec, &portal_sunlight);
+
+#ifdef EDITOR
+   if (objcast)
+   {
+      eObjCastResult r = ObjRaycastC(point_being_lit, &light, &dummy, TRUE,
+                                     g_pObjCastList, g_ObjCastListSize, 0, FALSE);
+      switch (r)
+      {
+         case kObjCastNone:
+            Warning(("portlit: sunlight cast hit nothing!.\n"));
+            break;
+         case kObjCastTerrain:
+            if (TouchedTheSky())
+               return compute_sunlight_at_point(&cell->plane_list[cell->poly_list[polygon_index].planeid].normal);
+         case kObjCastMD:
+         case kObjCastMesh:
+            break;
+      }
+   }
+   else
+#endif
+   {
+      if (PortalRaycast(point_being_lit, &light, &dummy, 0)) {
+         Warning(("portlit: sunlight cast hit nothing!.\n"));
+         return 0;
+      }
+
+      if (TouchedTheSky())
+         return compute_sunlight_at_point(&cell->plane_list[cell->poly_list[polygon_index].planeid].normal);
+   }
+
+   return 0;
+}
+
+
+bool       portal_spotlight;
+mxs_vector portal_spotlight_loc;
+mxs_vector portal_spotlight_dir;
+float      portal_spotlight_inner;
+float      portal_spotlight_outer;
+
+float portal_evaluate_spotlight(mxs_vector *loc,
+                                mxs_vector *light_loc,
+                                mxs_vector *light_dir,
+                                float inner, float outer)
+{
+   float dot;
+   mxs_vector delta;
+   mx_sub_vec(&delta, loc, light_loc);
+   mx_normeq_vec(&delta);
+   dot = mx_dot_vec(&delta, light_dir);
+   if (dot >= inner) return 1;
+   if (dot <= outer) return 0;
+   return (dot-outer)/(inner-outer);
+}
+
+void portal_raycast_light_poly_lightmap(PortalCell *r, int s, int vc,
+                                        Location *lt, LightmapEntry *bits,
+                                        bool quadruple_lighting, bool objcast)
+{
+   // iterate over all of the points in the light map
+   int i, j, lux;
+   LightmapEntry *light_point;
+   float u,v;
+   Location dest, source;
+   mxs_vector where, src, step;
+   mxs_vector quarter_offset_plus;      // offset to upper-right quadrant
+   mxs_vector quarter_offset_minus;     // offset to upper-left quadrant
+   mxs_vector *base = &r->vpool[r->vertex_list[vc]]; // TODO: texture_anchor
+
+   // currently base is at texture coordinate (base_u, base_v)
+   // we want base to be at (0,0)
+
+   mx_scale_add_vec(&src, base,
+      &r->render_list[s].tex_u, -r->render_list[s].u_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+      &r->render_list[s].tex_v, -r->render_list[s].v_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+                      &r->plane_list[r->poly_list[s].planeid].normal,
+                      DIST_IN_FROM_POLYGON);
+
+   // start with a point inside the polygon
+   where = r->render_list[s].center;
+   mx_scale_addeq_vec(&where,
+                      &r->plane_list[r->poly_list[s].planeid].normal,
+                      DIST_IN_FROM_POLYGON);
+
+   // We're using the point inside the poly to check whether each
+   // light point really exists in its poly, rather than being outside
+   // the world rep.
+   MakeLocationFromVector(&source, &where);
+   source.cell = source.hint = cur_raycast_cell;
+
+   if (lightmap_callback)
+      lightmap_callback(&r->light_list[s]);
+
+   if (quadruple_lighting) {
+      mx_scale_vec(&quarter_offset_plus,
+                   &r->render_list[s].tex_u, .25);
+      quarter_offset_minus = quarter_offset_plus;
+
+      mx_scale_addeq_vec(&quarter_offset_plus,
+                         &r->render_list[s].tex_v, .25);
+
+      mx_scale_addeq_vec(&quarter_offset_minus,
+                         &r->render_list[s].tex_v, -.25);
+   }
+
+   v = r->light_list[s].base_v * LIGHT_MAP_SIZE;
+   for (j=0; j < r->light_list[s].h; ++j) {
+      u = r->light_list[s].base_u * LIGHT_MAP_SIZE;
+
+      mx_scale_add_vec(&where, &src, &r->render_list[s].tex_u, u);
+      mx_scale_addeq_vec(&where, &r->render_list[s].tex_v, v);
+      mx_scale_vec(&step, &r->render_list[s].tex_u, LIGHT_MAP_SIZE);
+
+      for (i = 0; i < r->light_list[s].w; ++i) {
+         MakeLocationFromVector(&dest, &where);
+         if (quadruple_lighting) {
+            mx_add_vec(&dest.vec, &where, &quarter_offset_plus);
+            UpdateChangedLocation(&dest);
+            lux = portal_illumination_from_light(&dest, lt, &source, r, s, objcast);
+
+            mx_add_vec(&dest.vec, &where, &quarter_offset_minus);
+            UpdateChangedLocation(&dest);
+            lux += portal_illumination_from_light(&dest, lt, &source, r, s, objcast);
+
+            mx_sub_vec(&dest.vec, &where, &quarter_offset_plus);
+            UpdateChangedLocation(&dest);
+            lux += portal_illumination_from_light(&dest, lt, &source, r, s, objcast);
+
+            mx_sub_vec(&dest.vec, &where, &quarter_offset_minus);
+            UpdateChangedLocation(&dest);
+            lux += portal_illumination_from_light(&dest, lt, &source, r, s, objcast);
+
+            lux /= 4;
+         } else
+            lux = portal_illumination_from_light(&dest, lt, &source, r, s, objcast);
+
+         if (lux && portal_spotlight) {
+            lux *= portal_evaluate_spotlight(&where,
+                      &portal_spotlight_loc, &portal_spotlight_dir,
+                      portal_spotlight_inner, portal_spotlight_outer);
+         }
+
+         light_point = &(bits[j * r->light_list[s].pixel_row + i]);
+#ifndef RGB_LIGHTING
+         lux += *light_point;
+         if (lux > 255)
+            lux = 255;
+         *light_point = lux;
+#else
+         if (lux > 255)
+            lux = 255;
+         *light_point = rgb_add_clamp(*light_point, lux);
+#endif
+         mx_addeq_vec(&where, &step);
+         u += LIGHT_MAP_SIZE;
+      }
+      v += LIGHT_MAP_SIZE;
+   }
+}
+
+
+void portal_raycast_sunlight_poly_lightmap(PortalCell *r, int s, int vc,
+                                           LightmapEntry *bits,
+                                           bool quad_lighting, bool objcast)
+{
+   // iterate over all of the points in the light map
+   int i, j, lux;
+   LightmapEntry *light_point;
+   float u,v;
+   Location dest, source;
+   mxs_vector where, src, step;
+   mxs_vector quarter_offset_plus;      // offset to upper-right quadrant
+   mxs_vector quarter_offset_minus;     // offset to upper-left quadrant
+   mxs_vector *base = &r->vpool[r->vertex_list[vc]];
+
+   // currently base is at texture coordinate (base_u, base_v)
+   // we want base to be at (0,0)
+
+   mx_scale_add_vec(&src, base,
+      &r->render_list[s].tex_u, -r->render_list[s].u_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+      &r->render_list[s].tex_v, -r->render_list[s].v_base / (16*256.0));
+   mx_scale_addeq_vec(&src, &r->plane_list[r->poly_list[s].planeid].normal,
+                      DIST_IN_FROM_POLYGON);
+
+   // start with a point inside the polygon
+   where = r->render_list[s].center;
+   mx_scale_addeq_vec(&where, &r->plane_list[r->poly_list[s].planeid].normal,
+                      DIST_IN_FROM_POLYGON);
+
+   // We're using the point inside the poly to check whether each
+   // light point really exists in its poly, rather than being outside
+   // the world rep.
+   MakeLocationFromVector(&source, &where);
+   source.cell = source.hint = cur_raycast_cell;
+
+   if (quad_lighting) {
+      mx_scale_vec(&quarter_offset_plus,
+                   &r->render_list[s].tex_u, .25);
+      quarter_offset_minus = quarter_offset_plus;
+
+      mx_scale_addeq_vec(&quarter_offset_plus,
+                         &r->render_list[s].tex_v, .25);
+
+      mx_scale_addeq_vec(&quarter_offset_minus,
+                         &r->render_list[s].tex_v, -.25);
+   }
+
+   v = r->light_list[s].base_v * LIGHT_MAP_SIZE;
+   for (j=0; j < r->light_list[s].h; ++j) {
+      u = r->light_list[s].base_u * LIGHT_MAP_SIZE;
+
+      mx_scale_add_vec(&where, &src, &r->render_list[s].tex_u, u);
+      mx_scale_addeq_vec(&where, &r->render_list[s].tex_v, v);
+      mx_scale_vec(&step, &r->render_list[s].tex_u, LIGHT_MAP_SIZE);
+
+      for (i = 0; i < r->light_list[s].w; ++i) {
+         MakeLocationFromVector(&dest, &where);
+         dest.cell = dest.hint = cur_raycast_cell;
+
+         if (quad_lighting) {
+            mx_add_vec(&dest.vec, &where, &quarter_offset_plus);
+            lux = portal_illumination_from_sunlight(&dest, &source, r,
+                                                    s, objcast);
+
+            mx_add_vec(&dest.vec, &where, &quarter_offset_minus);
+            lux += portal_illumination_from_sunlight(&dest, &source, r,
+                                                     s, objcast);
+
+            mx_sub_vec(&dest.vec, &where, &quarter_offset_plus);
+            lux += portal_illumination_from_sunlight(&dest, &source, r,
+                                                     s, objcast);
+
+            mx_sub_vec(&dest.vec, &where, &quarter_offset_minus);
+            lux += portal_illumination_from_sunlight(&dest, &source, r,
+                                                     s, objcast);
+
+            lux /= 4;
+         } else
+            lux = portal_illumination_from_sunlight(&dest, &source, r,
+                                                    s, objcast);
+
+         light_point = &(bits[j * r->light_list[s].pixel_row + i]);
+#ifndef RGB_LIGHTING
+         lux += *light_point;
+         if (lux > 255)
+            lux = 255;
+         *light_point = lux;
+#else
+         if (lux > 255)
+            lux = 255;
+         *light_point = rgb_add_clamp(*light_point, lux);
+#endif
+         mx_addeq_vec(&where, &step);
+         u += LIGHT_MAP_SIZE;
+      }
+      v += LIGHT_MAP_SIZE;
+   }
+}
+
+
+void portal_light_poly_lightmap(PortalCell *r, int s, int vc, Location *lt,
+                                LightmapEntry *bits)
+{
+   // iterate over all of the points in the light map
+   int i,j;
+   float u,v, dist;
+   mxs_vector where, src, step;
+   mxs_vector *base = &r->vpool[r->vertex_list[vc]]; // TODO: texture_anchor
+
+   mxs_vector *norm = &r->plane_list[r->poly_list[s].planeid].normal;
+   // currently base is at texture coordinate (base_u, base_v)
+   // we want base to be at (0,0)
+
+   mx_scale_add_vec(&src, base,
+      &r->render_list[s].tex_u, -r->render_list[s].u_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+      &r->render_list[s].tex_v, -r->render_list[s].v_base / (16*256.0));
+
+   dist = fast_precompute_light(&src,
+        &r->plane_list[r->poly_list[s].planeid].normal, &lt->vec);
+
+   if (fast_compute_light_at_center(dist) < 2.0)
+      return;
+
+   if (lightmap_callback)
+      lightmap_callback(&r->light_list[s]);
+
+   v = r->light_list[s].base_v * LIGHT_MAP_SIZE;
+   for (j=0; j < r->light_list[s].h; ++j) {
+      LightmapEntry *output = &bits[j*r->light_list[s].pixel_row];
+
+      u = r->light_list[s].base_u * LIGHT_MAP_SIZE;
+
+      mx_scale_add_vec(&where, &src, &r->render_list[s].tex_u, u);
+      mx_scale_addeq_vec(&where, &r->render_list[s].tex_v, v);
+      mx_scale_vec(&step, &r->render_list[s].tex_u, LIGHT_MAP_SIZE);
+
+      for (i=0; i < r->light_list[s].w; ++i) {
+         int amt = compute_light_at_point(&where, norm, &lt->vec);
+         if (amt && portal_spotlight) {
+            amt *= portal_evaluate_spotlight(&where,
+                      &portal_spotlight_loc, &portal_spotlight_dir,
+                      portal_spotlight_inner, portal_spotlight_outer);
+         }
+
+         if (amt > 1) {
+            illumination_reached_polygon = TRUE;
+#ifndef RGB_LIGHTING
+            amt += *output;
+            if (amt > 255) amt = 255;
+            *output = amt;
+#else
+            if (amt > 255) amt = 255;
+            *output = rgb_add_clamp(*output, amt);
+#endif
+         }
+         mx_addeq_vec(&where, &step);
+         ++output;
+      }
+      v += LIGHT_MAP_SIZE;
+   }
+}
+
+bool keep_all_lit;
+
+void portal_dynamic_light_lightmap(PortalCell *r, int s, int vc, Location *lt,
+                                   mxs_real min_dist)
+{
+   // iterate over all of the points in the light map
+   int i,j;
+   float u,v, dist;
+   mxs_vector where, src, step;
+   mxs_vector *base = &r->vpool[r->vertex_list[vc]]; // TODO: texture_anchor
+   bool lit = keep_all_lit;
+   float max_bright;
+
+   // currently base is at texture coordinate (base_u, base_v)
+   // we want base to be at (0,0)
+
+   mx_scale_add_vec(&src, base,
+      &r->render_list[s].tex_u, -r->render_list[s].u_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+      &r->render_list[s].tex_v, -r->render_list[s].v_base / (16*256.0));
+
+   dist = fast_precompute_light(&src,
+        &r->plane_list[r->poly_list[s].planeid].normal, &lt->vec);
+
+#if 1
+   if (dist > min_dist)
+      // nearest possible point on polygon is further than min distance
+      // to the cell, so test that directly
+      max_bright = fast_compute_dynamic_light_at_center(dist);
+   else
+      // nearest possible point on polygon is min_dist
+      max_bright = fast_compute_dynamic_light_at_dist(min_dist, dist);
+
+   if (max_bright < dynamic_light_min)
+      return;
+#endif
+
+   if (!r->light_list[s].dynamic_light)
+      get_dynamic_lm(&r->light_list[s]);
+   else {
+      lit=1;
+   }
+
+   v = r->light_list[s].base_v * LIGHT_MAP_SIZE;
+   for (j=0; j < r->light_list[s].h; ++j) {
+      int offset = j*r->light_list[s].pixel_row;
+      LightmapEntry *output = r->light_list[s].dynamic_light + offset;
+
+      u = r->light_list[s].base_u * LIGHT_MAP_SIZE;
+
+      mx_scale_add_vec(&where, &src, &r->render_list[s].tex_u, u);
+      mx_scale_addeq_vec(&where, &r->render_list[s].tex_v, v);
+      mx_scale_vec(&step, &r->render_list[s].tex_u, LIGHT_MAP_SIZE);
+
+      for (i=0; i < r->light_list[s].w; ++i) {
+         int amt = fast_compute_dynamic_light_at_point(&where, &lt->vec, dist);
+#ifndef RGB_LIGHTING
+         if (amt > 8) {
+            amt += *output;
+            if (amt > 255) amt = 255;
+            *output = amt;
+            lit = TRUE;
+         }
+#else
+         if (amt > 8) {
+            if (amt > 255) amt = 255;
+            *output = rgb_add_clamp(*output, amt);
+            lit = TRUE;
+         }
+#endif
+         mx_addeq_vec(&where, &step);
+         ++output;
+      }
+      v += LIGHT_MAP_SIZE;
+   }
+
+   if (!lit)
+      unget_dynamic_lm(&r->light_list[s]);
+}
+
+
+void portal_dynamic_dark_lightmap(PortalCell *r, int s, int vc, Location *lt,
+                                   mxs_real min_dist)
+{
+   // iterate over all of the points in the light map
+   int i,j;
+   float u,v, dist;
+   mxs_vector where, src, step;
+   mxs_vector *base = &r->vpool[r->vertex_list[vc]]; // TODO: texture_anchor
+   bool lit = keep_all_lit;
+   float max_bright;
+
+   // currently base is at texture coordinate (base_u, base_v)
+   // we want base to be at (0,0)
+
+   mx_scale_add_vec(&src, base,
+      &r->render_list[s].tex_u, -r->render_list[s].u_base / (16*256.0));
+   mx_scale_addeq_vec(&src,
+      &r->render_list[s].tex_v, -r->render_list[s].v_base / (16*256.0));
+
+   dist = fast_precompute_light(&src,
+        &r->plane_list[r->poly_list[s].planeid].normal, &lt->vec);
+
+#if 1
+   if (dist > min_dist)
+      // nearest possible point on polygon is further than min distance
+      // to the cell, so test that directly
+      max_bright = fast_compute_dynamic_light_at_center(dist);
+   else
+      // nearest possible point on polygon is min_dist
+      max_bright = fast_compute_dynamic_light_at_dist(min_dist, dist);
+
+   if (max_bright < dynamic_light_min)
+      return;
+#endif
+
+   if (!r->light_list[s].dynamic_light)
+      get_dynamic_lm(&r->light_list[s]);
+   else {
+      lit=1;
+   }
+
+   v = r->light_list[s].base_v * LIGHT_MAP_SIZE;
+   for (j=0; j < r->light_list[s].h; ++j) {
+      int offset = j*r->light_list[s].pixel_row;
+      LightmapEntry *output = r->light_list[s].dynamic_light + offset;
+
+      u = r->light_list[s].base_u * LIGHT_MAP_SIZE;
+
+      mx_scale_add_vec(&where, &src, &r->render_list[s].tex_u, u);
+      mx_scale_addeq_vec(&where, &r->render_list[s].tex_v, v);
+      mx_scale_vec(&step, &r->render_list[s].tex_u, LIGHT_MAP_SIZE);
+
+      for (i=0; i < r->light_list[s].w; ++i) {
+         int amt = fast_compute_dynamic_light_at_point(&where, &lt->vec, dist);
+#ifndef RGB_LIGHTING
+         if (amt > 52) {
+            amt = *output - amt;
+            if (amt < 0) amt = 0;
+            *output = amt;
+            lit = TRUE;
+         }
+#else
+         if (amt > 8) {
+            *output = rgb_sub_clamp(*output, amt);
+            lit = TRUE;
+         }
+#endif
+         mx_addeq_vec(&where, &step);
+         ++output;
+      }
+      v += LIGHT_MAP_SIZE;
+   }
+
+   if (!lit)
+      unget_dynamic_lm(&r->light_list[s]);
+}
+
+
+// We need one height * row for each animated light (that is, each on bit)
+// plus one for the static lightmap data.
+static int bit_count(int i)
+{
+   int size = 0;
+
+   while (i) {
+      if (i & 1)
+         size++;
+      i >>= 1;
+   }
+   return size;
+}
+
+
+#define ANIM_LIGHT_CUTOFF 15
+
+bool portal_raycast_light(PortalCell *r, Location *lt, uchar perm)
+{
+   PortalPolygonCore *poly = r->poly_list;
+   int voff=0,i,n = r->num_render_polys;
+   bool quad = FALSE;
+   bool objcast = FALSE;
+   bool illumination_reached_cell = FALSE;
+
+   if (perm & LIGHT_ANIMATED) {
+      illumination_cutoff = ANIM_LIGHT_CUTOFF;
+   } else {
+      illumination_cutoff = 0;
+   }
+
+   for (i = 0; i < n; ++i) {
+      PortalLightMap *lm = &r->light_list[i];
+
+      if (perm & LIGHT_ANIMATED)
+         lm->anim_light_bitmask <<= 1;
+
+      if (perm & LIGHT_QUAD)
+         quad = TRUE;
+
+      if (perm & LIGHT_OBJCAST)
+         objcast = TRUE;
+
+      // The bitmask for a polygon's animated lights maps into its
+      // cell's light_indices.  So we advance the bitmask even if this
+      // polygon is not reached by this light, since the light still
+      // appears in the list.
+      if (check_surface_visible(r, poly, voff)) {
+         LightmapEntry *bits = lm->data;
+
+         portal_raycast_light_poly(r, poly, lt, voff);
+
+         // Light from static lights is all combined into one
+         // lightmap.  Light from each animated light is stored
+         // separately in the memory right after that, with the first
+         // at the end of the list.  So we expand the bits field of
+         // the lightmap on the fly to hold the new data.
+         if (bits) {
+            if (perm & LIGHT_ANIMATED) {
+               // We have one static image and let's-see-how-many others.
+               int num_images = 1 + bit_count(lm->anim_light_bitmask);
+               int area = lm->h * lm->pixel_row;
+
+               lm->data = Realloc(lm->data, area * (num_images + 1) * LMSIZE);
+               memmove(lm->data + area * 2, lm->data + area,
+                       area * (num_images - 1) * LMSIZE);
+
+               // point to new second image in lightmap bits & clear image
+               bits = lm->data + area;
+               memset (bits, 0, area*LMSIZE);
+
+               // We don't bother to keep the separate lightmap if the
+               // light doesn't reach this surface.
+               illumination_reached_polygon = FALSE;
+
+               portal_raycast_light_poly_lightmap(r, i, voff, lt, bits, quad, objcast);
+
+               if (illumination_reached_polygon) {
+                  lm->anim_light_bitmask |= 1;
+                  illumination_reached_cell = TRUE;
+               } else {
+                  memmove(lm->data + area, lm->data + area * 2,
+                          area * (num_images - 1) * LMSIZE);
+
+                  lm->data = Realloc(lm->data, area * num_images * LMSIZE);
+               }
+            } else {
+               portal_raycast_light_poly_lightmap(r, i, voff, lt, bits,
+                                                  quad, objcast);
+               if (illumination_reached_polygon)
+                  illumination_reached_cell = TRUE;
+            }
+         }
+      }
+      voff += poly->num_vertices;
+      ++poly;
+   }
+
+   if ((perm & LIGHT_ANIMATED) && !illumination_reached_cell)
+      for (i = 0; i < n; ++i) {
+         PortalLightMap *lm = &r->light_list[i];
+         lm->anim_light_bitmask >>= 1;
+      }
+
+   return illumination_reached_cell;
+}
+
+
+bool portal_raycast_sunlight(PortalCell *r, uchar perm)
+{
+   PortalPolygonCore *poly = r->poly_list;
+   PortalPlane *plane = r->plane_list;
+   int voff=0,i,n = r->num_render_polys;
+   bool quad = FALSE;
+   bool objcast = FALSE;
+   bool illumination_reached_cell = FALSE;
+
+   illumination_cutoff = 0;
+   if (perm & LIGHT_QUAD)
+      quad = TRUE;
+
+   if (perm & LIGHT_OBJCAST)
+      objcast = TRUE;
+
+   for (i = 0; i < n; ++i) {
+      // backface check
+      if (mx_dot_vec(&plane[poly->planeid].normal, &portal_sunlight) < 0) {
+         PortalLightMap *lm = &r->light_list[i];
+         LightmapEntry *bits = lm->data;
+
+         if (bits) {
+            portal_raycast_sunlight_poly_lightmap(r, i, voff, bits, quad,
+                                                  objcast);
+            if (illumination_reached_polygon)
+               illumination_reached_cell = TRUE;
+         }
+      }
+      voff += poly->num_vertices;
+      ++poly;
+   }
+   return illumination_reached_cell;
+}
+
+
+bool portal_nonraycast_light(PortalCell *r, Location *lt, uchar perm)
+{
+   PortalPolygonCore *poly = r->poly_list;
+   int voff=0,i,n = r->num_render_polys;
+   bool illumination_reached_cell = FALSE;
+
+   for (i=0; i < n; ++i) {
+      PortalLightMap *lm = &r->light_list[i];
+
+      if (perm & LIGHT_ANIMATED)
+         lm->anim_light_bitmask <<= 1;
+
+      // The bitmask for a polygon's animated lights maps into its
+      // cell's light_indices.  So we advance the bitmask even if this
+      // polygon is not reached by this light, since the light still
+      // appears in the list.
+      if (check_surface_visible(r, poly, voff)) {
+         LightmapEntry *bits = lm->data;
+
+         portal_raycast_light_poly(r, poly, lt, voff);
+
+         // Light from static lights is all combined into one
+         // lightmap.  Light from each animated light is stored
+         // separately in the memory right after that, with the first
+         // at the end of the list.  So we expand the bits field of
+         // the lightmap on the fly to hold the new data.
+         if (bits) {
+            if (perm & LIGHT_ANIMATED) {
+               // We have one static image and let's-see-how-many others.
+               int num_images = 1 + bit_count(lm->anim_light_bitmask);
+               int area = lm->h * lm->pixel_row;
+
+               lm->data = Realloc(lm->data, area * (num_images + 1) * LMSIZE);
+               memmove(lm->data + area * 2, lm->data + area,
+                       area * (num_images - 1) * LMSIZE);
+
+               bits = lm->data + area;
+               memset (bits, 0, area*LMSIZE);
+
+               // We don't bother to keep the separate lightmap if the
+               // light doesn't reach this surface.
+               illumination_reached_polygon = FALSE;
+
+               portal_light_poly_lightmap(r, i, voff, lt, bits);
+
+               if (illumination_reached_polygon) {
+                  lm->anim_light_bitmask |= 1;
+                  illumination_reached_cell = TRUE;
+               } else {
+                  memmove(lm->data + area, lm->data + area * 2,
+                          area * (num_images - 1) * LMSIZE);
+
+                  lm->data = Realloc(lm->data, area * num_images * LMSIZE);
+               }
+            } else {
+               portal_light_poly_lightmap(r, i, voff, lt, bits);
+               if (illumination_reached_polygon)
+                  illumination_reached_cell = TRUE;
+            }
+         }
+      }
+      voff += poly->num_vertices;
+      ++poly;
+   }
+
+   if (perm & LIGHT_ANIMATED && !illumination_reached_cell)
+      for (i = 0; i < n; ++i) {
+         PortalLightMap *lm = &r->light_list[i];
+         lm->anim_light_bitmask >>= 1;
+      }
+
+   return illumination_reached_cell;
+}
+
+void portal_dynamic_light(PortalCell *r, Location *lt)
+{
+   PortalPolygonCore *poly = r->poly_list;
+   int voff=0,i,n = r->num_render_polys;
+   // compute distance to nearest point on sphere
+   //    1) compute distance to sphere
+   //    2) subtract sphere radius
+   mxs_real dist = mx_dist_vec(&r->sphere_center, &lt->vec);
+   dist -= r->sphere_radius;
+
+   if (dist > 0
+    && fast_compute_dynamic_light_at_center(dist) < dynamic_light_min)
+      return;
+
+   for (i=0; i < n; ++i) {
+      if (check_surface_visible(r, poly, voff)) {
+         if (r->light_list[i].data)
+            portal_dynamic_light_lightmap(r, i, voff, lt, dist);
+      }
+      voff += poly->num_vertices;
+      ++poly;
+   }
+}
+
+
+void portal_dynamic_dark(PortalCell *r, Location *lt)
+{
+   PortalPolygonCore *poly = r->poly_list;
+   int voff=0,i,n = r->num_render_polys;
+   PortalPlane *plane;
+
+   // compute distance to nearest point on sphere
+   //    1) compute distance to sphere
+   //    2) subtract sphere radius
+   mxs_real dist = mx_dist_vec(&r->sphere_center, &lt->vec);
+   dist -= r->sphere_radius;
+
+   if (dist > 0
+    && fast_compute_dynamic_light_at_center(dist) < dynamic_light_min)
+      return;
+
+   for (i=0; i < n; ++i) {
+      plane = &r->plane_list[poly->planeid];
+
+      if (plane->normal.z > 0.7071067811865  // cos 45
+           && check_surface_visible(r, poly, voff)
+           && r->light_list[i].data)
+         portal_dynamic_dark_lightmap(r, i, voff, lt, dist);
+      voff += poly->num_vertices;
+      ++poly;
+   }
+}
+
+
+void init_portal_light(void)
+{
+}
+
+
+
+
+#if 0
+/////////////////////////////////////
+//
+// dynamic vertex lighting system
+
+PortalCell *first_dynamic;
+
+void reset_dynamic_vertex_lights(void)
+{
+   PortalCell *next;
+   while (first_dynamic) {
+      next =  *(PortalCell **) (first_dynamic->vertex_list_dynamic-4);
+      Free(first_dynamic->vertex_list_dynamic-4);
+      first_dynamic->vertex_list_dynamic = 0;
+      first_dynamic = next;
+   }
+}
+
+  // allocate a dynamic lighting slot for this
+uchar *get_dynamic_vertex_lighting(PortalCell *r)
+{
+   uchar *p = Malloc(r->num_vlist+4);
+
+   * (PortalCell **) p = first_dynamic;
+   first_dynamic = r;
+
+   p += 4;
+
+   memcpy(p, r->vertex_list_lighting, r->num_vlist);
+   return (r->vertex_list_dynamic = p);
+}
+#endif
+
+#include <lg.h>
+
+#include <r3d.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <conio.h>
+#include <mprintf.h>
+#include <port.h>
+#include <pt.h>
+#include <string.h>
+#include <refsys.h>
+#define I_AM_PART_OF_EOS
+#include <objects.h>
+
+#include <fault.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+ObjRefInfo ObjRefInfos[1];
+ObjInfo ObjInfosArray[1];
+ObjInfo *ObjInfos = ObjInfosArray;
+
+grs_canvas *off_canv;
+
+void blit(void)
+{
+   gr_set_canvas(grd_visible_canvas);
+   gr_bitmap(&(off_canv->bm),0,0);
+   gr_set_canvas(off_canv);
+}
+
+mxs_vector anchor_point;
+
+mxs_vector cam_vec;
+mxs_vector cam_vel;
+mxs_angvec cam_ang;
+struct
+{
+   fix x,y,z;
+} cam_angvel;
+
+Location camera_loc;
+
+mxs_real cam_zoom = 1.0;
+mxs_real lt_zoom = 1.0;
+
+void start_3d(void)
+{
+   r3_start_frame();
+   r3_set_space(R3_CLIPPING_SPACE);
+   r3_set_view_angles(&cam_vec,&cam_ang,R3_DEFANG);
+   r3_set_zoom(cam_zoom);
+
+   r3_set_2d_clip(FALSE);
+   r3_set_clipmode(R3_CLIP);
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_CHECK_FACING);
+   r3_set_near_plane(0.001); // 1.0
+}
+
+void end_3d(void)
+{
+   r3_end_frame();
+}
+
+#define ANG_INC (MX_ANG_PI/128)
+#define MOV_INC (0.1)
+
+int add_light, spotlight;
+bool pick;
+extern bool raycast_light;
+
+void print_info(int vol)
+{
+   char *p;
+   while ((p = portal_scene_info(vol)) != 0)
+      mprintf("%s\n", p);
+}
+   
+extern bool span_clip, linear_map;
+extern bool project_space;
+extern bool cache_feedback;
+bool direct;
+
+// return TRUE if exiting
+bool parse_keys(void)
+{
+   mxs_vector tmp;
+   while (kbhit())
+   {
+      int k=getch();
+      switch (k)
+      {
+         case 'z': cam_zoom *= 1.41; break;
+         case 'Z': cam_zoom /= 1.41; break;
+         case '[': lt_zoom *= 1.41; break;
+         case ']': lt_zoom /= 1.41; break;
+
+         case 'c': mx_zero_vec(&cam_vec); cam_zoom = 1.0;
+            cam_ang.tx = cam_ang.ty = cam_ang.tz = 0; break;
+         case 'l': cam_angvel.z -= ANG_INC; break;
+         case 'j': cam_angvel.z += ANG_INC; break;
+         case 'i': cam_angvel.y -= ANG_INC; break;
+         case 'k': cam_angvel.y += ANG_INC; break;
+         case 'u': cam_angvel.x -= ANG_INC; break;
+         case 'o': cam_angvel.x += ANG_INC; break;
+
+         case 'w': cam_vel.x += MOV_INC; break;
+         case 's': cam_vel.x -= MOV_INC; break;
+
+         case 'a': cam_vel.y += MOV_INC; break;
+         case 'd': cam_vel.y -= MOV_INC; break;
+
+         case 'e': cam_vel.z += MOV_INC; break;
+         case 'q': cam_vel.z -= MOV_INC; break;
+
+         case 'm': mprintf("xxx\n"); break;
+         case '!': render_backward = !render_backward; break;
+         case 'b': add_light = 1; break;
+         case 'B': add_light = 2; break;
+         case '$': raycast_light = !raycast_light; break;
+         case 'S': linear_map = !linear_map; break; // project_space = !project_space;
+         case '/': direct = !direct; break;
+
+         case '\\': span_clip = !span_clip; break;
+#if 0
+         case '\t': mprintf("cache_feedback=%d\n", (cache_feedback = !cache_feedback)); break;
+#else
+         case '\t': spotlight = !spotlight; break;
+#endif
+
+         case 'R': anchor_point = cam_vec; break;
+         case 'p': pick = !pick; break;
+
+         case '?': print_info(30); break;
+         case '<': print_info(5); break;
+         case '>': print_info(50); break;
+
+         case ' ':
+            cam_vel.x = cam_vel.y = cam_vel.z = 0;
+            cam_angvel.x = cam_angvel.y = cam_angvel.z = 0;
+            break;
+
+         case 'Q':
+         case 27: return TRUE;
+      }
+   }
+   cam_ang.tx += cam_angvel.x;
+   cam_ang.ty += cam_angvel.y;
+   cam_ang.tz += cam_angvel.z;
+
+   tmp = *r3_get_forward_slew();
+   mx_scaleeq_vec(&tmp, cam_vel.x);
+   mx_addeq_vec(&cam_vec, &tmp);
+
+   tmp = *r3_get_left_slew();
+   mx_scaleeq_vec(&tmp, cam_vel.y);
+   mx_addeq_vec(&cam_vec, &tmp);
+
+   tmp = *r3_get_up_slew();
+   mx_scaleeq_vec(&tmp, cam_vel.z);
+   mx_addeq_vec(&cam_vec, &tmp);
+
+   return FALSE;
+}
+
+uchar shade_table[64][256];
+
+void setup_pal(void)
+{
+   uchar pal[768];
+   int i,j,k,r,g,b,dr,dg,db,m;
+   k = 0;
+   j = cam_zoom;
+   for (i=0; i < 32; ++i) {
+      dr = rand() & 127;
+      dg = rand() & 127;
+      db = rand() & 127;
+      dr += 128;
+      dg += 128;
+      db += 128;
+#if 0
+      r = dr*2;
+      g = dg*2;
+      b = db*2;
+      dr = dr * 3/4;
+      dg = dg * 3/4;
+      db = db * 3/4;
+#else
+      r = g = b = 0;
+#endif
+
+      for (j=0; j < 8; ++j) {
+         r += dr;
+         g += dg;
+         b += db;
+         pal[k++] = r >> 3;
+         pal[k++] = g >> 3;
+         pal[k++] = b >> 3;
+         for (m=0; m < 32; ++m)
+            shade_table[m][i*8+j] = i*8 + ((7-j) * m / 32);
+      }
+   }
+   gr_set_pal(0, 256, pal);
+   pt_light_table = shade_table[0];
+}
+
+r3s_context con;
+extern void WorldRepLoadGodFile(char *);
+extern void WorldRepLoadWrFile(char *);
+
+#pragma off(unreferenced)
+void main(int argc,char **argv)
+{
+   grs_screen *screen;
+   grs_bitmap *bm;
+   mxs_vector obj;
+   mxs_plane pln;
+   float j;
+   int acc;
+   mxs_real racc;
+   mxs_ang ang;
+
+   if (argc > 1 && !strcmp(argv[1], "+nofault")) {
+      ex_startup(EXM_DIVIDE_ERR);
+      --argc;
+      ++argv;
+   } else
+      ex_startup(EXM_ALL);
+
+   init_portal_renderer(0,7);
+   span_clip = FALSE;
+   obj.x = 12.0;
+   obj.y = 0;
+   obj.z = 0;
+
+   // init the mode, make a screen
+   gr_init();
+   atexit(gr_close);
+   gr_set_mode(GRM_320x200x8,TRUE);
+
+   screen = gr_alloc_screen(grd_mode_info[grd_mode].w,grd_mode_info[grd_mode].h);
+   gr_set_screen(screen);
+
+   setup_pal();
+
+   r3_init_defaults(-1,-1,-1,-1,-1);
+
+   if (argc > 1)
+      WorldRepLoadWrFile(argv[1]);
+   else
+      WorldRepLoadGodFile("world.god");
+
+   mx_mk_vec(&cam_vec,0,0,0);
+   MakeLocationFromVector(&camera_loc, &cam_vec);
+   
+   off_canv = gr_alloc_canvas(BMT_FLAT8,grd_bm.w, grd_bm.h);
+
+   for(;;) {
+      Position pos;
+      gr_set_canvas(off_canv);
+      //gr_clear(rand());
+      MakeHintedLocationFromVector(&camera_loc, &cam_vec, &camera_loc);
+      pos.loc = camera_loc;
+      pos.fac = cam_ang;
+      reset_dynamic_lights();
+      if (spotlight) 
+#if 1
+         portal_add_omni_light(128, 0, &camera_loc, LIGHT_DYNAMIC);
+#else
+         portal_add_omni_light(2.0, cam_vec.x, cam_vec.y, cam_vec.z, cam_ang.tz, cam_ang.ty, lt_zoom,TRUE);
+#endif
+
+      if (pick) {
+         int val;
+         gr_set_canvas(off_canv);
+         val = PortalRenderPick(&pos, grd_bm.w/2, grd_bm.h/2, 1.0);
+#if 0
+         if (val >= 0) {
+            portal_light_poly(val >> 8, val & 255);
+         }
+#endif
+      }
+      if (direct)
+         gr_set_canvas(grd_visible_canvas);
+      else
+         gr_set_canvas(off_canv);
+      start_3d();
+      if (parse_keys()) break;
+      end_3d();
+      portal_render_scene(&pos, 1.0);
+      if (!direct)
+         blit();
+      if (add_light) {
+         Location loc;
+         MakeLocationFromVector(&loc, &cam_vec);
+         portal_add_omni_light(128, 0, &loc, LIGHT_STATIC);
+         add_light = 0;
+      }
+#if 0
+      if (add_light) {
+         if (add_light == 1)
+            //portal_add_omni_light(1.0, cam_vec.x, cam_vec.y, cam_vec.z, FALSE);
+            portal_add_omni_light_perfect(cam_vec.x, cam_vec.y, cam_vec.z);
+         else
+            portal_add_spotlight(2.0, cam_vec.x, cam_vec.y, cam_vec.z, cam_ang.tz, cam_ang.ty, lt_zoom, FALSE);
+         add_light = 0;
+      }
+#endif
+   }
+}
+#pragma on(unreferenced)
+//  $Header: r:/t2repos/thief2/src/portal/portpick.c,v 1.8 2000/02/19 13:18:41 toml Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <string.h>
+#include <math.h>
+
+#include <lg.h>
+#include <r3d.h>
+#include <mprintf.h>
+
+#include <portal_.h>
+#include <portclip.h>
+#include <portdraw.h>
+#include <pt.h>
+#include <pt_clut.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#pragma off(unreferenced)
+bool pick_surface(PortalPolygonCore *poly, int voff, void *clip, int x, int y)
+{
+   r3s_phandle vlist[32], *final;
+   int i, j, n = poly->num_vertices;
+   bool inside = FALSE;
+
+   // prepare the vertex list
+
+   for (i=0; i < n; ++i)
+      vlist[i] = &cur_ph[r_vertex_list[voff+i]];
+
+   n = r3_clip_polygon(n, vlist, &final);
+   if (n <= 2) return FALSE;
+
+   // now test whether the point x,y is inside the 
+   // polygon.  This test routine is sort of overkill,
+   // since it works for any odd-even wound concave polygon.
+
+   x = fix_make(x,0);
+   y = fix_make(y,0);
+
+   j = n-1;
+   for (i=0; i < n; ++i) {
+      // check that our y appears between the other two 
+      if ((y < final[i]->grp.sy) ^ (y < final[j]->grp.sy)) {
+           // find where this line intersects with the horizontal line at y
+         fix dx = final[i]->grp.sx - final[j]->grp.sx;
+         fix dy = final[i]->grp.sy - final[j]->grp.sy;
+         fix sx = fix_mul_div(y - final[j]->grp.sy, dx, dy) + final[j]->grp.sx;
+         if (x > sx) inside = !inside;
+      }
+      j = i;
+   }
+   return inside;
+}
+#pragma on(unreferenced)
+
+int pick_region(PortalCell *r, int x, int y)
+{
+   int i, n = r->num_render_polys;
+   int voff=0;
+   int retval = -1;
+   PortalPolygonCore *poly = r->poly_list;
+
+   if (!n) return -1;
+
+     // copy common data into globals for efficient communicating
+     // someday we should inline the function "draw_surface" and
+     // then get rid of these globals
+
+   cur_ph = POINTS(r);
+
+   r_vertex_list = r->vertex_list;
+
+   r_clip = CLIP_DATA(r);
+
+   r3_set_clip_flags(0);
+
+      // now test all the polygons
+
+   r3_start_block();
+
+   for (i=0; i < n; ++i) {
+      if (check_surface_visible(r, poly, voff))
+         if (pick_surface(poly, voff, CLIP_DATA(r), x, y))
+            retval = i;
+      voff += poly->num_vertices;
+      ++poly;
+   }
+
+   r3_end_block();
+   return retval;
+}
+// $Header: r:/t2repos/thief2/src/portal/portsky.c,v 1.4 2000/02/19 13:18:50 toml Exp $
+
+#include <stdlib.h>
+
+#include <dbg.h>
+#include <lgassert.h>
+#include <g2.h>
+#include <r3ds.h>
+#include <lgd3d.h>
+
+#include <port.h>
+#include <portsky.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#define MAX_SPANS 6*G2C_MAX_HEIGHT
+
+int ptsky_type = PTSKY_NORMAL;
+extern float fog_dist_modifier;
+extern BOOL g_lgd3d;
+
+static int y_min, y_max;
+static int (*xdata)[G2C_MAX_HEIGHT][2];
+
+typedef struct SkySpanInfo SkySpanInfo;
+
+struct SkySpanInfo {
+   short x0;
+   short x1;
+   SkySpanInfo *next;
+};
+
+static int span_next=0;
+static SkySpanInfo span_data[MAX_SPANS];
+static SkySpanInfo *span_ptr[G2C_MAX_HEIGHT];
+#define span_alloc() (&span_data[span_next++])
+
+
+static void add_span_info(int y, int x0, int x1)
+{
+   SkySpanInfo *si = span_ptr[y];
+   if (si==NULL) {
+      span_ptr[y] = si = span_alloc();
+      si->x0 = x0;
+      si->x1 = x1;
+      si->next = NULL;
+      return;
+   }
+   // note the following fails to remerge spans in a case like
+   // s0x0....s0x1        s1x0....s1x1
+   //       x0.................x1
+   // but we don't really care....
+   do {
+      // overlap left?
+      if ((si->x0 <= x1) && (x1 <= si->x1)) {
+         si->x0 = min(x0, si->x0);
+         return;
+      }
+      // overlap right?
+      if ((si->x0 <= x0) && (x0 <= si->x1)) {
+         si->x1 = max(x1, si->x1);
+         return;
+      }
+      // complete overlap?
+      if ((x0 < si->x0) && (si->x1 < x1)) {
+         si->x0 = x0;
+         si->x1 = x1;
+         return;
+      }
+      // no overlap, try next span...
+      if (si->next == NULL)
+         break;
+      si = si->next;
+   } while (TRUE);
+   // add new span
+   si->next = span_alloc();
+   si = si->next;
+   si->next = NULL;
+   si->x0 = x0;
+   si->x1 = x1;
+}
+
+
+static int sky_point_is_visible(int x, int y)
+{
+   SkySpanInfo *si;
+
+   if ((y<0)||(y>=G2C_MAX_HEIGHT))
+      return FALSE;
+
+   si = span_ptr[y];
+   while (si!=NULL) {
+      if ((x >= si->x0) && (x < si->x1))
+         return TRUE;
+      si = si->next;
+   }
+   return FALSE;
+}
+
+
+static void reset_sky_spans(void)
+{
+   int i;
+   span_next = 0;
+   for (i=0; i<G2C_MAX_HEIGHT; i++)
+      span_ptr[i] = NULL;
+}
+
+
+// called from portdraw.c in d3d rendering mode only
+int ptsky_calc_spans(int n, r3s_phandle *vp)
+{
+   int i,j;
+
+   g2_reset_scan_buffer();
+
+   j = n-1;
+   for (i=0; i < n; ++i) {
+      g2_scan_convert((g2s_point *)&(vp[i]->grp), (g2s_point *)&(vp[j]->grp));
+      j = i;
+   }
+   g2_get_scan_conversion(&y_min, &y_max, &xdata);
+
+   // 0-height poly
+   if (y_min >= y_max)
+      return 0;
+
+   if (y_min < 0) {
+      Warning(("Polygon off top of screen.\n"));
+      return 0;
+   }
+
+   if (y_max >= G2C_MAX_HEIGHT) {
+      Warning(("Polygon off bottom of max-sized screen.\n"));
+      return 0;
+   }
+
+   for (i = y_min; i<y_max; ++i)
+      add_span_info(i, (*xdata)[i][0], (*xdata)[i][1]);
+
+   AssertMsg(span_next <= MAX_SPANS, "Too many sky spans!");
+   return (y_max - y_min);
+}
+
+// how to setup.
+static void (*star_render_func)(int (*point_test_func)(int x, int y)) = NULL;
+void ptsky_set_render_func(void (*render_func)(int (*test_func)(int x, int y)))
+{
+   star_render_func = render_func;
+   reset_sky_spans();
+}
+
+
+void ptsky_set_type(int type)
+{
+   ptsky_type = type;
+}
+
+
+// this needs to be called after sky polys are drawn and before any other
+// polys are drawn.
+// currently called from portdraw.c and portal.c
+void ptsky_render_stars(void)
+{
+   if ((span_next == 0)||(star_render_func==NULL)||(ptsky_type!=PTSKY_SPAN))
+      return;
+
+   if (g_lgd3d && portal_fog_dist)
+      //lgd3d_set_fog_density(fog_dist_modifier * .1 / portal_fog_dist);
+      lgd3d_set_linear_fog_distance( portal_fog_dist );
+
+
+   star_render_func(sky_point_is_visible);
+   reset_sky_spans();
+
+   if (g_lgd3d && portal_fog_dist)
+      //lgd3d_set_fog_density(fog_dist_modifier / portal_fog_dist);
+      lgd3d_set_linear_fog_distance( portal_fog_dist );
+
+}
+// $Header: r:/t2repos/thief2/src/portal/portsky.h,v 1.2 2000/01/29 13:37:27 adurant Exp $
+#pragma once
+
+#ifndef __PORTSKY_H
+#define __PORTSKY_H
+
+extern int ptsky_type;
+
+#define PTSKY_NORMAL    0  // treat sky exactly like other terrain
+#define PTSKY_SPAN      1  // render sky polys into span buffer
+#define PTSKY_ZBUFFER   2  // make sky polys render far away
+#define PTSKY_NONE      3  // don't render sky polys at all
+
+// set sky type
+extern void ptsky_set_type(int type);
+
+// render poly into span buffer.
+// return number of scanlines in poly.
+extern int ptsky_calc_spans(int n, r3s_phandle *vp);
+
+// set callback for star rendering
+extern void ptsky_set_render_func(void (*render_func)(int (*test_func)(int x, int y)));
+
+// render span clipped stars using callback set above
+extern void ptsky_render_stars(void);
+
+#endif
+//  $Header: r:/t2repos/thief2/src/portal/portsurf.c,v 1.42 2000/02/19 13:18:58 toml Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+
+#include <lg.h>
+#include <r3d.h>
+#include <mprintf.h>
+
+#include <portal_.h>
+#include <portclip.h>
+#include <portdraw.h>
+
+#include <pt.h>
+#include <pt_clut.h>
+#include <ptsurf.h>
+#include <wrdbrend.h>
+
+#include <profile.h>
+#include <lgd3d.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+BOOL g_lgd3d;
+
+#ifdef DBG_ON
+  #define STATIC
+#else
+  #define STATIC static
+#endif
+
+#define BORDER_COLOR 255
+
+#define STATS_ON
+
+#ifdef DBG_ON
+  #ifndef STATS_ON
+  #define STATS_ON
+  #endif
+#endif
+
+bool surface_cache=TRUE;   // no longer used
+
+uchar temp_texture[256*512];
+
+extern int stat_num_lit_pixels;
+extern int stat_num_source_pixels;
+bool palette_light;
+
+#define OPAQUE_BM(b)    (!((b).flags & (BMF_TRANS | BMF_TLUC8)))
+
+
+// globals for data schlepping
+int _portal_surface_texture_row;
+int _portal_surface_output_row;
+int _portal_surface_lightmap_row;
+uchar * _portal_surface_texture;
+uchar * _portal_surface_output;
+LightmapEntry * _portal_surface_lightmap;
+
+#ifdef RGB_LIGHTING
+extern ulong pl_red_mask, pl_green_mask, pl_blue_mask;
+#endif
+
+// This isn't being used any more, but is still here to preserve the
+// decal code.
+#ifdef DO_DECALS
+static char tempbuf[256];
+
+PortalDecal *compute_cached_block(uchar *dest, int row, int dx, int dy,
+            int width, grs_bitmap *source, int align_x, int align_y,
+            PortalLightMap *lt, int lx, int ly, int offset, PortalDecal *decal)
+{
+   int i,j;
+   // load the light at each corner
+   fix c0,c1,c2,c3, c, dc;
+   uchar *l = (lt->dynamic ? lt->dynamic : lt->bits) + ly * lt->row + lx;
+   uchar *s;
+
+   uchar *bits_src;
+   int bits_row;
+
+   align_x = align_x & (source->w-1);
+   align_y = align_y & (source->h-1);
+
+   bits_src = source->bits + align_y*source->row + align_x;
+   bits_row = source->row;
+
+   // draw on the decals
+
+   if (decal && offset == decal->offset) {
+      // if this is the only decal, and it's opaque, fast case
+      if (decal[1].offset != offset && OPAQUE_BM(decal->decal[mip_level])) {
+         bits_src = decal->decal[mip_level].bits;
+         bits_row = decal->decal[mip_level].row;
+         ++decal;
+      } else {
+         grs_bitmap temp;
+         grs_canvas dest;
+         gr_init_bitmap(&temp, tempbuf, BMT_FLAT8, 0, width, width);
+         gr_make_canvas(&temp, &dest);
+         gr_push_canvas(&dest);
+         if (!OPAQUE_BM(decal->decal[mip_level])) {
+            grs_bitmap duh;
+            gr_init_sub_bitmap(source, &duh, align_x, align_y, width, width);
+            gr_bitmap(&duh, 0, 0);
+         }
+
+         do {
+            gr_bitmap(&decal->decal[mip_level], 0, 0);
+            ++decal;
+         } while (offset == decal->offset);
+         gr_pop_canvas();
+         bits_src = tempbuf;
+         bits_row = width;
+      }
+   }
+
+   _portal_surface_texture = bits_src;
+   _portal_surface_texture_row = bits_row;
+
+   _portal_surface_output = dest + dy*row + dx;
+   _portal_surface_output_row = row;
+
+   _portal_surface_lightmap = l;
+   _portal_surface_lightmap_row = lt->row;
+
+   // We does what we does in the manner in which we chooses.
+   switch (width)
+   {
+      case 0:
+         goto worst_case;
+
+      case 1:
+         pt_surfbuild_1();
+         stat_num_lit_pixels += 1;
+         return decal;
+
+      case 2:
+         pt_surfbuild_2();
+         stat_num_lit_pixels += 4;
+         return decal;
+
+      case 3:
+         goto worst_case;
+
+      case 4:
+         pt_surfbuild_4();
+         stat_num_lit_pixels += 16;
+         return decal;
+
+      case 5:
+      case 6:
+      case 7:
+         goto worst_case;
+
+      case 8:
+      {
+         pt_surfbuild_8();
+         stat_num_lit_pixels += 64;
+         return decal;
+      }
+
+      case 9:
+      case 10:
+      case 11:
+      case 12:
+      case 13:
+      case 14:
+      case 15:
+         goto worst_case;
+
+      case 16:
+      {
+         pt_surfbuild_16();
+         stat_num_lit_pixels += 256;
+         return decal;
+      }
+
+      default:
+         break;
+   }
+
+worst_case:
+   stat_num_lit_pixels += width * width;
+
+   c0 = fix_make(l[0], 0x8000) / 16;
+   c1 = fix_make(l[1], 0x8000) / 16;
+   c2 = fix_make(l[lt->row], 0x8000) / 16;
+   c3 = fix_make(l[lt->row+1], 0x8000) / 16;
+
+   c2 = (c2 - c0) / width;
+   c3 = (c3 - c1) / width;
+
+   s = bits_src;
+   for (j=0; j < width; ++j) {
+      c = c0;
+      dc = (c1 - c0) / width;
+      for (i=0; i < width; ++i) {
+         dest[(dy+j)*row+dx+i] = pt_light_table[256*fix_int(c) + s[i]];
+         c += dc;
+      }
+      c0 += c2;
+      c1 += c3;
+      s += bits_row;
+   }
+
+   return decal;
+}
+#endif // DO_DECALS
+
+
+bool surf_256 = TRUE;
+bool cache_feedback = FALSE;
+
+#define SURFACE_CACHE_SIZE  (1024*2048)
+#define FRAME_MAX (SURFACE_CACHE_SIZE*3/4)
+#define SURFACE_CACHE_ENTRIES  512
+
+struct
+{
+   grs_bitmap bitmap;
+   uchar *bits;
+   short *ptr;     // thing that points to this entry
+   ushort w, h;
+   ushort mip_level;
+   uchar active;
+   uchar texture_id;
+} surf_cache[SURFACE_CACHE_ENTRIES];
+
+static int surf_first_free = 0;
+static int surf_max = 0;
+static int surf_mem = 0;
+int surfs_alloced = 0;
+
+static int get_surface(void)
+{
+   if (surf_first_free) {
+      int n = surf_first_free;
+      surf_first_free = surf_cache[n].mip_level;
+      return n;
+   } else {
+      if (surf_max >= SURFACE_CACHE_ENTRIES-1)
+         return 0;
+      return ++surf_max;
+   }
+}
+
+static void free_surface(int n)
+{
+   if (n == 0)
+      Error(1, "Tried to free surface #0.\n");
+   surf_cache[n].mip_level = surf_first_free;
+   surf_first_free = n;
+}
+
+static void free_surface_cache(int n)
+{
+   surf_mem -= surf_cache[n].w * surf_cache[n].h;
+   if (surf_256)
+      portal_free_mem_rect(surf_cache[n].bits,
+          surf_cache[n].w, surf_cache[n].h);
+   else
+      Free(surf_cache[n].bits);
+
+   surf_cache[n].bits = 0;
+   free_surface(n);
+}
+
+void clear_surface_cache(void)
+{
+   int i;
+   for (i=1; i < SURFACE_CACHE_ENTRIES; ++i)
+      if (surf_cache[i].bits) {
+         *(surf_cache[i].ptr) = 0;
+         free_surface_cache(i);
+      }
+}
+
+// When we animate textures, we want to invalidate all surface cache
+// entries which have a particular texture id.
+void clear_surfaces_for_texture(uchar texture_id)
+{
+   int i;
+
+   for (i = 1; i < SURFACE_CACHE_ENTRIES; ++i)
+      if (surf_cache[i].bits && surf_cache[i].texture_id == texture_id) {
+         *(surf_cache[i].ptr) = 0;
+         free_surface_cache(i);
+      }
+}
+
+static int cache_step=1;
+void make_room_in_cache(int amt)
+{
+   int count = 0;
+   while (amt + surf_mem >= SURFACE_CACHE_SIZE) {
+      if (surf_cache[cache_step].bits) {
+         if (surf_cache[cache_step].active)
+            --surf_cache[cache_step].active;
+         else {
+            *(surf_cache[cache_step].ptr) = 0;
+            free_surface_cache(cache_step);
+         }
+      }
+      if (++cache_step == SURFACE_CACHE_ENTRIES)
+         cache_step = 1;
+      if (++count > SURFACE_CACHE_ENTRIES*2) {
+         if (cache_feedback)
+            mprintf("cache_feedback: Two passes through surface cache.\n");
+         return;
+      }
+   }
+}
+
+// make sure there's at least one free id
+void free_slot_in_cache(void)
+{
+   int count = 0;
+   for(;;) {
+      if (surf_cache[cache_step].bits) {
+         if (surf_cache[cache_step].active)
+            --surf_cache[cache_step].active;
+         else {
+            *(surf_cache[cache_step].ptr) = 0;
+            free_surface_cache(cache_step);
+            return;
+         }
+      }
+      if (++cache_step == SURFACE_CACHE_ENTRIES)
+         cache_step = 1;
+      if (++count > SURFACE_CACHE_ENTRIES*2) {
+         if (cache_feedback)
+            mprintf("cache_feedback: Two passes through surface cache.\n");
+         return;
+      }
+   }
+}
+
+int cache_mem_this_frame;
+static int alloc_surface_cache(int x, int y, short *ptr, uchar texture_id)
+{
+   int i, n, sz, w_bytes;
+   uchar *bits;
+
+   if (cache_mem_this_frame > FRAME_MAX) return 0;
+
+   n = get_surface();
+   if (n == 0) {
+      free_slot_in_cache();
+      n = get_surface();
+      if (n == 0) {
+         if (cache_feedback)
+            mprintf("cache_feedback: out of surface ids.\n");
+         return 0;
+      }
+   }
+
+   x += 4;
+   y += 4;
+
+   // increase y until it's 2 << n or 3 << n
+
+   if (surf_256) {
+      if (y > 8) {
+         for (i=2; i < 9; ++i) {
+            if ((2 << i) >= y) {
+               y = 2 << i;
+               break;
+            } else if ((3 << i) >= y) {
+               y = 3 << i;
+               break;
+            }
+         }
+      }
+   }
+   else
+   {
+      // Make surface power of 2 width
+      for (i=8; i<512; i+=i) {
+         if (i < y)
+            continue;
+         y = i;
+         break;
+      }
+      for (i=8; i<512; i+=i) {
+         if (i < x)
+            continue;
+         x = i;
+         break;
+      }
+   }
+
+   sz = x * y;
+   if (sz + surf_mem > SURFACE_CACHE_SIZE) {
+      make_room_in_cache(x * y);
+   }
+
+   if (grd_bpp > 8)
+      w_bytes = 2*x;
+   else
+      w_bytes = x;
+
+   if (surf_256)
+      bits = portal_allocate_mem_rect(w_bytes,y);
+   else
+      bits = Malloc(w_bytes * y);
+
+   if (!bits) {
+      if (cache_feedback)
+         mprintf("cache_feedback: Out of memory.\n");
+      free_surface(n);
+      return 0;
+   }
+
+   surf_mem += sz;
+   cache_mem_this_frame += sz;
+
+   surf_cache[n].w = x;
+   surf_cache[n].h = y;
+   surf_cache[n].bits = bits;
+   surf_cache[n].ptr = ptr;
+   surf_cache[n].active = (cache_mem_this_frame < FRAME_MAX ? 3 : 2);
+   surf_cache[n].texture_id = texture_id;
+
+   *ptr = n;
+
+   if (surf_256)
+      gr_init_bitmap(&surf_cache[n].bitmap, bits, BMT_DEVICE_VIDMEM_TO_FLAT, 0, 256, 256);
+   else
+      gr_init_bitmap(&surf_cache[n].bitmap, bits, BMT_DEVICE_VIDMEM_TO_FLAT, 0, x, y);
+
+   return n;
+}
+
+
+// We add lightmaps and clamp the result in a temporary buffer.
+// A lightmap, currently, can be up to 17x17=289, or 64x64=4096 in
+// hardware.
+#ifdef BIG_LIGHTMAPS
+LightmapEntry temp_lightmap_bits[4096];
+#else // BIG_LIGHTMAPS
+LightmapEntry temp_lightmap_bits[320];
+#endif // BIG_LIGHTMAPS
+
+uint _portal_lightmap_width;
+uint _portal_lightmap_height;
+uint _portal_lightmap_row;
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The temporary lightmap srarts off as a copy of the static lightmap
+   for our polygon.  Then we add in the dynamic lightmaps.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void set_up_temp_lightmap(PortalLightMap *map)
+{
+   _portal_lightmap_width = map->w;
+   _portal_lightmap_height = map->h;
+   _portal_lightmap_row = map->pixel_row;
+
+   if (map->dynamic_light)
+      memcpy(&temp_lightmap_bits[0], map->dynamic_light, map->h * map->pixel_row*sizeof(LightmapEntry));
+   else
+      memcpy(&temp_lightmap_bits[0], map->data, map->h * map->pixel_row*sizeof(LightmapEntry));
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   We only add lightmaps to the temporary one.  We assume that the
+   lightmaps have the same row value.
+
+   The lightmap points are 0-255, but when we weight them here we
+   cheat, right-shifting the product as though the range was 0-256.
+
+   This will be replaced with ASM & use lookup tables, one bright day.
+
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#define RED_SHIFT 0
+#define GREEN_SHIFT 5
+#define BLUE_SHIFT 10
+
+
+void add_to_temp_lightmap(LightmapEntry *source, uchar intensity)
+{
+   int r,g,b;
+   int i, j;
+   uint v;
+   LightmapEntry *dest = &temp_lightmap_bits[0];
+
+#ifndef RGB_LIGHTING
+   for (i = 0; i < _portal_lightmap_height; i++) {
+      for (j = 0; j < _portal_lightmap_width; j++) {
+         v = ((intensity * source[j]) >> 8) + dest[j];
+         if (v > 255)
+            v = 255;
+         dest[j] = v;
+      }
+      source += _portal_lightmap_row;
+      dest += _portal_lightmap_row;
+   }
+#else
+   for (i = 0; i < _portal_lightmap_height; i++) {
+      for (j = 0; j < _portal_lightmap_width; j++) {
+
+#ifdef RGB_888
+         v = ((intensity * source[j].A[0]) >> 8) + dest[j].A[0];
+         if (v > 255)
+            v = 255;
+         dest[j].A[0] = v;
+
+         v = ((intensity * source[j].A[1]) >> 8) + dest[j].A[1];
+         if (v > 255)
+            v = 255;
+         dest[j].A[1] = v;
+
+         v = ((intensity * source[j].A[2]) >> 8) + dest[j].A[2];
+         if (v > 255)
+            v = 255;
+         dest[j].A[2] = v;
+#else // RGB_888
+         // as an optimization for RGB lighting, we add it with no scaling
+         int cur,plus,sum;
+         cur = dest[j];
+         plus = source[j];
+
+         r = ((((plus & pl_red_mask)>>RED_SHIFT)*intensity)>>8)<<RED_SHIFT;
+         g = ((((plus & pl_green_mask)>>GREEN_SHIFT)*intensity)>>8)<<GREEN_SHIFT;
+         b = ((((plus & pl_blue_mask)>>BLUE_SHIFT)*intensity)>>8)<<BLUE_SHIFT;
+         plus = r+g+b;
+
+         sum = cur + plus;
+
+         // test for overflow
+         //    how can we tell if overflow occured?  if we carried
+         //    into a given bit (the next up bit).  How can we tell
+         //    if we carried?  Because bit #n =
+         //                (cur-n ^ plus-n ^ carry-n)
+         //    so we can infer the carries with:
+         //        (cur-n ^ plus-n ^ sum-n)
+         if ((cur ^ plus ^ sum) & (32 + (32<<5) + (32<<10))) {
+            // overflow, so do it the slow way
+            r = (cur & pl_red_mask) + (plus & pl_red_mask);
+            g = (cur & pl_green_mask) + (plus & pl_green_mask);
+            b = (cur & pl_blue_mask) + (plus & pl_blue_mask);
+            if (r > pl_red_mask) r = pl_red_mask;
+            if (g > pl_green_mask) g = pl_green_mask;
+            if (b > pl_blue_mask) b = pl_blue_mask;
+            sum = r + g + b;
+         }
+
+         dest[j] = sum;
+#endif RGB_888
+      }
+      source += _portal_lightmap_row;
+      dest += _portal_lightmap_row;
+   }
+#endif
+}
+
+
+// Animated lightmaps at or below this intensity are not added in.
+#define LIGHTMAP_ADD_CUTOFF 0
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This routine builds the current lightmap for a given polygon's
+   surface.  It's only called if the polygon is reached by at least
+   one animated light.
+
+   The first PortalLightMap in lightmap_list is the static one, so
+   we skip over it here.
+
+   *intensities is a weighting 0-255 for all lights which reach our
+   polygon's _cell_.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void compute_lightmap(PortalLightMap *lightmap)
+{
+   ushort *anim_light_index = cur_anim_light_index_list;
+   LightmapEntry *bits = lightmap->data;
+   int size = lightmap->h * lightmap->pixel_row;
+   uint light_bitmask = lightmap->anim_light_bitmask;
+   uchar intensity;
+
+   set_up_temp_lightmap(lightmap);
+
+   while (light_bitmask) {
+      if (light_bitmask & 1) {
+#ifndef SHIP
+         if (!cur_anim_light_index_list) {
+            Warning(("Lightmap thinks it's animated but no anim lights reach cell!"));
+            return;
+         }
+#endif // ~SHIP
+
+         bits += size;             // advance to next lightmap data
+
+         intensity = portal_anim_light_intensity[*anim_light_index];
+         if (intensity > LIGHTMAP_ADD_CUTOFF)
+            add_to_temp_lightmap(bits, intensity);
+      }
+      anim_light_index++;
+      light_bitmask >>= 1;
+   }
+}
+
+
+#ifdef DO_DECALS
+// This probably isn't the approach we want in the final setup.
+void decal_dummy_func()
+{
+}
+
+// The indices for these two arrays correspond to MIP levels.
+static void (*decal_build_funcs[5])() = {
+   decal_dummy_func, decal_dummy_func, decal_dummy_func,
+   decal_dummy_func, decal_dummy_func
+};
+
+#endif
+
+static void (*surf8_build_funcs[5])() = {
+   pt_surfbuild_16_asm, pt_surfbuild_8_asm, pt_surfbuild_4_asm,
+   pt_surfbuild_2_asm, pt_surfbuild_1_asm
+};
+
+static void (*surf8_setup_funcs[5])() = {
+   pt_surfbuild_setup_16_asm, pt_surfbuild_setup_8_asm,
+   pt_surfbuild_setup_4_asm, pt_surfbuild_setup_2_asm,
+   pt_surfbuild_setup_1_asm
+};
+
+extern void pt16_surfbuild_16_asm(void);
+extern void pt16_surfbuild_8_asm(void);
+extern void pt16_surfbuild_4_asm(void);
+extern void pt16_surfbuild_2_asm(void);
+extern void pt16_surfbuild_1_asm(void);
+
+extern void pt16_surfbuild_setup_1_asm(void);
+extern void pt16_surfbuild_setup_2_asm(void);
+extern void pt16_surfbuild_setup_4_asm(void);
+extern void pt16_surfbuild_setup_8_asm(void);
+extern void pt16_surfbuild_setup_16_asm(void);
+
+void pt16_surfbuild_setup(void);
+void pt16_surfbuild_1(void);
+void pt16_surfbuild_2(void);
+void pt16_surfbuild_4(void);
+void pt16_surfbuild_8(void);
+void pt16_surfbuild_16(void);
+
+static void (*surf16_build_funcs[5])() = {
+#ifdef RGB_LIGHTING
+   pt16_surfbuild_16, pt16_surfbuild_8, pt16_surfbuild_4,
+   pt16_surfbuild_2, pt16_surfbuild_1
+#else
+   pt16_surfbuild_16_asm, pt16_surfbuild_8_asm, pt16_surfbuild_4_asm,
+   pt16_surfbuild_2_asm, pt16_surfbuild_1_asm
+#endif
+};
+
+static void (*surf16_setup_funcs[5])() = {
+#ifdef RGB_LIGHTING
+   pt16_surfbuild_setup,
+   pt16_surfbuild_setup,
+   pt16_surfbuild_setup,
+   pt16_surfbuild_setup,
+   pt16_surfbuild_setup
+#else
+   pt16_surfbuild_setup_16_asm, pt16_surfbuild_setup_8_asm,
+   pt16_surfbuild_setup_4_asm, pt16_surfbuild_setup_2_asm,
+   pt16_surfbuild_setup_1_asm
+#endif
+};
+
+void uncache_surface(PortalPolygonRenderInfo *render)
+{
+   if (render->cached_surface && (!g_lgd3d))
+   {
+      free_surface_cache(render->cached_surface);
+      render->cached_surface = 0;
+   }
+}
+
+#ifdef RGB_LIGHTING
+#ifndef RGB_888
+ulong pl_red_convert[32], pl_blue_convert[32], pl_green_convert[32];
+#define RED_SHIFT 0
+#define GREEN_SHIFT 5
+#define BLUE_SHIFT 10
+
+ushort portal_color_convert(ushort color)
+{
+   int r,g,b;
+   r = (color & pl_red_mask) >> RED_SHIFT;
+   g = (color & pl_green_mask) >> GREEN_SHIFT;
+   b = (color & pl_blue_mask) >> BLUE_SHIFT;
+   return pl_red_convert[r] + pl_blue_convert[b] + pl_green_convert[g];
+}
+#endif // ~RGB_888
+#endif
+
+// This is called only from porthw.c, and is only called
+// to produce the final output format--we never add dynamic
+// light on top of this or anything
+void portsurf_update_bits(uchar *dst, int row, PortalLightMap *lt)
+{
+   int y,x;
+   LightmapEntry *src;
+
+   if (lt->anim_light_bitmask) {
+      compute_lightmap(lt);
+      src = &temp_lightmap_bits[0];
+   } else
+      src = (lt->dynamic_light) ? lt->dynamic_light : lt->data;
+
+   for (y=0; y < lt->h; y++) {
+      for (x=0; x < lt->w; ++x) {
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+//         ((LightmapEntry *) dst)[x].I = src[x].I;
+         ((LightmapEntry *) dst)[x].A[0] = src[x].A[2];
+         ((LightmapEntry *) dst)[x].A[1] = src[x].A[1];
+         ((LightmapEntry *) dst)[x].A[2] = src[x].A[0];
+#else // RGB_888
+         LightmapEntry color = portal_color_convert(src[x]);
+         ((LightmapEntry *) dst)[x] = color;
+#endif // RGB_888
+#else
+         dst[x] = src[x];
+#endif
+      }
+      src += lt->pixel_row;
+      dst += row;
+   }
+}
+
+// get a cached surface.
+grs_bitmap *get_cached_surface(PortalPolygonRenderInfo *render,
+                               PortalLightMap *lt, grs_bitmap *texture,
+                               int mip_level)
+{
+   grs_bitmap *new_tex;
+   int pixels_per_lm, w, h, row, num_pixels;
+   int x, y, n, xtop, ytop;
+   bool cache;
+   uchar *data, *bits;
+   uchar log_bpp;
+#ifdef DO_DECALS
+   void (*decal_build_func)();
+#endif
+   void (*surface_build_func)();
+
+#ifndef SHIP
+#ifdef BIG_LIGHTMAPS
+   if (lt->w > 64 || lt->h > 64) {
+      Warning(("LightMap size out of range!  %d x %d.\n", lt->w, lt->h));
+      return 0;
+   }
+#else
+   if (lt->w > 17 || lt->h > 17) {
+      Warning(("LightMap size out of range!  %d x %d.\n", lt->w, lt->h));
+      return 0;
+   }
+#endif
+#endif // ~SHIP
+
+   pixels_per_lm = 64 >> (mip_level + 2);
+   w = (lt->w-1) * pixels_per_lm;
+   h = (lt->h-1) * pixels_per_lm;
+
+   num_pixels = w * h;
+
+   if (render->cached_surface) {
+
+      n = render->cached_surface;
+
+      if (!lt->dynamic_light && surf_cache[n].mip_level == pixels_per_lm) {
+
+         stat_num_source_pixels += num_pixels;
+         surf_cache[n].active = 1;
+
+         return &surf_cache[n].bitmap;
+      }
+
+      if (cache_feedback)
+         mprintf("cache_feedback: Throw out mip level %d for %d.\n",
+                 surf_cache[n].mip_level, pixels_per_lm);
+      free_surface_cache(n);
+      render->cached_surface = 0;
+   }
+
+     // too fine to surface cache
+   if (pixels_per_lm < 1) {
+      Warning(("Warning: not lighting--mipmap too fine.\n"));
+      return texture;
+   }
+
+     // too big to surface cache!
+   if (w > 256-16 || h > 256-16) {
+#ifndef BIG_LIGHTMAPS
+      Warning(("Surface too big: %d %d (%d %d)\n", w, h, lt->w, lt->h));
+#endif
+      return texture;
+   }
+
+#ifdef STATS_ON
+   stat_num_source_pixels += num_pixels;
+#endif
+
+   cache = surface_cache;
+   if (lt->dynamic_light)
+      cache = FALSE;
+
+   if (cache &&
+         (n = alloc_surface_cache(w, h, &render->cached_surface,
+                                  render->texture_id)) != 0) {
+      new_tex = &surf_cache[n].bitmap;
+      surf_cache[n].mip_level = pixels_per_lm;
+   } else {
+      static grs_bitmap temp_tex;
+      if (cache_feedback)
+         mprintf("cache_feedback: failed to cache surface.\n");
+
+      new_tex = &temp_tex;
+      gr_init_bitmap(new_tex, temp_texture, BMT_DEVICE_VIDMEM_TO_FLAT, 0, 256, 256);
+   }
+
+   row = new_tex->row;
+   bits = new_tex->bits;
+   log_bpp = (grd_bpp > 8) ? 1:0;
+   data = bits + (2<<log_bpp) + row * 2;
+
+   {  // surface cache for real!
+#ifdef DO_DECALS
+      decal_build_func = decal_build_funcs[mip_level];
+#endif
+      surface_build_func =
+         (log_bpp ? surf16_build_funcs : surf8_build_funcs)[mip_level];
+
+      // set surface building up for current lighting table and
+      // texture size
+      {
+         uchar *texture_pos = texture->bits;
+         uchar *output_pos = data;
+         LightmapEntry *lightmap_pos =
+                 (lt->dynamic_light)? lt->dynamic_light : lt->data;
+         int bytes_per_lm = (log_bpp) ? 2*pixels_per_lm : pixels_per_lm;
+         int lightmap_u_limit = lt->w - 1;
+         int lightmap_v_limit = lt->h - 1;
+         int lightmap_dy = lt->pixel_row;
+
+         int output_dy = row * pixels_per_lm;
+
+         int texture_x_mask = texture->w - 1;
+         int texture_y_mask = texture->row * texture->h - 1;
+         int texture_dy = texture->row * pixels_per_lm;
+         int texture_x_offset
+            = (lt->base_u * pixels_per_lm) & texture_x_mask;
+         int texture_x_offset_base = texture_x_offset;
+         int texture_y_offset
+            = (lt->base_v * pixels_per_lm * texture->row) & texture_y_mask;
+
+         // add in any animated light
+         if (lt->anim_light_bitmask) {
+            compute_lightmap(lt);
+            lightmap_pos = &temp_lightmap_bits[0];
+         }
+
+         // The row sizes are constant over the surface.
+         _portal_surface_texture_row = texture->row;
+         _portal_surface_output_row = row;
+         _portal_surface_lightmap_row = lt->pixel_row;
+
+         // Some of our surface building uses self-modifying code.
+         if (log_bpp)
+         {
+            AssertMsg (grd_ltab816_list!=NULL,
+               "get_cached_surface(): Need 16 bit lighting table list to build 16 bit surface!");
+            grd_ltab816 = grd_ltab816_list[texture->align];
+            AssertMsg (grd_ltab816!=NULL,
+               "get_cached_surface(): NULL 16 bit lighting table!");
+            surf16_setup_funcs[mip_level]();
+         }
+         else
+            surf8_setup_funcs[mip_level]();
+
+         for (y = 0; y < lightmap_v_limit; ++y) {
+            _portal_surface_output = output_pos;
+            _portal_surface_lightmap = lightmap_pos;
+
+            for (x = 0; x < lightmap_u_limit; ++x) {
+               _portal_surface_texture
+                  = texture_pos + texture_x_offset + texture_y_offset;
+
+               // do the work
+#ifdef DO_DECALS
+               decal_build_func();
+#endif
+               surface_build_func();
+
+               // advance our inner-loop pointers
+               texture_x_offset
+                  = (texture_x_offset + pixels_per_lm) & texture_x_mask;
+               _portal_surface_output += bytes_per_lm;
+               _portal_surface_lightmap++;
+            }
+
+            texture_x_offset = texture_x_offset_base;
+            texture_y_offset
+               = (texture_y_offset + texture_dy) & texture_y_mask;
+            output_pos += output_dy;
+            lightmap_pos += lightmap_dy;
+         }
+      }
+#ifdef STATS_ON
+      stat_num_lit_pixels += num_pixels;
+#endif
+   }
+
+   ytop = 0;
+   xtop = 0;
+
+   // duplicate the data at the edges
+#if 1
+   memset(bits + row*ytop, BORDER_COLOR, (w+4)<<log_bpp);
+   memcpy(bits + row*(ytop+1), bits + row*(ytop+2), w<<log_bpp);
+   memcpy(bits + row * (h+2), bits + row * (h+1), w<<log_bpp);
+   memset(bits + row*(h+3), BORDER_COLOR, (w+4)<<log_bpp);
+#else
+   memcpy(bits + row*(ytop+0), bits + row*(ytop+1), w);
+   memcpy(bits + row * (h+1), bits + row * h, w);
+#endif
+
+   if (log_bpp) {
+      ushort *b = (ushort *)bits;
+      int r = row>>1;
+      for (y=0; y <= h+3; ++y) {
+         b[y*r+1]    = b[y*r+2];
+         b[y*r+w+2]  = b[y*r+w+1];
+         b[y*r] = b[y*r+w+3] = BORDER_COLOR;
+      }
+   } else
+      for (y=0; y <= h+3; ++y) {
+         bits[y*row+xtop+1] = bits[y*row+xtop+2];
+         bits[y*row+w+2] = bits[y*row+w+1];
+         bits[y*row+xtop] = bits[y*row+w+3] = BORDER_COLOR;
+      }
+
+   return new_tex;
+}
+
+static void pt16_surfbuild(int slog)
+{
+#ifdef SOFTWARE_RGB
+   int srow, lrow, drow;
+   uchar *src;
+   LightmapEntry *light;
+   ushort *dest;
+   //int cl, cr, dcl, dcr, c, dc;
+   int size, i,j;
+
+   dest  = (ushort *)_portal_surface_output;
+   src   = _portal_surface_texture;
+   light = _portal_surface_lightmap;
+   srow  = _portal_surface_texture_row;
+   drow  = _portal_surface_output_row>>1;
+   lrow  = _portal_surface_lightmap_row;
+
+   // light map pixels start out 4.4; we want c to be 4.8, so we shift by 4
+   // and shift deltas by the appropriate amount to compensate for size.
+
+   size = 1<<slog;
+
+#if 0
+   cl = light[0];
+   cr = light[1];
+   dcl = (light[lrow] - cl)<<(4-slog);
+   dcr = (light[lrow+1] - cr)<<(4-slog);
+   cl <<= 4;
+   cr <<= 4;
+
+   for (j=0;j<size;j++)
+   {
+      c = cl;
+      dc = (cr-cl)>>slog;
+      for (i=0;i<size;i++) {
+         dest[i] = grd_ltab816[(c&0xff00) + src[i]];
+         c += dc;
+      }
+      cl += dcl;
+      cr += dcr;
+      dest += drow;
+      src += srow;
+   }
+#else // 0
+   // just use the tl color
+   {
+      extern uchar light_ipal[];
+#ifdef RGB_888
+      ushort n555 = (light[0].A[0] >> 3)
+                  + ((light[0].A[1] >> 3) << 5)
+                  + ((light[0].A[2] >> 3) << 10);
+      uchar color = light_ipal[n555];
+#else // RGB_888
+      uchar color = light_ipal[light[0]];
+#endif // RGB_888
+      ushort *clut = &grd_ltab816[(color+24) << 8];
+      for (j=0; j < size; ++j) {
+         for (i=0; i < size; ++i) {
+            dest[i] = clut[src[i]];
+         }
+         dest += drow;
+         src  += srow;
+      }
+   }
+#endif // 0
+
+#endif // SOFTWARE_RGB
+}
+
+void pt16_surfbuild_setup(void) {}
+
+void pt16_surfbuild_1(void)
+{
+   pt16_surfbuild(0);
+}
+
+void pt16_surfbuild_2(void)
+{
+   pt16_surfbuild(1);
+}
+
+void pt16_surfbuild_4(void)
+{
+   pt16_surfbuild(2);
+}
+
+void pt16_surfbuild_8(void)
+{
+   pt16_surfbuild(3);
+}
+
+void pt16_surfbuild_16(void)
+{
+   pt16_surfbuild(4);
+}
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   portwatr.c
+
+   All Portal knows about animated medium boundaries is where they are
+   at the moment.  The timing of the motion is handles externally.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#include <math.h>
+#include <matrix.h>
+#include <mprintf.h>
+#include <r3d.h>
+
+#include <port.h>
+#include <wrdb.h>
+#include <wrdbrend.h>
+#include <wrfunc.h>
+
+#include <portwatr.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   Given a vector and a plane, we treat the vector as a point and put
+   in in the plane by deriving its z from its x and y.  If the plane
+   is vertical, we leave the vector alone.
+
+   If Ax + By + Cz + D = 0, and C != 0, then z = (-Ax - By - D) / C.
+
+   The ones for the other axis planes are equivalent.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+static void project_vector_x_onto_yz(mxs_vector *v, PortalPlane *plane)
+{
+   if (plane->normal.x == 0.0)
+      return;
+
+   v->x = (-(plane->normal.y * v->y)
+          - (plane->normal.z * v->z)
+          - (plane->plane_constant)) / plane->normal.x;
+}
+
+static void project_vector_y_onto_zx(mxs_vector *v, PortalPlane *plane)
+{
+   if (plane->normal.y == 0.0)
+      return;
+
+   v->y = (-(plane->normal.z * v->z)
+          - (plane->normal.x * v->x)
+          - (plane->plane_constant)) / plane->normal.y;
+}
+
+static void project_vector_z_onto_xy(mxs_vector *v, PortalPlane *plane)
+{
+   if (plane->normal.z == 0.0)
+      return;
+
+   v->z = (-(plane->normal.x * v->x)
+          - (plane->normal.y * v->y)
+          - (plane->plane_constant)) / plane->normal.z;
+}
+
+
+// If we want texture scaling on water later, this should be replaced
+// with a variable.
+#define TEXTURE_UNIT_LENGTH 4.0
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   We apply our textures to the water by ignoring almost all the usual
+   rendering information.  The anchor point is just the center of our
+   rotation, and the (u, v) vectors are built from stratch.  The
+   texture is projected straight down so that it'll roughly match up
+   between surfaces which are almost horizontal.
+
+   All the calculation is in world space.  At the end we transform the
+   changed versions into camera space and store them via the dest_*
+   pointers.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void portal_position_portal_texture(mxs_vector *dest_u, mxs_vector *dest_v, 
+                                    mxs_vector *dest_anchor,
+                                    mxs_vector *anchor,
+                                    PortalPolygonRenderInfo *render,
+                                    PortalPlane *plane,
+                                    PortalCellMotion *motion)
+{
+   mxs_vector u, v;
+   mxs_real u_mag, v_mag;
+   mxs_vector transformed_anchor;
+   r3s_point anchor_point;
+
+   // So finding the new anchor point and offsets into the texture is
+   // a complex and interesting problem.  We'll blow it off and count
+   // on the texture mapping to tile from the center point of our
+   // rotation.
+   transformed_anchor = motion->center;
+
+   switch(motion->major_axis)
+   {
+      // The u and v vectors are built from scratch in (y, z).  The x
+      // coordinate comes from projecting the (y, z) onto the plane.  We
+      // build from the anchor point, then subtract that out once we've
+      // got our x.  In 2d we can make v from u by rotating 90 degrees
+      // using y2=z1, z2=-y1.
+      case MEDIUM_AXIS_X:
+      {
+         project_vector_x_onto_yz(&transformed_anchor, plane);
+
+         u.y = mx_cos(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.z = -u.y;
+         u.y += transformed_anchor.y;
+         v.z += transformed_anchor.z;
+
+         u.z = mx_sin(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.y = u.z;
+         u.z += transformed_anchor.z;
+         v.y += transformed_anchor.y;
+
+         project_vector_x_onto_yz(&u, plane);
+         project_vector_x_onto_yz(&v, plane);
+         break;
+      }
+      // as above, but for the y plane
+      case MEDIUM_AXIS_Y:
+      {
+         project_vector_y_onto_zx(&transformed_anchor, plane);
+
+         u.z = mx_cos(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.x = -u.z;
+         u.z += transformed_anchor.z;
+         v.x += transformed_anchor.x;
+
+         u.x = mx_sin(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.z = u.x;
+         u.x += transformed_anchor.x;
+         v.z += transformed_anchor.z;
+
+         project_vector_y_onto_zx(&u, plane);
+         project_vector_y_onto_zx(&v, plane);
+         break;
+      }
+      // and for that other plane
+      case MEDIUM_AXIS_Z:
+      {
+         project_vector_z_onto_xy(&transformed_anchor, plane);
+
+         u.x = mx_cos(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.y = -u.x;
+         u.x += transformed_anchor.x;
+         v.y += transformed_anchor.y;
+
+         u.y = mx_sin(motion->angle) * TEXTURE_UNIT_LENGTH;
+         v.x = u.y;
+         u.y += transformed_anchor.y;
+         v.x += transformed_anchor.x;
+
+         project_vector_z_onto_xy(&u, plane);
+         project_vector_z_onto_xy(&v, plane);
+         break;
+      }
+   }
+
+   // We've been in world space, so it's time for camera space.
+   mx_subeq_vec(&u, &transformed_anchor);
+   mx_subeq_vec(&v, &transformed_anchor);
+
+   u_mag = mx_mag_vec(&u);
+   v_mag = mx_mag_vec(&v);
+
+   render->texture_mag = (u_mag > v_mag)? u_mag : v_mag;
+
+   r3_rotate_o2c(dest_u, &u);
+   r3_rotate_o2c(dest_v, &v);
+   r3_transform_point(&anchor_point, &transformed_anchor);
+   *dest_anchor = anchor_point.p;
+}
+
+#pragma once
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   portwatr.h
+
+   The partly-transparent surface of water slides around to reflect
+   the current.  This code assumes that the water's surface is not
+   perfectly vertical.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#ifndef _PORTWATR_H_
+#define _PORTWATR_H_
+
+#include <matrix.h>
+
+#include <wrdb.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+// Here's where we actually mess with the texture anchor and (u, v).
+extern void portal_position_portal_texture(mxs_vector *dest_u, 
+                                           mxs_vector *dest_v, 
+                                           mxs_vector *dest_anchor,
+                                           mxs_vector *anchor,
+                                           PortalPolygonRenderInfo *render,
+                                           PortalPlane *plane,
+                                           PortalCellMotion *motion);
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif // ~_PORTWATR_H_
+
+#pragma once
+
+//#define PROFILE_ON
+//#define PROFILE_CHILD
+
+#include <prof.h>
+// $Header: r:/t2repos/thief2/src/portal/pt.h,v 1.5 2000/01/29 13:37:30 adurant Exp $
+#pragma once
+
+//  PORTAL TEXTURE MAPPING
+
+#ifndef __PT_H
+#define __PT_H
+
+#include <lg.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+// generic context
+
+   // an N x 256 table used for table-based lighting (lt x tmap)
+extern uchar *pt_light_table;
+
+   // a 256 x 256 table used for tluc8 operations (tmap x old)
+extern uchar *pt_tluc_table;
+
+   // a 256 byte color-lookup table applied to the next polygon
+   // rendered if set during the r3s_texture query callback
+extern uchar *pt_clut;
+
+   // if true, does 2x2 checkerboard dithering
+extern int dither;
+
+#ifdef __cplusplus
+};
+#endif
+
+#endif
+#pragma once
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+   portdraw.h
+
+   export for portdraw.c
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+
+
+#ifndef _PORTDRAW_H_
+#define _PORTDRAW_H_
+
+
+extern int check_surface_visible(PortalCell *cell, 
+                                 PortalPolygonCore *poly, int voff);
+
+extern void portal_mip_setup(float zoom);
+
+extern ushort *cur_anim_light_index_list;
+
+#endif
+
+//  $Header: r:/t2repos/thief2/src/portal/portbg.c,v 1.22 2000/02/19 13:18:49 toml Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <string.h>
+#include <math.h>
+
+#include <lg.h>
+#include <dev2d.h>
+#include <r3d.h>
+#include <mprintf.h>
+#include <lgd3d.h>
+
+#include <portal_.h>
+#include <portclip.h>
+#include <pt_clut.h>
+#include <wrdbrend.h>
+#include <wrlimit.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+PortalCell background_cube;
+
+#define BG_DIST    1200
+
+Vertex background_vpool[8] =
+{
+   {  BG_DIST, BG_DIST, BG_DIST }, { -BG_DIST, BG_DIST, BG_DIST },
+   { -BG_DIST,-BG_DIST, BG_DIST }, {  BG_DIST,-BG_DIST, BG_DIST },
+   {  BG_DIST, BG_DIST,-BG_DIST }, { -BG_DIST, BG_DIST,-BG_DIST },
+   { -BG_DIST,-BG_DIST,-BG_DIST }, {  BG_DIST,-BG_DIST,-BG_DIST }
+};
+
+PortalPolygonCore background_poly_list[6] =
+{
+   { RENDER_DOESNT_LIGHT, 4 },
+   { RENDER_DOESNT_LIGHT, 4 },
+   { RENDER_DOESNT_LIGHT, 4 },
+   { RENDER_DOESNT_LIGHT, 4 },
+   { RENDER_DOESNT_LIGHT, 4 },
+   { RENDER_DOESNT_LIGHT, 4 }
+};
+
+uchar background_vlist_lighting[24] =
+{
+   64,64,64,64, 64,64,64,64, 64,64,64,64,
+   64,64,64,64, 64,64,64,64, 64,64,64,64
+};
+
+uchar background_vertex_list[24] =
+{
+   0,1,2,3,
+   7,6,5,4,
+   1,0,4,5,
+   2,1,5,6,
+   3,2,6,7,
+   0,3,7,4
+};
+
+PortalPlane bg_planes[6] =
+{
+   { { 0,0,-1 }, 1 },
+   { { 0,0,1 }, 1 },
+   { { 0,-1,0 }, 1 },
+   { { 0,1,0 }, 1 },
+   { { 1, 0,0 }, 1 },
+   { {-1,0,0 }, 1 }
+};
+
+#define BG_UV   (BG_DIST * 2 + 0.02)
+
+PortalPolygonRenderInfo background_render_list[6] =
+{
+   { { BG_UV,0,0 }, { 0,BG_UV,0 }, 0x1000,0x1000, 250, 0 },
+   { { BG_UV,0,0 }, { 0,-BG_UV,0 }, 0,0, 251, 0 },
+   { { BG_UV,0,0 }, { 0,0,-BG_UV }, 0,0, 252, 0 },
+   { { 0,BG_UV,0 }, { 0,0,-BG_UV }, 0,0, 253, 0 },
+   { { -BG_UV,0,0 }, { 0,0,-BG_UV }, 0,0, 254, 0 },
+   { { 0,-BG_UV,0 }, { 0,0,-BG_UV }, 0,0, 255, 0 },
+};
+
+  // Initialize the PortalCell data structure by stuffing fields explicitly
+  // to avoid problems with fields not lining up in an initializer
+  // since we have too many damn fields
+#define BC background_cube
+void init_background_hack(void)
+{
+   BC.num_vertices = 8;
+   BC.num_polys = 6;   
+   BC.num_render_polys = 6;   
+   BC.num_portal_polys = 0;
+
+   BC.num_planes = 0;
+   BC.medium = 255;
+   BC.flags = 0;
+
+   BC.vpool = background_vpool;
+   BC.poly_list = background_poly_list;
+   BC.portal_poly_list = 0;
+   BC.render_list = background_render_list;
+
+   BC.vertex_list = background_vertex_list;
+   BC.portal_vertex_list = 0;
+
+   BC.plane_list = bg_planes;
+   BC.render_data = 0;
+   BC.refs = 0;
+   BC.num_vlist = 24;
+}
+
+extern BOOL g_lgd3d;
+
+extern bool setup_cell(PortalCell *);
+extern void free_cell(PortalCell *);
+extern void draw_region(int region);
+extern mxs_vector portal_camera_loc;
+extern float fog_dist_modifier;
+
+
+bool background_needs_clut;
+bool background_setup;
+uchar background_clut[256];
+
+void setup_background_hack(void)
+{
+   static Vertex bg_vpool[8] =
+   {
+      {  BG_DIST, BG_DIST, BG_DIST }, { -BG_DIST, BG_DIST, BG_DIST },
+      { -BG_DIST,-BG_DIST, BG_DIST }, {  BG_DIST,-BG_DIST, BG_DIST },
+      {  BG_DIST, BG_DIST,-BG_DIST }, { -BG_DIST, BG_DIST,-BG_DIST },
+      { -BG_DIST,-BG_DIST,-BG_DIST }, {  BG_DIST,-BG_DIST,-BG_DIST }
+   };
+
+   int i=0;
+   for (i=0; i < 8; ++i)
+      mx_add_vec(&background_cube.vpool[i], &bg_vpool[i], &portal_camera_loc);
+
+   // need to update the plane constants as well, argh
+   bg_planes[0].plane_constant =  portal_camera_loc.z + BG_DIST;
+   bg_planes[1].plane_constant = -portal_camera_loc.z + BG_DIST;
+   bg_planes[2].plane_constant =  portal_camera_loc.y + BG_DIST;
+   bg_planes[3].plane_constant = -portal_camera_loc.y + BG_DIST;
+   bg_planes[4].plane_constant = -portal_camera_loc.x - BG_DIST;
+   bg_planes[5].plane_constant =  portal_camera_loc.x - BG_DIST;
+
+   r3_start_block();
+   if (setup_cell(&background_cube)) {
+      r3_end_block();
+      return;
+   }
+   r3_end_block();
+   CLIP_DATA(&background_cube) = PortalClipRectangle(0,0, grd_bm.w, grd_bm.h);
+   pt_clut_list[255] = background_needs_clut ? background_clut : 0;
+
+   background_needs_clut = 0;
+   background_setup = TRUE;
+}
+
+void render_background_hack(void)
+{
+   // we always get called from within a block, so we need to end and start...
+   r3_end_block();
+   if (!background_setup)
+      setup_background_hack();
+   wr_cell[MAX_REGIONS - 1] = &background_cube;
+
+   // For the background hack we fudge the amount of fog so it we
+   // can see the sky when the fog is minimal.
+   if (g_lgd3d && portal_fog_dist)
+      //lgd3d_set_fog_density(fog_dist_modifier * .1 / portal_fog_dist);
+      lgd3d_set_linear_fog_distance( portal_fog_dist );
+
+   draw_region(MAX_REGIONS - 1);
+
+   if (g_lgd3d && portal_fog_dist)
+      //lgd3d_set_fog_density(fog_dist_modifier / portal_fog_dist);
+      lgd3d_set_linear_fog_distance( portal_fog_dist );
+
+
+   wr_cell[MAX_REGIONS - 1] = NULL;
+   r3_start_block();
+}
+
+void background_hack_cleanup(void)
+{
+   if (background_setup)
+      free_cell(&background_cube);
+}
+
+static r3s_point portal_clip_point[256];
+int portal_clip_num;
+
+void render_background_hack_clipped(int n, r3s_phandle *vlist)
+{
+   int i;
+   portal_clip_num = n;
+   for (i=0; i < n; ++i)
+      portal_clip_point[i] = *vlist[i];
+   render_background_hack();
+   portal_clip_num = 0;
+}
+
+static double compute_edge_len(r3s_point *e1, r3s_point *e2)
+{
+   float dx = e2->grp.sx - e1->grp.sx;
+   float dy = e2->grp.sy - e1->grp.sy;
+   return dx*dx + dy*dy;
+}
+
+static double compute_dist(r3s_point *pt, r3s_point *e1, r3s_point *e2)
+{
+   // compute distance from pt to the edge e1,e2
+   //   technically these are fixes, but it doesn't really
+   //   matter, we can clip them as integers
+
+   //  (e1x,e1y)  (e2x,e2y) (px, py)
+   //  (e1x,e1y)  (dx,dy)   (px,py)
+   //  px = e1x + pd * dx + nd * -dy
+   //  py = e1y + pd * dy + nd * dx
+
+   //  denominator:    dx    -dy
+   //                  dy     dx
+
+   //  numerator:      dx   (px-e1x)
+   //                  dy   (py-e1y)
+
+   if (e1->grp.sy < e2->grp.sy) {
+      float dx = e2->grp.sx - e1->grp.sx;
+      float dy = e2->grp.sy - e1->grp.sy;
+      float e1x = e1->grp.sx;
+      float e1y = e1->grp.sy;
+      float px = pt->grp.sx;
+      float py = pt->grp.sy;
+
+      return  (dx*(py-e1y)-dy*(px-e1x));
+   } else {
+      float dx = e1->grp.sx - e2->grp.sx;
+      float dy = e1->grp.sy - e2->grp.sy;
+      float e1x = e2->grp.sx;
+      float e1y = e2->grp.sy;
+      float px = pt->grp.sx;
+      float py = pt->grp.sy;
+
+      return -(dx*(py-e1y)-dy*(px-e1x));
+   }
+}
+
+extern BOOL g_lgd3d;
+static void compute_intersect(r3s_point *out, r3s_point *in1, r3s_point *in2,
+                                              float d0, float d1)
+{
+   float interp;
+
+   if (d0 < 0) {
+      float tf;
+      r3s_point *tp;
+
+      // canonical form to avoid cracking
+
+      tf = d0;
+      d0 = d1;
+      d1 = tf;
+
+      tp = in1;
+      in1 = in2;
+      in2 = tp;
+   }
+
+   // interpolate from d0 to d1 so that 0 falls at interp along
+   //    d0 + (d1-d0) * interp = 0
+
+   interp = -d0 / (d1-d0);
+
+   out->grp.sx = in1->grp.sx + interp*(in2->grp.sx - in1->grp.sx);
+   out->grp.sy = in1->grp.sy + interp*(in2->grp.sy - in1->grp.sy);
+   if (g_lgd3d) {
+      out->grp.w = in1->grp.w + (in2->grp.w - in1->grp.w) * interp;
+      out->p.z = 1 / out->grp.w;
+   }
+}
+
+static r3s_point portal_clip_temp[256];
+static r3s_phandle portal_clip_vlist[512];
+static double point_dist[256];
+static bool point_inside[256];
+
+#if 0
+#define EDGE_LEN_EPSILON   0.001   // minimum length edge to clip against
+#define POINT_LEN_EPSILON   0.01   // minimum dist from edge ito clip against
+#else
+#define POINT_LEN_EPSILON 0
+#define EDGE_LEN_EPSILON  0
+#endif
+
+int portbg_clip_sky(int n, r3s_phandle *vlist, r3s_phandle **result)
+{
+   r3s_phandle *vl1, *vl2;
+   double len;
+   int i,j,k,m, o, t=0;
+   bool one_out;
+
+#if 0
+   vl1 = vlist;
+   vl2 = portal_clip_vlist;
+
+   m = portal_clip_num-1;
+   for (k=0; k < portal_clip_num; m = k++) {
+      // clip polygon in n,vl1 against edge m..k
+      
+      len = compute_edge_len(&portal_clip_point[m], &portal_clip_point[k]);
+
+      // len is in fixed point, and it's squared
+
+      if (len <= 65536.0 * 65536.0 * EDGE_LEN_EPSILON)
+         continue;
+
+      len = 1 / len;
+
+      one_out = FALSE;  // was at least one point out
+
+      for (i=0; i < n; ++i) {
+         point_dist[i] = compute_dist(vl1[i],
+                 &portal_clip_point[m], &portal_clip_point[k]) * len;
+         if (point_dist[i] >= -POINT_LEN_EPSILON)
+            point_inside[i] = TRUE;
+         else {
+            point_inside[i] = FALSE;
+            one_out = TRUE;
+         }
+      }
+
+      if (!one_out)
+         continue;
+
+      o = 0; // output points
+
+      j = n-1;
+      for (i=0; i < n; j = i, j=i++) {
+          // if j was inside, output it
+          if (point_inside[j])
+             vl2[o++] = vl1[j];
+          if (point_inside[i] != point_inside[j]) {
+             // point crosses, so generate boundary point
+             vl2[o] = &portal_clip_temp[t++];
+             compute_intersect(vl2[o++], vl1[j], vl1[i],
+                                       point_dist[j], point_dist[i]);
+          }
+      }
+
+      if (!o) return 0;
+
+      n = o;
+      vl1 = vl2;
+      vl2 = (vl1 == portal_clip_vlist)
+                       ? portal_clip_vlist+256 : portal_clip_vlist;
+   }
+#else
+   int en;
+
+   vl1 = portal_clip_vlist;
+   vl2 = portal_clip_vlist + 256;
+
+   if (g_lgd3d) {
+      double xs,ys,c;
+      // compute w gradient to initialize vertices
+      // of polygon
+
+//dr/dx = ((r1-r2)(y0-y2)-(r0-r2)(y1-y2))/((x1-x2)(y0-y2)-(x0-x2)(y1-y2))
+#define V0   vlist[0]->grp
+#define V1   vlist[1]->grp
+#define V2   vlist[2]->grp
+
+#define W0   V0.w
+#define W1   V1.w
+#define W2   V2.w
+#define X0   V0.sx
+#define X1   V1.sx
+#define X2   V2.sx
+#define Y0   V0.sy
+#define Y1   V1.sy
+#define Y2   V2.sy
+
+      // stuff c temporarily with denominator
+      c = (float) (X1-X2)*(Y0-Y2) - (float) (X0-X2)*(Y1-Y2);
+      xs =  ((W1-W2)*(Y0-Y2)-(W0-W2)*(Y1-Y2)) / c;
+      ys = -((W1-W2)*(X0-X2)-(W0-W2)*(X1-X2)) / c;
+      // now load c with w value at (0,0)
+      c = W0 - xs*X0 - ys*Y0;
+
+      for (k=0; k < portal_clip_num; ++k) {
+         vl1[k] = &portal_clip_point[k];
+         vl1[k]->grp.w = c + vl1[k]->grp.sx * xs + vl1[k]->grp.sy * ys;
+         vl1[k]->p.z = 1 / vl1[k]->grp.w;
+      }
+   } else {
+      for (k=0; k < portal_clip_num; ++k)
+         vl1[k] = &portal_clip_point[k];
+   }
+
+   en = n;
+   n = portal_clip_num;
+
+   m = en-1;
+   for (k=0; k < en; m = k++) {
+      // clip polygon in n,vl1 against edge m..k
+      
+      len = compute_edge_len(vlist[m], vlist[k]);
+
+      // len is in fixed point, and it's squared
+
+      if (len <= 65536.0 * 65536.0 * EDGE_LEN_EPSILON)
+         continue;
+
+      len = 1 / len;
+
+      one_out = FALSE;  // was at least one point out
+
+      for (i=0; i < n; ++i) {
+         point_dist[i] = compute_dist(vl1[i],
+                 vlist[m], vlist[k]) * len;
+         if (point_dist[i] >= -POINT_LEN_EPSILON)
+            point_inside[i] = TRUE;
+         else {
+            point_inside[i] = FALSE;
+            one_out = TRUE;
+         }
+      }
+
+      if (!one_out)
+         continue;
+
+      o = 0; // output points
+
+      j = n-1;
+      for (i=0; i < n; j = i, j=i++) {
+          // if j was inside, output it
+          if (point_inside[j])
+             vl2[o++] = vl1[j];
+          if (point_inside[i] != point_inside[j]) {
+             // point crosses, so generate boundary point
+             vl2[o] = &portal_clip_temp[t++];
+             compute_intersect(vl2[o++], vl1[j], vl1[i],
+                                       point_dist[j], point_dist[i]);
+          }
+      }
+
+      if (!o) return 0;
+
+      n = o;
+      vl1 = vl2;
+      vl2 = (vl1 == portal_clip_vlist)
+                       ? portal_clip_vlist+256 : portal_clip_vlist;
+   }
+#endif
+   *result = vl1;
+   return n;
+}
+//  $Header: r:/t2repos/thief2/src/portal/portdraw.c,v 1.119 2000/02/19 13:18:57 toml Exp $
+//
+//  PORTAL
+//
+//  dynamic portal/cell-based renderer
+
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include <lg.h>
+#include <r3d.h>
+#include <g2pt.h>
+#include <mprintf.h>
+#include <lgd3d.h>
+#include <tmpalloc.h>
+
+#include <portwatr.h>
+#include <portal_.h>
+#include <portclip.h>
+#include <porthw.h>
+#include <pt_clut.h>
+#include <portsky.h>
+#include <wrdbrend.h>
+
+#include <profile.h>
+
+#ifdef DBG_ON
+  #define STATIC
+#else
+  #define STATIC static
+#endif
+
+extern mxs_vector portal_camera_loc;
+extern bool show_lightmap;
+
+#define STATS_ON
+
+#ifdef DBG_ON
+  #ifndef STATS_ON
+  #define STATS_ON
+  #endif
+#endif
+
+#ifdef STATS_ON
+  #define STAT(x)     x
+#else
+  #define STAT(x)
+#endif
+
+// Here's the current placement of textures applied to medium
+// boundaries:
+PortalCellMotion portal_cell_motion[MAX_CELL_MOTION];
+
+// We can fiddle this up and down to vary the level of detail.
+// Higher means more texels.  Right now it only affects MIP mapping.
+// The expected range is 0.8-1.5; the default setting is just what looks
+// good to me without clobbering the frame rate.
+float portal_detail_level = 1.90;
+
+float dot_clamp=0.6;
+#define VISOBJ_NULL      (-1)
+
+
+// If this is on, we blow off the usual rendering and use these flags.
+// Each face is a solid, flat polygons, with a white wireframe outline.
+#ifndef SHIP
+#include <uigame.h>
+#include <guistyle.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+   bool draw_solid_by_MIP_level = FALSE;
+   bool draw_solid_by_cell = FALSE;
+   bool draw_solid_wireframe = FALSE;
+   bool draw_solid_by_poly_flags = FALSE;
+   bool draw_solid_by_cell_flags = FALSE;
+   bool draw_wireframe_around_tmap = FALSE;
+   bool draw_wireframe_around_poly = FALSE;
+   uint polygon_cell_color;
+   uint _polygon_cell_flags_color;
+
+   #define COLOR_WHITE 0x1ffffff
+#endif // ~SHIP
+
+r3s_point   *cur_ph;    // list of pointers to r3s_points for current pool
+Vector      *cur_pool;  // list of untransformed vectors
+PortalCell  *cur_cell;
+ushort      *cur_anim_light_index_list;
+extern int   cur_cell_num;
+
+extern ulong fog_r3_color;      // from portal.c
+
+bool portal_clip_poly = TRUE;
+bool portal_render_from_texture = FALSE;
+
+#ifdef STATS_ON
+extern int stat_num_poly_drawn;
+extern int stat_num_poly_raw;
+extern int stat_num_poly_considered;
+extern int stat_num_backface_tests;
+#endif
+
+///// determine if a surface is visible /////
+// This rejects if it is backfacing
+// right now we use the r3d, which is slow; we should compute
+//   the polygon normal once and use that, and eventually use
+//   the normal cache and make it superfast
+
+#define MAX_VERT 32
+
+  // is there a reason this isn't a bool?
+int check_surface_visible(PortalCell *cell, PortalPolygonCore *poly, int voff)
+{
+   // evaluate the plane equation for this surface
+
+   extern mxs_vector portal_camera_loc;
+   int plane = poly->planeid;
+   PortalPlane *p = &cell->plane_list[plane];
+   float dist = mx_dot_vec(&portal_camera_loc, &p->normal)
+              + p->plane_constant;
+
+   STAT(++stat_num_backface_tests;)
+   return dist > 0;
+}
+
+
+static double portal_detail_2, dot_clamp_2;
+static double pixel_scale, pixel_scale_2;
+static double premul, premul2; // premul2 != premul*premul, not named premul_2
+void portal_mip_setup(float zoom)
+{
+   portal_detail_2 = portal_detail_level * portal_detail_level;
+   pixel_scale = zoom * grd_bm.w * (1.0 / 128.0);
+   pixel_scale_2 = pixel_scale * pixel_scale;
+
+   dot_clamp_2 = dot_clamp * dot_clamp;
+
+   premul = pixel_scale * portal_detail_level;
+   premul2 = pixel_scale_2 * portal_detail_2 * dot_clamp_2;
+}
+
+
+//////////////////////////////////////////////////////////////////
+
+///// render a single region /////
+
+bool show_region, show_portal, linear_map=FALSE;
+extern void draw_objects_in_node(int n);
+
+uchar *r_vertex_list;//, *r_vertex_lighting;
+void *r_clip;
+
+// get a transformed vector.  since we haven't implemented the cache
+// yet, we always do it.  since the r3d doesn't implement o2c, we just
+// have to transform two points and subtract them.  This will change.
+
+mxs_vector *get_cached_vector(mxs_vector *where, mxs_vector *v)
+{  PROF
+   r3_rotate_o2c(where, v);
+   END_PROF;
+   return where;   // should copy it into cache
+}
+
+  // our 3x3 texture perspective correction matrix
+
+  // tables mapping lighting values from 0..255 (which is how
+  // we store them in polygons) into floating point 'i' values
+  // appropriate for clipping.
+#if 0
+float light_mapping[256];
+float light_mapping_dithered[256];
+#endif
+extern int dither;
+int max_draw_polys = 1024;
+
+extern grs_bitmap *get_cached_surface(PortalPolygonRenderInfo *render,
+                                      PortalLightMap *lt, grs_bitmap *texture,
+                                      int MIP_level);
+
+#ifndef SHIP
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   This draws a wireframe around one polygon (it doesn't have to be
+   one that's normally rendered).
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void draw_polygon_wireframe(r3s_phandle *points, int num_points, uint color)
+{
+   int p1, p2;
+
+   r3_set_color(guiScreenColor(color));
+   r3_set_line_context(R3_LN_FLAT);
+
+   p2 = num_points - 1;
+   for (p1 = 0; p1 < num_points; p1++) {
+      r3_draw_line(points[p1], points[p2]);
+      p2 = p1;
+   }
+}
+
+#define VERT_DIST   7
+
+void draw_polygon_vertices(r3s_phandle *points, int num_points, uint color)
+{
+   int p1;
+   double cx,cy;
+   r3_set_color(guiScreenColor(color));
+
+   num_points = r3_clip_polygon(num_points, points, &points);
+
+   if (num_points) {
+
+      // find center point of polygon
+
+      cx = cy = 0;
+      for (p1 = 0; p1 < num_points; p1++) {
+          cx += points[p1]->grp.sx;
+          cy += points[p1]->grp.sy;
+      }
+
+      cx /= num_points;
+      cy /= num_points;
+
+      // now draw all the vertices, displaced towards the center
+
+      for (p1 = 0; p1 < num_points; p1++) {
+          r3s_point temp = *points[p1];
+
+          double dx = (cx - temp.grp.sx);
+          double dy = (cy - temp.grp.sy);
+          double len = sqrt(dx*dx + dy*dy);
+          // displace by at most 3, and at least len/2
+
+          if (len/2 < fix_make(VERT_DIST,0)) {
+             temp.grp.sx = temp.grp.sx + dx/2;
+             temp.grp.sy = temp.grp.sy + dy/2;
+          } else {
+             temp.grp.sx = temp.grp.sx + (dx/len) * fix_make(VERT_DIST,0);
+             temp.grp.sy = temp.grp.sy + (dy/len) * fix_make(VERT_DIST,0);
+          }
+
+          r3_draw_point(&temp);
+      }
+   }
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   When we're showing the polygons in the visualization tools, each
+   visible face is a flat, unshaded polygon with a wireframe border.
+
+   The context constants come from x:\prj\tech\libsrc\r3d\prim.h.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+void draw_polygon_outline(PortalPolygonCore *poly, r3s_phandle *points,
+                          uint polygon_color, uint outline_color)
+{
+   int num_points = poly->num_vertices;
+
+   // Here's our polygon.
+   r3_set_clipmode(R3_CLIP);
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_UNLIT | R3_PL_SOLID);
+   r3_set_color(guiScreenColor(polygon_color));
+
+   r3_draw_poly(poly->num_vertices, points);
+
+   // And here go the lines.
+   draw_polygon_wireframe(points, num_points, outline_color);
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   The only difference between one visualization tool and the next is
+   the color of the polygons.  We return TRUE if we draw a flat poly.
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+bool poly_outline_by_flags(PortalPolygonCore *poly, r3s_phandle *points,
+                           int MIP_level)
+{
+   if (draw_solid_by_MIP_level) {
+      int i;
+      int light_level = 32;
+      for (i = MIP_level; i < 4; i++)
+         light_level += 40;
+      draw_polygon_outline(poly, points,
+                           uiRGB(light_level, light_level, light_level),
+                           uiRGB(light_level + 48, light_level + 48,
+                                 light_level + 48));
+      return TRUE;
+   }
+
+   if (draw_solid_by_cell) {
+      //draw_polygon_outline(poly, points, cur_cell->refs ? COLOR_WHITE : polygon_cell_color, COLOR_WHITE);
+      draw_polygon_outline(poly, points, polygon_cell_color, COLOR_WHITE);
+      return TRUE;
+   }
+
+   if (draw_solid_wireframe) {
+      draw_polygon_outline(poly, points, 0, COLOR_WHITE);
+      return TRUE;
+   }
+
+   if (draw_solid_by_poly_flags) {
+      draw_polygon_outline(poly, points, poly->flags, COLOR_WHITE);
+      return TRUE;
+   }
+
+   if (draw_solid_by_cell_flags) {
+      draw_polygon_outline(poly, points, _polygon_cell_flags_color,
+                           COLOR_WHITE);
+      return TRUE;
+   }
+
+   return FALSE;
+}
+
+#endif // ~SHIP
+
+
+extern int portal_clip_num;
+
+extern BOOL g_lgd3d;
+extern BOOL g_zbuffer;
+
+extern int portal_hack_blend;
+
+#ifndef SHIP
+
+#define TEST_TEXTURE 1
+
+extern ushort portal_color_convert(ushort);
+
+static r3s_point bt_verts[4];
+static r3s_phandle bt_vlist[4] = { bt_verts+0, bt_verts+1, bt_verts+2, bt_verts+3 };
+
+static grs_bitmap blend_texture;
+void portal_do_blendtest(void)
+{
+#ifdef RGB_LIGHTING
+#ifdef RGB_888
+   ushort blend_tex_out[16];
+
+   r3s_texture texture = portal_get_texture(TEST_TEXTURE);
+
+   if (!g_lgd3d) return;
+
+   r3_start_block();
+
+   r3_set_texture(texture);
+
+   bt_verts[0].p.z = bt_verts[1].p.z =
+   bt_verts[2].p.z = bt_verts[3].p.z = 1.0;
+   bt_verts[0].grp.w = bt_verts[1].grp.w =
+   bt_verts[2].grp.w = bt_verts[3].grp.w = 1.0;
+
+   bt_verts[0].grp.sx = bt_verts[3].grp.sx = fix_make(10,0);
+   bt_verts[1].grp.sx = bt_verts[2].grp.sx = fix_make(60,0);
+   bt_verts[0].grp.sy = bt_verts[1].grp.sy = fix_make(10,0);
+   bt_verts[2].grp.sy = bt_verts[3].grp.sy = fix_make(60,0);
+
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_GOURAUD);
+   bt_verts[0].grp.i = bt_verts[1].grp.i = 0;
+   bt_verts[2].grp.i = bt_verts[3].grp.i = 1.0;
+
+   bt_verts[0].grp.u = bt_verts[3].grp.u = 0;
+   bt_verts[1].grp.u = bt_verts[2].grp.u = 1;
+   bt_verts[0].grp.v = bt_verts[1].grp.v = 0;
+   bt_verts[2].grp.v = bt_verts[3].grp.v = 1;
+
+   r3_draw_poly(4, bt_vlist);
+
+   bt_verts[0].grp.sx = bt_verts[3].grp.sx = fix_make(10+80,0);
+   bt_verts[1].grp.sx = bt_verts[2].grp.sx = fix_make(60+80,0);
+
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+   r3_draw_poly(4, bt_vlist);
+
+   bt_verts[0].grp.u = bt_verts[3].grp.u = 0.25 * 0.5;
+   bt_verts[1].grp.u = bt_verts[2].grp.u = 0.25 * 0.5;
+   bt_verts[0].grp.v = bt_verts[1].grp.v = 0.25 * 0.5;
+   bt_verts[2].grp.v = bt_verts[3].grp.v = 1 - 0.25*1.5;
+
+   // build lightmap texture in device space
+   gr_init_bitmap(&blend_texture, (char *) blend_tex_out, BMT_FLAT32, 0, 4, 4);
+
+   /* @TODO: figger out what todo.
+   blend_tex_out[0] = portal_color_convert(0);
+   blend_tex_out[4] = portal_color_convert(15+15*32+15*32*32);
+   blend_tex_out[8] = portal_color_convert(31+31*32+31*32*32);
+   */
+   blend_tex_out[2] = blend_tex_out[1] = blend_tex_out[0];
+   blend_tex_out[6] = blend_tex_out[5] = blend_tex_out[4];
+   blend_tex_out[10] = blend_tex_out[9] = blend_tex_out[8];
+   blend_tex_out[12] = blend_tex_out[8];
+
+   lgd3d_blend_multiply(portal_hack_blend);
+   lgd3d_set_blend(TRUE);
+   lgd3d_set_alpha(0.5);
+   r3_set_texture(&blend_texture);
+   r3_draw_poly(4, bt_vlist);
+   lgd3d_blend_normal();
+   lgd3d_set_blend(FALSE);
+   lgd3d_set_alpha(1.0);
+
+   r3_end_block();
+
+   lgd3d_unload_texture(&blend_texture);
+#else // RGB_888
+   ushort blend_tex_out[16];
+
+   r3s_texture texture = portal_get_texture(TEST_TEXTURE);
+
+   if (!g_lgd3d) return;
+
+   r3_start_block();
+
+   r3_set_texture(texture);
+
+   bt_verts[0].p.z = bt_verts[1].p.z =
+   bt_verts[2].p.z = bt_verts[3].p.z = 1.0;
+   bt_verts[0].grp.w = bt_verts[1].grp.w =
+   bt_verts[2].grp.w = bt_verts[3].grp.w = 1.0;
+
+   bt_verts[0].grp.sx = bt_verts[3].grp.sx = fix_make(10,0);
+   bt_verts[1].grp.sx = bt_verts[2].grp.sx = fix_make(60,0);
+   bt_verts[0].grp.sy = bt_verts[1].grp.sy = fix_make(10,0);
+   bt_verts[2].grp.sy = bt_verts[3].grp.sy = fix_make(60,0);
+
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_GOURAUD);
+   bt_verts[0].grp.i = bt_verts[1].grp.i = 0;
+   bt_verts[2].grp.i = bt_verts[3].grp.i = 1.0;
+
+   bt_verts[0].grp.u = bt_verts[3].grp.u = 0;
+   bt_verts[1].grp.u = bt_verts[2].grp.u = 1;
+   bt_verts[0].grp.v = bt_verts[1].grp.v = 0;
+   bt_verts[2].grp.v = bt_verts[3].grp.v = 1;
+
+   r3_draw_poly(4, bt_vlist);
+
+   bt_verts[0].grp.sx = bt_verts[3].grp.sx = fix_make(10+80,0);
+   bt_verts[1].grp.sx = bt_verts[2].grp.sx = fix_make(60+80,0);
+
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+   r3_draw_poly(4, bt_vlist);
+
+   bt_verts[0].grp.u = bt_verts[3].grp.u = 0.25 * 0.5;
+   bt_verts[1].grp.u = bt_verts[2].grp.u = 0.25 * 0.5;
+   bt_verts[0].grp.v = bt_verts[1].grp.v = 0.25 * 0.5;
+   bt_verts[2].grp.v = bt_verts[3].grp.v = 1 - 0.25*1.5;
+
+   // build lightmap texture in device space
+   gr_init_bitmap(&blend_texture, (char *) blend_tex_out, BMT_FLAT16, 0, 4, 4);
+
+   blend_tex_out[0] = portal_color_convert(0);
+   blend_tex_out[4] = portal_color_convert(15+15*32+15*32*32);
+   blend_tex_out[8] = portal_color_convert(31+31*32+31*32*32);
+   blend_tex_out[2] = blend_tex_out[1] = blend_tex_out[0];
+   blend_tex_out[6] = blend_tex_out[5] = blend_tex_out[4];
+   blend_tex_out[10] = blend_tex_out[9] = blend_tex_out[8];
+   blend_tex_out[12] = blend_tex_out[8];
+
+   lgd3d_blend_multiply(portal_hack_blend);
+   lgd3d_set_blend(TRUE);
+   lgd3d_set_alpha(0.5);
+   r3_set_texture(&blend_texture);
+   r3_draw_poly(4, bt_vlist);
+   lgd3d_blend_normal();
+   lgd3d_set_blend(FALSE);
+   lgd3d_set_alpha(1.0);
+
+   r3_end_block();
+
+   lgd3d_unload_texture(&blend_texture);
+#endif // RGB_888
+#endif
+}
+#endif
+
+
+extern void do_poly_linear(r3s_texture tex, int n, r3s_phandle *vpl, fix u_offset, fix v_offset);
+
+// compute the P,M,N vectors and hand them to portal-tmappers
+STATIC
+void compute_tmapping(PortalPolygonRenderInfo *render, uchar not_light,
+         PortalLightMap *lt, r3s_point *anchor_point)
+{
+   // compute texture mapping data by getting our u,v vectors,
+   // the anchor point, and the translation values, and translating
+   // the anchor point by the translation lengths
+   mxs_vector u_vec, v_vec, pt;
+   mxs_real usc, vsc;
+
+   usc = ((float) render->u_base) * 1.0 / (16.0*256.0); // u translation
+   vsc = ((float) render->v_base) * 1.0 / (16.0*256.0); // v translation
+
+   if (!not_light) {
+      usc -= ((float) lt->base_u) * 0.25;
+      vsc -= ((float) lt->base_v) * 0.25;
+   }
+
+   get_cached_vector(&u_vec, &render->tex_u);
+   get_cached_vector(&v_vec, &render->tex_v);
+   mx_scale_add_vec(&pt, &anchor_point->p, &u_vec, -usc);
+   mx_scale_add_vec(&pt, &pt, &v_vec, -vsc);
+
+   // This gives us our 3x3 texture perspective correction matrix.
+   g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+}
+
+
+STATIC
+int compute_mip3(PortalPolygonRenderInfo *render, PortalPlane *p)
+{
+   // this is the fast way, which doesn't need to take a sqrt
+   // the slow way, which makes some sense, appears at end of file
+   double a,b,d;
+   mxs_vector eye;
+   mx_sub_vec(&eye, &portal_camera_loc, &render->center);
+
+   a = mx_mag2_vec(&eye);
+   b = mx_dot_vec(&eye, &p->normal);
+
+   if (b * b >= a*dot_clamp_2) {
+      d = premul * b * render->texture_mag;
+      // do first test because it doesn't require multiplies
+      if (d >= a) return 0;
+      // now binary search the remaining ones
+      if (d < a*0.25)
+         return d >= a*0.125 ? 3 : 4;
+      else
+         return d >= a*0.5 ? 1 : 2;
+   } else {
+      d = premul2 * render->texture_mag * render->texture_mag;
+      if (d >= a) return 0;
+      if (d < a*0.25*0.25)
+         return d >= a*0.125*0.125 ? 3 : 4;
+      else
+         return d >= a*0.5*0.5 ? 1 : 2;
+   }
+}
+
+int compute_mip(PortalPolygonRenderInfo *render, PortalPlane *p)
+{
+   double sz,dist,k;
+   mxs_vector eye;
+
+   mx_sub_vec(&eye, &portal_camera_loc, &render->center);
+   dist = mx_mag_vec(&eye);
+
+   k = mx_dot_vec(&eye, &p->normal);  // k/dist == foreshortening amount
+
+   // estimate distance to nearest point
+   dist = dist - render->texture_mag*2*(1-k/dist);
+   if (dist <= 0) return 0;
+
+   // compute foreshortening amount, note this uses post-modified
+   // dist, which is geometrically correct if the post-modified dist
+   // weren't an approximation
+   k /= dist;
+   if (k > 1.0) k = 1.0;
+
+   sz = premul * render->texture_mag / dist;
+
+   if (k < dot_clamp) k = dot_clamp;
+   sz *= k;
+
+   if (sz >= 1.0) return 0;
+   if (sz >= 0.5) return 1;
+   if (sz >= 0.25) return 2;
+   if (sz >= 0.125) return 3;
+   return 4;
+}
+
+extern void render_background_hack_clipped(int n, r3s_phandle *vlist);
+extern int portbg_clip_sky(int, r3s_phandle *, r3s_phandle **);
+
+// from portal.c. True if we are drawing new-style sky
+extern BOOL bRenderNewSky;
+
+void draw_background_hack(int n, r3s_phandle *vlist)
+{
+   r3s_point *ph = cur_ph;
+   Vector *pool = cur_pool;
+   PortalCell *cell = cur_cell;
+   ushort *anim_light_index_list = cur_anim_light_index_list;
+   void *clip = r_clip;
+   uchar *vertex_list = r_vertex_list;
+
+   render_background_hack_clipped(n,vlist);
+
+   cur_ph = ph;
+   cur_pool = pool;
+   cur_cell = cell;
+   cur_anim_light_index_list = anim_light_index_list;
+   r_clip = clip;
+   r_vertex_list = vertex_list;
+}
+
+extern int portal_sky_id;
+extern int portal_sky_spans;
+
+// returns FALSE if it was totally transparent; return TRUE if it was
+// non-transparent, even if not visible (e.g. clipped away)
+STATIC
+bool draw_surface(PortalPolygonCore *poly, PortalPolygonRenderInfo *render,
+                  PortalLightMap *lt, int voff, void *clip)
+{
+   int i, n,n2,n3, sc;
+   int desired_mip, mip_level;
+   r3s_texture texture;
+   grs_bitmap *tex=0;
+   fix corner_u_offset, corner_v_offset;
+   uchar not_light;
+   bool position_from_motion = FALSE;
+   r3s_phandle vlist[MAX_VERT], *valid3d, *final;
+
+   // get the raw, unlit texture
+   texture = portal_get_texture(render->texture_id);
+   // It is our impression (wsf) that this only happens for the sky hack:
+   if (!texture && !bRenderNewSky) {
+      n = poly->num_vertices;
+      for (i=0; i < n; ++i)
+         vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+
+      // clip against the view cone
+      n2 = r3_clip_polygon(n, vlist, &valid3d);
+      if (n2 <= 2) { END_PROF; return TRUE; }
+      STAT(++stat_num_poly_considered;)
+
+      if (portal_clip_poly) {
+           // clip against the portal
+         n3 = portclip_clip_polygon(n2, valid3d, &final, clip);
+         if (n3 <= 2) { END_PROF; return TRUE; }
+      } else {
+         n3 = n2;
+         final = valid3d;
+      }
+
+      if (n3)
+         draw_background_hack(n3, final);
+      return FALSE;  // an invisible portal, or background hack
+   }
+
+   not_light = (lt == NULL) || (poly->flags & RENDER_DOESNT_LIGHT);
+
+   // prepare the vertex list
+   n = poly->num_vertices;
+   if (n > MAX_VERT) Error(1, "draw_surface: too many vertices.\n");
+
+   for (i=0; i < n; ++i)
+      vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+
+     // clip against the view cone
+   n2 = r3_clip_polygon(n, vlist, &valid3d);
+   if (n2 <= 2) { END_PROF; return TRUE; }
+   STAT(++stat_num_poly_considered;)
+
+   if (portal_clip_poly) {
+        // clip against the portal
+      n3 = portclip_clip_polygon(n2, valid3d, &final, clip);
+      if (n3 <= 2) { END_PROF; return TRUE; }
+   } else {
+      n3 = n2;
+      final = valid3d;
+   }
+
+   if (portal_clip_num) {  // only true if it's the sky
+      n3 = portbg_clip_sky(n3, final, &final);
+      sc = texture->w;
+   } else {
+      desired_mip = compute_mip(render, &cur_cell->plane_list[poly->planeid]);
+      mip_level = 0;
+      while (desired_mip > 0) {
+         if (texture[1].w == 0) break; // not enough mip levels
+         ++mip_level;
+         --desired_mip;
+         ++texture;
+      }
+      sc = 64 >> mip_level; // texture->w;
+   }
+
+#ifdef STATS_ON
+   ++stat_num_poly_drawn;
+   if (stat_num_poly_drawn > max_draw_polys) return TRUE;
+#endif
+
+#ifndef SHIP
+   if (poly_outline_by_flags(poly, vlist, mip_level)) {
+      END_PROF;
+      return TRUE;
+   }
+#endif // ~SHIP
+
+#ifdef DBG_ON
+   if (texture->w & (texture->w - 1))
+      Error(1, "Texture non-power-of-two in w!\n");
+   if (texture->h & (texture->h - 1))
+      Error(1, "Texture non-power-of-two in h!\n");
+#endif
+
+   if ((poly->motion_index)
+    && (portal_cell_motion[poly->motion_index].in_motion)) {
+      mxs_vector u_vec, v_vec, pt;
+
+      portal_position_portal_texture(&u_vec, &v_vec, &pt,
+             &(cur_pool[r_vertex_list[voff + render->texture_anchor]]),
+             render, &cur_cell->plane_list[poly->planeid],
+             &portal_cell_motion[poly->motion_index]);
+
+      g2pt_calc_uvw_deltas(&pt, &u_vec, &v_vec);
+      position_from_motion = TRUE;
+   } else
+      compute_tmapping(render, not_light, lt, vlist[render->texture_anchor]);
+
+     // rescale based on mipmap scaling
+   for(i=0; i < 3; ++i) {
+      g2pt_tmap_data[3*i  ] *= sc;
+      g2pt_tmap_data[3*i+1] *= sc;
+   }
+
+   // bug: if not lighting, don't deref 'lt'!!!
+   if (not_light) {
+      corner_u_offset = corner_v_offset = 0;
+      tex = texture;
+   } else {
+      corner_u_offset = corner_v_offset = fix_make(2, 0);
+      // go get it from surface cache or light it or whatever
+      tex = get_cached_surface(render, lt, texture, mip_level);
+
+#ifdef EDITOR
+      // This should only happen if the lightmap is too big, which
+      // should only happen when someone's fiddling with the texture
+      // scale in the editor.
+      if (!tex) {
+         corner_u_offset = corner_v_offset = 0;
+         tex = texture;
+      }
+#endif // EDITOR
+   }
+
+
+   if ((render->texture_id == portal_sky_id) && !bRenderNewSky)
+   {
+      switch (ptsky_type) {
+      case PTSKY_SPAN:
+         portal_sky_spans += ptsky_calc_spans(n3, final);
+         break;
+      case PTSKY_NONE:
+         goto poly_done;
+      }
+   }
+   else if (portal_sky_spans > 0)
+   {
+      ptsky_render_stars();
+      portal_sky_spans = 0;
+   }
+
+   if (linear_map)
+      do_poly_linear(tex, n3, final, corner_u_offset, corner_v_offset);
+   else
+      g2pt_poly_perspective_uv(tex, n3, final,
+                              corner_u_offset, corner_v_offset, FALSE);
+poly_done:
+#ifndef SHIP
+#if 0
+   if (draw_wireframe_around_tmap)
+      draw_polygon_wireframe(vlist, poly->num_vertices, COLOR_WHITE);
+#else
+   if (draw_wireframe_around_tmap) {
+      draw_polygon_wireframe(final, n3, COLOR_WHITE+2);
+      draw_polygon_vertices(final, n3, COLOR_WHITE);
+   }
+#endif
+#endif // ~SHIP
+
+   END_PROF;
+   return TRUE;
+}
+
+#ifndef SHIP
+void draw_wireframe(PortalPolygonCore *p, int voff, uint color)
+{
+   int i,j,n;
+   n = p->num_vertices;
+
+   r3_set_color(guiScreenColor(color));
+   j = n-1;
+   for (i=0; i < n; ++i) {
+      r3_draw_line(&cur_ph[r_vertex_list[voff+i]],
+                   &cur_ph[r_vertex_list[voff+j]]);
+      j = i;
+   }
+}
+
+
+void draw_cell_wireframe(PortalCell *cell, uint color)
+{
+   int voff, i;
+
+   r3_start_block();
+   r3_set_clipmode(NEED_CLIP(cell) ? R3_CLIP : R3_NO_CLIP);
+   voff = 0;
+
+   for (i=0; i < cell->num_polys; ++i) {
+      draw_wireframe(&cell->poly_list[i], voff, color);
+      voff += cell->poly_list[i].num_vertices;
+   }
+   r3_end_block();
+}
+#endif
+
+////  A hacked system for mapping distance in water to a clut id
+
+static water_clut[32] =
+{
+   0,0,1,1, 2,2,3,3, 4,4,5,5, 5,6,6,6,
+   7,7,7,8, 8,8,9,9, 9,10,10,10, 10,11,11,11
+};
+
+int compute_water_clut(mxs_real water_start, mxs_real water_end)
+{
+#if 0
+   int len;
+
+   // compute the clut to use after passing through water
+   // at distance water_start to water_end
+
+   len = (water_end - water_start)*10.0;
+
+   if (len > 255) len = 255;
+   if (len < 0) len = 0;
+
+   return water_clut[len >> 3];
+#else
+   // explicitly force the clut to an amount at a middling
+   // distance under the old system
+   return water_clut[64 >> 3];
+#endif
+}
+
+static void draw_many_objects(void);
+
+extern bool background_needs_clut;
+extern uchar background_clut[];
+extern bool g2pt_span_clip;
+
+// preload lightmaps for a single region
+void portal_preload_lightmaps(int cell)
+{  PROF
+
+   PortalCell *r;
+   int n, voff;
+   uint light_bitmask;
+   PortalPolygonCore *poly;
+   PortalPolygonRenderInfo *render;
+   PortalLightMap *light;
+
+   r = WR_CELL(cell);
+   n = r->num_render_polys;
+   light = r->light_list;
+
+   if (r->num_full_bright || portal_render_from_texture || (n==0) || (light==NULL))
+      return;
+
+   voff=0;
+   poly = r->poly_list;
+   render = r->render_list;
+
+   cur_ph = POINTS(r);
+   cur_pool = r->vpool;
+   cur_cell = r;
+   cur_anim_light_index_list = r->anim_light_index_list;
+   r_vertex_list = r->vertex_list;
+   light_bitmask = r->changed_anim_light_bitmask;
+
+   while (n--) {
+      if (light->anim_light_bitmask & light_bitmask)
+         porthw_uncache_lightmap(render);
+
+      if (!(poly->flags & RENDER_DOESNT_LIGHT))
+         if (check_surface_visible(r, poly, voff))
+            porthw_preload_lightmap(render, light);
+
+      voff += poly->num_vertices;
+      ++poly;
+      ++render;
+      ++light;
+   }
+   r->changed_anim_light_bitmask = 0;
+   END_PROF;
+}
+
+extern void draw_surface_lgd3d(
+      PortalPolygonCore *poly,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *lt,
+      int voff,
+      void *clip);
+
+BOOL portal_draw_lgd3d = TRUE;
+BOOL portal_punt_draw_surface = FALSE;
+
+static void check_and_draw_surface(
+      PortalPolygonCore *poly,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *light,
+      int voff,
+      PortalCell *r)
+{
+   if ((!portal_punt_draw_surface) && check_surface_visible(r, poly, voff))
+      if (g_lgd3d)
+         draw_surface_lgd3d(poly, render, light, voff, CLIP_DATA(r));
+      else
+         draw_surface(poly, render, light, voff, CLIP_DATA(r));
+}
+
+
+/* ----- /-/-/-/-/-/-/-/-/ <<< (((((( /\ )))))) >>> \-\-\-\-\-\-\-\-\ ----- *\
+
+   draw a single cell
+
+\* ----- \-\-\-\-\-\-\-\-\ <<< (((((( \/ )))))) >>> /-/-/-/-/-/-/-/-/ ----- */
+extern void uncache_surface(PortalPolygonRenderInfo *);
+void draw_region(int cell)
+{  PROF
+
+   PortalCell *r = WR_CELL(cell);
+   int n = r->num_render_polys;
+   int voff=0;
+   PortalPolygonCore *poly = r->poly_list;
+   PortalPolygonRenderInfo *render = r->render_list;
+   PortalLightMap *light = r->light_list;
+   ClutChain temp;
+   uchar clut;
+
+   if (r->num_full_bright || portal_render_from_texture)
+      light = NULL;  // disable lighting if any light_brights shining on
+
+   // maybe i fixed this now, but it's a waste of time probably
+   // if (!n && OBJECTS(r) == 0) { END_PROF; return; }
+
+   // copy common data into globals for efficient communicating
+   // someday we should inline the function "draw_surface" and
+   // then get rid of these globals
+
+   cur_ph = POINTS(r);
+   cur_pool = r->vpool;
+   cur_cell = r;
+   cur_anim_light_index_list = r->anim_light_index_list;
+   r_vertex_list = r->vertex_list;
+
+   r_clip = CLIP_DATA(r);
+
+   // if we end in water, then we have to do a clut for
+   // this water which we haven't already added to our clut list
+   // note that you probably need to read the clut tree document
+   // to understand what's going on here.
+
+   if (r->medium == 255)
+      g2pt_clut = pt_clut_list[255]; // background?
+   else {
+
+      int mot = r->motion_index;
+      clut = 0;
+
+      if (mot > 0)
+         clut = pt_motion_haze_clut[mot];
+
+      if (!clut)
+         clut = pt_medium_haze_clut[r->medium];
+
+      if (clut) {
+         temp.clut_id = clut + compute_water_clut(ZWATER(r), DIST(r));
+         temp.clut_id2 = 0;
+         // this is a bit bogus, we shoud really do per-poly not per-cell
+         temp.next = CLUT(r).clut_id ? &CLUT(r) : 0;
+         g2pt_clut = pt_get_clut(&temp);
+      } else if (CLUT(r).clut_id) {
+         g2pt_clut = pt_get_clut(&CLUT(r));
+      } else {
+         g2pt_clut = 0;
+      }
+   }
+
+   // if span clipping, draw the objects first
+   if (g2pt_span_clip && OBJECTS(r) >= 0)
+      // at least one object
+      draw_many_objects();
+
+   if (!n && !(r->flags & CELL_OBSCURED)) goto skip_poly_draw;
+
+#ifdef STATS_ON
+   stat_num_poly_raw += n;
+#endif
+
+   // setup our default clip parameters (since we don't use
+   // primitives, just the clipper, this isn't set automagically).
+   // we could set it once elsewhere, and if we have self-lit polys
+   // we might want to set it every poly.  setting it here makes
+   // us interact safely with object rendering.
+   r3_set_clip_flags(0);
+
+#ifndef SHIP
+
+   // The other polygon outline tools are handled in draw_surface().
+   if (draw_solid_by_cell || draw_wireframe_around_poly) {
+      polygon_cell_color = (((uint) (r->sphere_center.x * 85.12737321727
+                                   - r->sphere_center.y * 123.33228937433)
+                             ^ (uint)(r->sphere_center.z * 311.22029342383)
+                             ^ r->num_portal_polys
+                             ^ (r->num_render_polys << 8)
+                             ^ (r->num_polys << 12)
+                             ^ r->num_vertices) & 0xffffff) | 0x1000000;
+   }
+
+   if (draw_solid_by_cell_flags)
+      _polygon_cell_flags_color = (r->flags) << 8;
+
+#endif  // ~SHIP
+
+   // now draw all the polygons
+
+   r3_start_block();
+   r3_set_clipmode(NEED_CLIP(r) ? R3_CLIP : R3_NO_CLIP);
+
+   if (g_lgd3d) {
+      r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+      if (portal_fog_on)
+         lgd3d_set_fog_enable(!!(CELL_FLAGS(r) & CELL_FOG));
+   }
+
+   if (light) {
+      uint light_bitmask = r->changed_anim_light_bitmask;
+
+      while (n--) {
+         if (light->anim_light_bitmask & light_bitmask)
+            uncache_surface(render);
+
+         check_and_draw_surface(poly, render, light, voff, r);
+         voff += poly->num_vertices;
+         ++poly;
+         ++render;
+         ++light;
+      }
+      r->changed_anim_light_bitmask = 0;
+   } else {
+      while (n--) {
+         check_and_draw_surface(poly, render, NULL, voff, r);
+         voff += poly->num_vertices;
+         ++poly;
+         ++render;
+      }
+   }
+
+   // In hardware, if we're not going to draw terrain here then we
+   // need to set the z for this cell the old-fashioned way.
+   if (g_lgd3d && (r->flags & CELL_OBSCURED)) {
+      r3s_phandle vlist[MAX_VERT];
+      int i, num_vertices;
+
+      ulong color = 0;
+      /*//zb
+      if (r->flags & CELL_FOGGED_OUT) {
+         color = fog_r3_color;
+         r->flags &= ~CELL_FOGGED_OUT;
+      }
+      */
+      r3_set_color(guiScreenColor(color));
+
+      r3_set_polygon_context(R3_PL_POLYGON | R3_PL_UNLIT | R3_PL_SOLID);
+
+      voff = r->portal_vertex_list;
+      poly = r->portal_poly_list;
+      n = r->num_portal_polys;
+
+      lgd3d_disable_palette();
+
+      while (n--) {
+         num_vertices = poly->num_vertices;
+
+         if (check_surface_visible(r, poly, voff)) {
+            for (i = 0; i < num_vertices; ++i)
+               vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+
+            r3_draw_poly(num_vertices, vlist);
+         }
+
+         voff += num_vertices;
+         ++poly;
+      }
+
+      lgd3d_enable_palette();
+   }
+
+   r3_end_block();
+
+skip_poly_draw:
+
+#ifndef SHIP
+   if (r->flags & (CELL_RENDER_WIREFRAME | CELL_RENDER_WIREFRAME_ONCE)
+    || draw_wireframe_around_poly) {
+      draw_cell_wireframe(r, COLOR_WHITE);
+      r->flags &= ~CELL_RENDER_WIREFRAME_ONCE;
+   }
+#endif // ~SHIP
+
+   if (!g2pt_span_clip && OBJECTS(r) >= 0)
+      draw_many_objects();
+
+   if (r->flags & 128)
+      portal_sfx_callback(cell);
+
+   END_PROF;
+}
+
+extern void draw_surface_multitexture(
+      PortalPolygonCore *poly,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *lt,
+      int voff,
+      void *clip);
+
+extern void draw_surface_lightmap_only(
+      PortalPolygonCore *poly,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *lt,
+      int voff,
+      void *clip);
+
+extern void draw_surface_texture_only(
+      PortalPolygonCore *poly,
+      PortalPolygonRenderInfo *render,
+      int voff,
+      void *clip);
+
+BOOL portal_multitexture = FALSE;
+extern bool punt_hardware_lighting;
+
+void draw_region_lgd3d(int cell)
+{  PROF
+
+   PortalCell *r = WR_CELL(cell);
+   int n = r->num_render_polys;
+   int voff=0;
+   PortalPolygonCore *poly = r->poly_list;
+   PortalPolygonRenderInfo *render = r->render_list;
+   PortalLightMap *light = r->light_list;
+
+   // copy common data into globals for efficient communicating
+   // someday we should inline the function "draw_surface" and
+   // then get rid of these globals
+
+   cur_ph = POINTS(r);
+   cur_pool = r->vpool;
+   cur_cell = r;
+   r_vertex_list = r->vertex_list;
+
+   r_clip = CLIP_DATA(r);
+
+   if (!n && !(r->flags & CELL_OBSCURED)) goto skip_poly_draw1;
+
+#ifdef STATS_ON
+   stat_num_poly_raw += n;
+#endif
+
+   // setup our default clip parameters (since we don't use
+   // primitives, just the clipper, this isn't set automagically).
+   // we could set it once elsewhere, and if we have self-lit polys
+   // we might want to set it every poly.  setting it here makes
+   // us interact safely with object rendering.
+   r3_set_clip_flags(0);
+
+#ifndef SHIP
+
+   // The other polygon outline tools are handled in draw_surface().
+   if (draw_solid_by_cell || draw_wireframe_around_poly) {
+      polygon_cell_color = (((uint) (r->sphere_center.x * 85.12737321727
+                                   - r->sphere_center.y * 123.33228937433)
+                             ^ (uint)(r->sphere_center.z * 311.22029342383)
+                             ^ r->num_portal_polys
+                             ^ (r->num_render_polys << 8)
+                             ^ (r->num_polys << 12)
+                             ^ r->num_vertices) & 0xffffff) | 0x1000000;
+   }
+
+   if (draw_solid_by_cell_flags)
+      _polygon_cell_flags_color = (r->flags) << 8;
+
+#endif  // ~SHIP
+
+   // now draw all the polygons
+
+   r3_start_block();
+   r3_set_clipmode(NEED_CLIP(r) ? R3_CLIP : R3_NO_CLIP);
+
+   if (n)
+   {
+      r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+      if (portal_fog_on)
+         lgd3d_set_fog_enable(!!(CELL_FLAGS(r) & CELL_FOG));
+      if (portal_multitexture)
+      { // we're doing single pass, multi-texturing!
+         while (n--)
+         {
+            if (check_surface_visible(r, poly, voff))
+               draw_surface_multitexture(poly, render, light, voff, CLIP_DATA(r));
+
+            voff += poly->num_vertices;
+            ++poly;
+            ++render;
+            ++light;
+         }
+      } else
+      { // two pass, texture first
+         while (n--) {
+            if ((!portal_punt_draw_surface) && check_surface_visible(r, poly, voff))
+               draw_surface_texture_only(poly, render, voff, CLIP_DATA(r));
+            voff += poly->num_vertices;
+            ++poly;
+            ++render;
+         }
+
+         // if we're not zbuffering, we need to do lightmaps immediately;
+         // otherwise they get done in a completely seperate pass
+         // (see draw_region_lightmap_only())
+         if ((!g_zbuffer)&&(!punt_hardware_lighting))
+         {
+            n = r->num_render_polys;
+            poly = r->poly_list;
+            render = r->render_list;
+            voff = 0;
+
+            lgd3d_blend_multiply(portal_hack_blend);
+            lgd3d_set_blend(TRUE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(0.5);
+#endif
+            while (n--) {
+               if (!(poly->flags & RENDER_DOESNT_LIGHT))
+                  if (check_surface_visible(r, poly, voff))
+                     draw_surface_lightmap_only(poly, render, light, voff, CLIP_DATA(r));
+
+               voff += poly->num_vertices;
+               ++poly;
+               ++render;
+               ++light;
+            }
+            lgd3d_blend_normal();
+            lgd3d_set_blend(FALSE);
+#ifdef RGB_LIGHTING
+            lgd3d_set_alpha(1.0);
+#endif
+         }
+      }
+   }
+
+   // In hardware, if we're not going to draw terrain here then we
+   // need to set the z for this portal the old-fashioned way.
+   if (g_lgd3d && (r->flags & CELL_OBSCURED)) {
+      r3s_phandle vlist[MAX_VERT];
+      int i, num_vertices;
+
+      ulong color = 0;
+      /*//zb
+      if (r->flags & CELL_FOGGED_OUT) {
+         color = fog_r3_color;
+         r->flags &= ~CELL_FOGGED_OUT;
+      }
+      */
+     // r3_set_color(guiScreenColor(color));
+      r3_set_color( color );
+
+      r3_set_polygon_context(R3_PL_POLYGON | R3_PL_UNLIT | R3_PL_SOLID);
+
+      voff = r->portal_vertex_list;
+      poly = r->portal_poly_list;
+      n = r->num_portal_polys;
+
+      lgd3d_disable_palette();
+
+      while (n--) {
+         num_vertices = poly->num_vertices;
+
+         if (check_surface_visible(r, poly, voff)) {
+            for (i = 0; i < num_vertices; ++i)
+               vlist[i] = &cur_ph[r_vertex_list[voff + i]];
+
+            r3_draw_poly(num_vertices, vlist);
+         }
+
+         voff += num_vertices;
+         ++poly;
+      }
+
+      lgd3d_enable_palette();
+   }
+
+   r3_end_block();
+
+skip_poly_draw1:
+
+#ifndef SHIP
+   if (r->flags & (CELL_RENDER_WIREFRAME | CELL_RENDER_WIREFRAME_ONCE)
+    || draw_wireframe_around_poly) {
+      draw_cell_wireframe(r, COLOR_WHITE);
+      r->flags &= ~CELL_RENDER_WIREFRAME_ONCE;
+   }
+#endif // ~SHIP
+
+   if (OBJECTS(r) >= 0)
+      draw_many_objects();
+
+   if (r->flags & 128)
+      portal_sfx_callback(cell);
+
+   END_PROF;
+}
+
+void draw_region_lightmap_only(int cell)
+{  PROF
+
+   PortalCell *r = WR_CELL(cell);
+   int n = r->num_render_polys;
+   int voff=0;
+   PortalPolygonCore *poly = r->poly_list;
+   PortalPolygonRenderInfo *render = r->render_list;
+   PortalLightMap *light = r->light_list;
+
+   if (r->num_full_bright || portal_render_from_texture || (light==NULL))
+      {END_PROF; return;}
+
+   // copy common data into globals for efficient communicating
+   // someday we should inline the function "draw_surface" and
+   // then get rid of these globals
+
+   cur_ph = POINTS(r);
+   cur_pool = r->vpool;
+   cur_cell = r;
+   cur_anim_light_index_list = r->anim_light_index_list;
+   r_vertex_list = r->vertex_list;
+
+   r_clip = CLIP_DATA(r);
+
+#ifdef STATS_ON
+   stat_num_poly_raw += n;
+#endif
+
+   r3_set_clip_flags(0);
+
+   r3_start_block();
+   r3_set_clipmode(NEED_CLIP(r) ? R3_CLIP : R3_NO_CLIP);
+
+   r3_set_polygon_context(R3_PL_POLYGON | R3_PL_TEXTURE | R3_PL_UNLIT);
+   if (portal_fog_on)
+      lgd3d_set_fog_enable(!!(CELL_FLAGS(r) & CELL_FOG));
+
+   while (n--) {
+      if (!(poly->flags & RENDER_DOESNT_LIGHT))
+         if (check_surface_visible(r, poly, voff))
+            draw_surface_lightmap_only(poly, render, light, voff, CLIP_DATA(r));
+
+      voff += poly->num_vertices;
+      ++poly;
+      ++render;
+      ++light;
+   }
+
+   r3_end_block();
+
+
+   END_PROF;
+}
+
+
+// can't be bigger than 64 due to sorting limitation!
+// see sBlockedBits below!
+#define MAX_SORTED_OBJS 64
+
+Position* portal_object_pos_default(ObjID obj)
+{
+   static Position pos;
+   return &pos;
+}
+
+Position* (*portal_object_pos)(ObjID obj) = portal_object_pos_default;
+
+static int obj_compare(ObjVisibleID p, ObjVisibleID q)
+{
+   extern mxs_vector portal_camera_loc;
+   ObjID x = vis_objs[p].obj;
+   ObjID y = vis_objs[q].obj;
+
+   // compute distance from camera
+
+   float dist1, dist2;
+
+   dist1 = mx_dist2_vec(&portal_camera_loc, &portal_object_pos(x)->loc.vec);
+   dist2 = mx_dist2_vec(&portal_camera_loc, &portal_object_pos(y)->loc.vec);
+
+   if (dist1 < dist2)
+      return -1;
+   else
+      return dist1 > dist2;
+}
+
+typedef struct sBlockedBits
+{
+   ulong Bits[2];
+} sBlockedBits;
+
+// nByte !! yields 0 or 1:
+// nSetBit is nBit shifted by 32 if nByte is 1, else not shifted
+#define SetBlockedBit(bits, nBit) \
+      nByte = !!(nBit>>32); \
+      nSetBit = nBit>>(nByte<<5); \
+      bits.Bits[nByte] |= nSetBit
+
+// Assumes bit is set:
+#define ResetBlockedBit(bits, nBit) \
+      nByte = !!(nBit>>32); \
+      nSetBit = nBit>>(nByte<<5); \
+      bits.Bits[nByte] ^= nSetBit
+
+// Just stuff a 0 there.
+#define ZeroBlockedBit(bits, nBit) \
+      nByte = !!(nBit>>32); \
+      nSetBit = nBit>>(nByte<<5); \
+      bits.Bits[nByte] &= ~nSetBit
+
+// Returns last rvalue in sequence, and performs operations first to last:
+#define IsBitSet(bits, nBit) \
+      (nByte = !!(nBit>>32), \
+       nSetBit = nBit>>(nByte<<5), \
+       bits.Bits[nByte] & nSetBit)
+
+void topological_sort(ObjVisibleID *obj_list, int n)
+{
+//   int x,y, i,j, b;
+   int x,y, i,j;
+
+   ulong nByte; // Helper for macros
+   ulong nSetBit; // Helper for macros
+   ulong nVal;
+   sBlockedBits blocked[MAX_SORTED_OBJS];
+   sBlockedBits b;
+
+   // used to be this, which gave us at most 32 objects we could sort:
+   // ulong blocked[MAX_SORTED_OBJS];
+
+   ObjVisibleID my_list[MAX_SORTED_OBJS];
+
+   // we should special case 2 (and maybe 3) objects!
+
+   if (n > MAX_SORTED_OBJS) n = MAX_SORTED_OBJS;
+
+   memcpy(my_list, obj_list, sizeof(my_list[0])*n);
+
+   memset(blocked, 0, sizeof(sBlockedBits)*MAX_SORTED_OBJS);
+
+   // Well, it turns out player is always in way of camera. Because we're hardware, we only
+   // really need to sort objects that are alpha, yet this sorter sorts ALL objects, which is
+   // unnecessary. We should move sorting into rendobj level, and only sort alpha objects.
+   //
+
+   // collect all n^2 comparison data
+   for (x=0; x < n; ++x) {
+      b.Bits[0] = b.Bits[1] = 0;
+      for (y=0; y < n; ++y) {
+         if (x != y && portal_object_blocks(vis_objs[obj_list[y]].obj,
+                                  vis_objs[obj_list[x]].obj)) {
+            // check if they form a cycle
+//            if (y < x && (blocked[y] & (1 << x))) {
+            if (y < x && IsBitSet(blocked[y], (1<<x))) {
+               // they do, so they're too close to each other...
+               // compare their centers:   dist-x > dist-y  ???
+               if (obj_compare(obj_list[x],obj_list[y]) > 0) {
+                  // y is closer, so no x blocks y
+                  ResetBlockedBit(blocked[y],(1<<x));
+                  SetBlockedBit(b, (1<<y));
+//                  blocked[y] ^= 1 << x;
+//                  b |= 1 << y;  // yes y blocks x
+               }
+               // else say x blocks y (already coded), and no y blocks x
+            } else
+               // no cycle, so y blocks x
+               SetBlockedBit(b, (1<<y));
+               // b |= 1 << y;
+         }
+      }
+      blocked[x] = b;
+   }
+
+   // ok, now we know everything.  search for somebody who is
+   // unblocked
+   for (i=0; i < n; ++i) {
+      // find guy #n
+      for (j=0; j < n; ++j)
+         if (my_list[j] != VISOBJ_NULL && !blocked[j].Bits[0] && !blocked[j].Bits[1])
+//         if (my_list[j] != VISOBJ_NULL && !blocked[j])
+            goto use_j;
+      // nobody is unblocked... oops... must break cycle
+      // we should use farthest guy, but let's just hack it
+#ifndef SHIP
+//      mprintf("Breaking object-sorting cycle.\n");
+#endif
+#ifndef SHIP
+      for (j=0; j < n; ++j)
+         if (my_list[j] != VISOBJ_NULL)
+            goto use_j;
+      Error(1, "Ran out of objects inside object sorter.");
+#endif
+     use_j:
+      obj_list[i] = my_list[j];
+      my_list[j] = VISOBJ_NULL;
+      blocked[j].Bits[0] = blocked[j].Bits[1] = 0;
+//      blocked[j] = 0;
+      // unblock anybody this guy blocked
+      nVal = 1 << j;
+//      b = 1 << j;
+      for (j=0; j < n; ++j)
+         ZeroBlockedBit(blocked[j], nVal);
+//         if (blocked[j] & b)
+//            blocked[j] ^= b;
+   }
+}
+
+extern bool obj_dealt[];  // HACK: need real object dealt flags
+extern bool obj_hide[];   // HACK
+void core_render_object(ObjVisibleID id, uchar *clut)
+{
+   if (!obj_hide[vis_objs[id].obj])
+      portal_render_object(vis_objs[id].obj, clut, vis_objs[id].fragment);
+   obj_dealt[vis_objs[id].obj] = 0;
+}
+
+extern long (*portal_get_time)(void);
+extern int stat_num_object_ms;
+bool disable_topsort;
+static void draw_many_objects(void)
+{
+   PortalCell *r = cur_cell;
+   ObjVisibleID id = OBJECTS(r);
+   uchar *clut = g2pt_clut;
+   ObjVisibleID obj_list[MAX_SORTED_OBJS];
+   int num=0, i;
+
+   if (portal_sky_spans > 0)
+      ptsky_render_stars();
+
+#ifdef STATS_ON
+   stat_num_object_ms -= portal_get_time();
+#endif
+
+   // reset the polygon context so the fact we
+   // stuffed the r3_clip_flags won't screw us up...
+   // there must be a better way to do this...
+   if (!g_lgd3d) {
+      r3_set_polygon_context(0);
+
+      // because portal goes behind r3d's back to access g2 directly,
+      // we need to set this flag as well
+      r3d_do_setup = TRUE;
+   }
+
+   // put the first MAX_SORTED_OBJS in an array
+
+   while (id >= 0 && num < MAX_SORTED_OBJS) {
+      if (!obj_hide[vis_objs[id].obj])
+         obj_list[num++] = id;
+      else
+         obj_dealt[vis_objs[id].obj] = 0;
+      id = vis_objs[id].next_visobj;
+   }
+
+   // if there are still more objects, just render 'em
+
+   while (id >= 0) {
+      Warning(("draw_many_objects: Too many objects to sort.\n"));
+      core_render_object(id, clut);
+      id = vis_objs[id].next_visobj;
+   }
+
+   // now sort and draw the remaining objects
+
+   if (num == 1)
+      core_render_object(obj_list[0], clut);
+   else if (num) {
+
+// wsf: if we're in hardware, don't need to sort all objects. We're moving sort
+// into rendobj level, and only sorting alpha objects, that don't write into z-buffer.
+      if (!disable_topsort && !g_lgd3d)
+         topological_sort(obj_list, num);
+
+      // the order of drawing should depend on render_back_to_front-ness
+      for (i=num-1; i >= 0; --i)
+         core_render_object(obj_list[i], clut);
+   }
+
+#ifdef STATS_ON
+   stat_num_object_ms += portal_get_time();
+#endif
+
+   // restore g2pt_clut in case object rendering trashed it
+   g2pt_clut = clut;
+}
+
+BOOL sphere_intersects_plane(mxs_vector *center, float radius, PortalPlane *p)
+{
+   // compute distance from sphere center to plane
+   float dist = mx_dot_vec(center, &p->normal) + p->plane_constant;
+
+   // if sphere is at least radius away, don't bother
+   if (dist >= radius)
+      return FALSE;
+
+   // if sphere is at least radius _behind_ the plane, we don't need
+   // to draw anything, but (a) that should never happen, and (b) we
+   // don't have a distinct return value to indicate it, anyway
+
+   return TRUE;
+}
+
+#define FLOAT_PTR_NEG(x)   (* (int *) (x) < -0.005)
+
+BOOL bbox_intersects_plane(mxs_vector *bbox_min, mxs_vector *bbox_max,
+          PortalPlane *p)
+{
+   mxs_vector temp;
+   float dist;
+
+   // find the point as far _behind_ the plane as possible
+
+   if (FLOAT_PTR_NEG(&p->normal.x))
+      temp.x = bbox_max->x;
+   else
+      temp.x = bbox_min->x;
+
+   if (FLOAT_PTR_NEG(&p->normal.y))
+      temp.y = bbox_max->y;
+   else
+      temp.y = bbox_min->y;
+
+   if (FLOAT_PTR_NEG(&p->normal.z))
+      temp.z = bbox_max->z;
+   else
+      temp.z = bbox_min->z;
+
+   dist = mx_dot_vec(&temp, &p->normal) + p->plane_constant;
+   if (dist >= 0)
+      return FALSE;
+
+   return TRUE;
+}
+
+static int num_pushed;
+
+void portal_push_clip_planes(
+     mxs_vector *bbox_min, mxs_vector *bbox_max,
+     mxs_vector *sphere_center, float radius)
+{
+   int i,plane_count = cur_cell->num_planes;
+   PortalPlane *pl = cur_cell->plane_list;
+
+   num_pushed = 0;
+   for (i=0; i < plane_count; ++i, ++pl) {
+      mxs_plane p;
+      if (sphere_center && !sphere_intersects_plane(sphere_center, radius, pl))
+         continue;
+      if (bbox_min && !bbox_intersects_plane(bbox_min, bbox_max, pl))
+         continue;
+      ++num_pushed;
+      p.x = pl->normal.x;
+      p.y = pl->normal.y;
+      p.z = pl->normal.z;
+      p.d = pl->plane_constant+0.002;
+      r3_push_clip_plane(&p);
+   }
+}
+
+void portal_pop_clip_planes(void)
+{
+   int i;
+   for (i=0; i < num_pushed; ++i)
+      r3_pop_clip_plane();
+}
+
+
+//////////       code that could probably be deleted      /////////
+
+// (old palette-based lighting stuff)
+
+static float rescale(float val, float *map)
+{
+   // find where 'val' is from 0..32
+   int i;
+   float where;
+
+   if (val == 1.0) return 1.0;
+
+   for (i=0; val >= map[i]; ++i);
+   // ok, now val < map[i]
+
+   --i;
+   // map[i] <= val < map[i+1]
+
+   // now determine where val occurs if it were linear interpolated
+   //    map[i] + where * (map[j] - map[i]) == val
+
+   where = (val - map[i]) / (map[i+1] - map[i]);
+   return (where + i) / 32.0;
+}
+
+
+// is any of this used in the new regime?
+uchar length_mapping[1024];
+void init_portal_shading(int dark, int light)
+{
+#if 0
+   int i, j;
+   float last, step, cur, val;
+   float map[33];
+
+   // map 0 ->  dark + 0.5
+   // map 128 ->  light + 0.5
+
+   //    i/128 * (light - dark) + dark + 0.5
+
+   // except we want to remap them to account for
+   // nonlinearity; i/128 -> 0..1, but now we want
+   // to deal with the fact that the output device
+   // really takes x (0..1) and computes
+   // a decaying series, 0.1 ^ (1-x), which outputs
+   // from 0.1...1
+
+   // Closed form this seems messy, so I'll use a lookup
+   // table!
+
+   // first compute the table which decays the way the
+   // real thing decays
+
+   cur = 1.0;
+   // cur * step^32 == 0.1
+   // step^32 == 0.1
+   // step = (0.1)^1/32
+
+   step = pow(0.1, 1.0/32);
+
+   for (i=32; i >= 0; --i) {
+         // rescale it from 0.1--1.0 into 0.0--1.0
+      val = (cur-0.1)/0.9;
+      map[i] = val;
+      cur *= step;
+   }
+   map[32] = 1.0;
+   map[0] = 0;
+
+   for (i=0; i < 128; ++i)
+      light_mapping[i] =
+         (rescale((float) i / 128.0, map) * (light - dark)
+            + dark + 0.5) * 65536;
+
+   last = light_mapping[i-1];
+   for (   ; i < 256; ++i)
+      light_mapping[i] = last;
+
+   for (i=0; i < 256; ++i)
+      light_mapping_dithered[i] = light_mapping[i]*2;
+
+   for (i=1; i <= 16; ++i)
+      length_mapping[i] = i-1;
+
+   j = 3;
+   for (; i < 1024; ++i) {
+      if (i >= (4 << j)) ++j;
+      if (i >= (3 << j)) length_mapping[i] = (j+5)*2+1;
+      else length_mapping[i] = (j+5)*2;
+   }
+#endif
+}
+
+///// find the clipping data for a portal /////
+// returns TRUE if poly non empty
+// we save away info about the final polygon shape
+//   in case we end up needing more info; e.g. the
+//   water comes back and checks out the average z depth
+
+static r3s_phandle port_vr[MAX_VERT], *port_p;
+static int port_n;
+
+ClipData *PortalGetClipInfo(PortalCell *cell, PortalPolygonCore *poly,
+                            int voff, void *clip)
+{
+   int i, n = poly->num_vertices;
+   uchar *vlist = cell->vertex_list + voff;
+
+   if (n > MAX_VERT)
+      Error(1, "PortalGetClipInfo: Portal has too many vertices.\n");
+
+   for (i=0; i < n; ++i)
+      port_vr[i] = &cur_ph[*vlist++];
+
+   n = r3_clip_polygon(n, port_vr, &port_p);
+   if (n <= 2)
+      return NULL;
+
+   port_n = n;
+
+   return PortalClipFromPolygon(n, port_p, clip);
+}
+
+mxs_real compute_portal_z(void)
+{
+   mxs_real z=0;
+   int i;
+
+   for (i=0; i < port_n; ++i)
+      z += port_p[i]->p.z;
+
+     // compute the average
+   z /= port_n;
+
+   return (z > 0.1 ? z : 0.1);
+}
+#include <stdlib.h>
+#include <stdio.h>
+#include <mem.h>
+
+#include <lg.h>
+#include <pt_mem.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#define MAX_RECT     1024
+
+struct info
+{
+   uchar *pt;
+   int wid, ht;
+   uchar data;
+} rect[MAX_RECT];
+
+int num_added, num_deleted;
+
+int sizes[] = { 1,2,4,8, 16,32,64,128, 256 };
+
+void delete(int x)
+{
+   int i,j;
+   ++num_deleted;
+
+   for(j=0; j < rect[x].ht; ++j)
+      for (i=0; i < rect[x].wid; ++i)
+         if (rect[x].pt[j*256+i] != rect[x].data) goto ouch;
+   portal_free_mem_rect(rect[x].pt, rect[x].wid, rect[x].ht);
+   rect[x].pt = 0;
+   return;
+
+ouch:
+   Error(1, "Bad data!\n");
+}
+
+void add(int x)
+{
+   int i ,sz, y;
+
+   ++num_added;
+   sz = rand() % 8;
+   y = rand() >> 3;
+
+   rect[x].wid = sizes[sz + !!(y & 1)];
+   rect[x].ht = sizes[sz + !!(y & 2)];
+   rect[x].data = rand();
+   rect[x].pt = portal_allocate_mem_rect(rect[x].wid, rect[x].ht);
+   for (i=0; i < rect[x].ht; ++i)
+      memset(rect[x].pt + i*256, rect[x].data, rect[x].wid);
+}
+
+void process_rect(int x)
+{
+   if (rect[x].pt) delete(x); else add(x);
+}
+
+extern int max_strips;
+
+int main(int argc, char **argv)
+{
+   int n, i;
+   MemCheckOn(TRUE);
+
+   n = argc > 1 ? atoi(argv[1]) : 4096;
+
+   while(n--)
+      process_rect((unsigned int) rand() % MAX_RECT);
+
+   for (i=0; i < MAX_RECT; ++i)
+      if (rect[i].pt)
+         delete(i);
+
+   printf("Successfully inserted %d and deleted %d\n", num_added, num_deleted);
+   printf("%d strips\n", max_strips);
+   return 0;
+}
+//  $Header: r:/t2repos/thief2/src/portal/portclip.c,v 1.15 2000/02/19 13:18:38 toml Exp $
+//
+//  PORTAL
+//
+//  Portal clipping
+//
+//    The portal clipper uses wacky octagonal clipping;
+//    we probably want to add support for multiple disjoint clip regions
+//    for better portal testing.  The idea here is that on a union operation,
+//    we check if the total area of the union is too much bigger than the
+//    the sum of the areas.  If so, we keep a tree of the main one and each
+//    of the sub ones.  When we need to clip a polygon against a tree, we
+//    first check against a given node.  If it is trivially rejected, done.
+//    Otherwise, check each of the children.  If one child trivial rejects,
+//    recurse on the other child.  As soon as we get two children which don't
+//    trivially reject, form a clipping region that is the union of all of the
+//    non-trivial rejecters, and clip against that.
+//
+
+#include <lg.h>
+#include <mprintf.h>
+#include <portclip.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+bool clip_lighting=TRUE;
+
+int clip_uv=0;            // set to C_CLIP_UV_OFFSET if needed
+
+extern BOOL g_lgd3d;
+
+bool portal_clip_fast=TRUE;
+bool poly_clip_fast;
+
+// if defined, we maintain clipping regions as integers;
+// if not, we maintain them as fixed point
+//#define PORTCLIP_INT
+
+struct st_ClipData
+{
+#ifdef PORTCLIP_INT
+   int l,r,t,b;
+   int tl,tr,bl,br;
+#else
+   fix l,r,t,b;
+   fix tl,tr,bl,br;
+#endif
+};
+
+#ifdef PORTCLIP_INT
+   #define ROUND_UP(x)  fix_cint(x)
+   #define ROUND_DOWN(x) fix_int(x)
+#else
+#if 1
+   #define ROUND_UP(x)  (x)
+   #define ROUND_DOWN(x)  (x)
+#else
+   #define ROUND_UP(x)  fix_ceil(x)
+   #define ROUND_DOWN(x)  fix_floor(x)
+#endif
+#endif
+
+ClipData *ClipAlloc(void);
+
+#define Min(x,y)   ((x) < (y) ? (x) : (y))
+#define Max(x,y)   ((x) > (y) ? (x) : (y))
+
+// Compute ClipData from polygon, clipped to existing ClipData
+//   returns NULL if entirely clipped away
+
+ClipData *PortalClipFromPolygonNaive(int n, r3s_phandle *p, ClipData *clipsrc)
+{
+   ClipData *result;
+   int l,r,t,b, i;
+   int tl,tr,br,bl;
+
+     // find the straight 2d bounding box
+
+   l = r = p[0]->grp.sx;
+   t = b = p[0]->grp.sy;
+
+   for (i=1; i < n; ++i) {
+      if (p[i]->grp.sx < l) l = p[i]->grp.sx;
+      else if (p[i]->grp.sx > r) r = p[i]->grp.sx;
+      if (p[i]->grp.sy < t) t = p[i]->grp.sy;
+      else if (p[i]->grp.sy > b) b = p[i]->grp.sy;
+   }
+
+   l = ROUND_DOWN(l);
+   r = ROUND_UP(r);
+
+   l = Max(l, clipsrc->l);
+   r = Min(r, clipsrc->r);
+   if (l >= r) return FALSE;
+
+   t = ROUND_DOWN(t);
+   b = ROUND_UP(b);
+
+   t = Max(t, clipsrc->t);
+   b = Min(b, clipsrc->b);
+   if (t >= b) return FALSE;
+
+     // find the 45-degree rotated bounding box
+
+   tl = br = p[0]->grp.sy + p[0]->grp.sx;
+   tr = bl = p[0]->grp.sx - p[0]->grp.sy;
+
+   for (i=1; i < n; ++i) {
+      fix xy = p[i]->grp.sx + p[i]->grp.sy;
+      fix yx = p[i]->grp.sx - p[i]->grp.sy;
+
+      if (xy < tl) tl = xy;
+      else if (xy > br) br = xy;
+      if (yx < bl) bl = yx;
+      else if (yx > tr) tr = yx;
+   }
+
+   tl = ROUND_DOWN(tl);
+   br = ROUND_UP(br);
+
+   tl = Max(tl, clipsrc->tl);
+   br = Min(br, clipsrc->br);
+
+   if (tl >= br) return FALSE;
+
+   bl = ROUND_DOWN(bl);
+   tr = ROUND_UP(tr);
+
+   bl = Max(bl, clipsrc->bl);
+   tr = Min(tr, clipsrc->tr);
+
+   if (bl >= tr) return FALSE;
+
+   result = ClipAlloc();
+
+   result->l = l;
+   result->r = r;
+   result->t = t;
+   result->b = b;
+
+   result->tl = tl;
+   result->tr = tr;
+   result->bl = bl;
+   result->br = br;
+
+   return result;
+}
+
+// instead of turning the polygon into an octagon and clipping those,
+// we directly clip the polygon by the octagon, and then turn the result
+// into an octagon.  this is a tighter bounds.  We could do better if
+// we actually stored the portal clipping region as a <= 6 sided polygon,
+// and punted to the octagon when it got too complicated.  Union would
+// mean taking the convex hull, and intersection would require clipping
+// one against the other.  [6 is an invented number]
+
+ClipData *PortalClipFromPolygon(int n, r3s_phandle *p, ClipData *clipsrc)
+{
+   fix l,r,t,b;
+   fix tl,tr,br,bl;
+   int i;
+   r3s_phandle *q;
+   ClipData *result;
+   bool old_lighting = clip_lighting, old_poly_clip = poly_clip_fast;
+
+   if (portal_clip_fast)
+      return PortalClipFromPolygonNaive(n, p, clipsrc);
+
+   clip_lighting = FALSE;
+   poly_clip_fast = FALSE;
+   n = portclip_clip_polygon(n, p, &q, clipsrc);
+   clip_lighting = old_lighting;
+   poly_clip_fast = old_poly_clip;
+
+   if (n < 3) return NULL;
+
+   result = ClipAlloc();
+
+   l = r = q[0]->grp.sx;
+
+   for (i=1; i < n; ++i) {
+      if (q[i]->grp.sx < l) l = q[i]->grp.sx;
+      else if (q[i]->grp.sx > r) r = q[i]->grp.sx;
+   }
+
+   result->l = l;
+   result->r = r;
+
+   t = b = q[0]->grp.sy;
+
+   for (i=1; i < n; ++i) {
+      if (q[i]->grp.sy < t) t = q[i]->grp.sy;
+      else if (q[i]->grp.sy > b) b = q[i]->grp.sy;
+   }
+
+   result->t = t;
+   result->b = b;
+
+     // find the 45-degree rotated bounding box
+
+   tl = br = q[0]->grp.sy + q[0]->grp.sx;
+
+   for (i=1; i < n; ++i) {
+      fix xy = q[i]->grp.sx + q[i]->grp.sy;
+      if (xy < tl) tl = xy;
+      else if (xy > br) br = xy;
+   }
+
+   result->tl = tl;
+   result->br = br;
+
+   tr = bl = q[0]->grp.sx - q[0]->grp.sy;
+
+   for (i=1; i < n; ++i) {
+      fix yx = q[i]->grp.sx - q[i]->grp.sy;
+      if (yx < bl) bl = yx;
+      else if (yx > tr) tr = yx;
+   }
+
+   result->tr = tr;
+   result->bl = bl;
+
+   return result;
+}
+
+// Take the ClipData src, add in the clip data s2, and
+// return whether it got any larger
+
+bool PortalClipUnion(ClipData *src, ClipData *more)
+{
+   bool changed = FALSE;
+
+   if (src->l > more->l) { changed = TRUE; src->l = more->l; }
+   if (src->r < more->r) { changed = TRUE; src->r = more->r; }
+   if (src->t > more->t) { changed = TRUE; src->t = more->t; }
+   if (src->b < more->b) { changed = TRUE; src->b = more->b; }
+
+   if (src->tl > more->tl) { changed = TRUE; src->tl = more->tl; }
+   if (src->tr < more->tr) { changed = TRUE; src->tr = more->tr; }
+   if (src->bl > more->bl) { changed = TRUE; src->bl = more->bl; }
+   if (src->br < more->br) { changed = TRUE; src->br = more->br; }
+
+   return changed;
+}
+
+  // check if a clipping region overlaps a bounding octagon
+extern bool PortalClipOverlap(ClipData *c, fix *min2d, fix *max2d)
+{
+   if (c->l > max2d[0]) return FALSE;
+   if (c->r < min2d[0]) return FALSE;
+   if (c->t > max2d[1]) return FALSE;
+   if (c->b < min2d[1]) return FALSE;
+   if (c->tl > max2d[2]) return FALSE;
+   if (c->br < min2d[2]) return FALSE;
+   if (c->bl > max2d[3]) return FALSE;
+   if (c->tr < min2d[3]) return FALSE;
+   return TRUE;
+}
+
+bool PortClipTestPoint(ClipData *c, fix x, fix y)
+{
+#ifdef PORTCLIP_INT
+   x = fix_int(x);
+   y = fix_int(y);
+#endif
+   if (x < c->l) return FALSE;
+   if (x > c->r) return FALSE;
+   if (y < c->t) return FALSE;
+   if (y > c->b) return FALSE;
+
+   if (x+y < c->tl) return FALSE;
+   if (x+y > c->br) return FALSE;
+   if (x-y < c->bl) return FALSE;
+   if (x-y > c->tr) return FALSE;
+
+   return TRUE;
+}
+
+ClipData *PortalClipRectangle(int l, int t, int r, int b)
+{
+   ClipData *d = ClipAlloc();
+
+#ifdef PORTCLIP_INT
+   d->l = l;
+   d->t = t;
+   d->r = r;
+   d->b = b;
+#else
+   d->l = fix_make(l,0);
+   d->t = fix_make(t,0);
+   d->r = fix_make(r,0);
+   d->b = fix_make(b,0);
+#endif
+
+   d->tl = d->l + d->t;
+   d->tr = d->r - d->t;
+   d->bl = d->l - d->b;
+   d->br = d->r + d->b;
+
+   return d;
+}
+
+#define MAX_CLIP_REGIONS     2048
+
+ClipData clip_raw[MAX_CLIP_REGIONS]; // 32K
+int clip_first_free=-1, clip_init=0;
+
+void PortalClipInit(void)
+{
+   int i;
+   clip_init = 1;
+
+   for (i=0; i < MAX_CLIP_REGIONS; ++i)
+      clip_raw[i].l = i+1;
+
+   clip_raw[MAX_CLIP_REGIONS-1].l = -2;
+
+   clip_first_free = 0;
+}
+
+ClipData *ClipAlloc(void)
+{
+   int n = clip_first_free;
+   if (n < 0) {
+      if (n == -2)
+         Error(1, "ClipAlloc: Scene complexity too high.\n");
+      if (!clip_init) {
+         PortalClipInit();      
+         n = clip_first_free;
+      } else
+         return NULL;
+   }
+   clip_first_free = clip_raw[n].l;
+   return &clip_raw[n];
+}
+
+void PortalClipFree(ClipData *c)
+{
+   c->l = clip_first_free;
+   clip_first_free = c - clip_raw;
+}
+
+//////////////////////////////////////////////////////////////
+
+//            clip 2d polygon
+
+// The big problem is that we don't have anywhere to store
+// our 2d point codes.  So we have to make our own array of
+// "point handles", which store pointers to the r3s_points,
+// plus store the clipcodes.
+
+// We might want to cache the x&y values directly into these
+// things for speed, but probably not, we probably just need
+// the codes rapidly accessible.
+
+#define MAX_INPUT_PTS       32
+#define NUMBER_CLIP_PLANES  8
+#define MAX_DYNAMIC_PTS     (2 * NUMBER_CLIP_PLANES)
+#define MAX_PTS             (MAX_INPUT_PTS + MAX_DYNAMIC_PTS)
+#define MAX_OUTPUT_PTS      (MAX_INPUT_PTS + NUMBER_CLIP_PLANES)
+   // every time we add two dynamic pts, must lose at least one input pt
+
+typedef struct
+{
+   r3s_point *p;
+   ulong code;
+} ClipPoint;
+
+static ClipPoint pts[MAX_PTS];
+static int num_pts=0;
+
+  // temporary points we can allocate as we clip
+r3s_point clip_results[MAX_DYNAMIC_PTS];
+int clip_num_pts=0;
+
+static ClipData curclip;
+
+#define CP_CODE(a)   (pts[a].code)
+#define CP_SX(a)     (pts[a].p->grp.sx)
+#define CP_SY(a)     (pts[a].p->grp.sy)
+#define CP_I(a)      (pts[a].p->grp.i)
+#define CP_U(a)      (pts[a].p->grp.u)
+#define CP_V(a)      (pts[a].p->grp.v)
+
+#define CP_SXY(a)    (CP_SX(a) + CP_SY(a))
+#define CP_SYX(a)    (CP_SX(a) - CP_SY(a))
+
+#define C_L        0
+#define C_R        1
+#define C_T        2
+#define C_B        3
+#define C_TL       4
+#define C_BR       5
+#define C_TR       6
+#define C_BL       7
+
+#define C_OFF_L   (1 << C_L)
+#define C_OFF_R   (1 << C_R)
+#define C_OFF_T   (1 << C_T)
+#define C_OFF_B   (1 << C_B)
+#define C_OFF_TL  (1 << C_TL)
+#define C_OFF_BR  (1 << C_BR)
+#define C_OFF_TR  (1 << C_TR)
+#define C_OFF_BL  (1 << C_BL)
+
+int code_point(int a)
+{
+   int x = CP_SX(a), y = CP_SY(a);
+   int xy = x + y, yx = x - y;
+   int code;
+
+   if (x < curclip.l) code = C_OFF_L;
+   else if (x > curclip.r) code = C_OFF_R;
+   else code = 0;
+
+   if (y < curclip.t) code |= C_OFF_T;
+   else if (y > curclip.b) code |= C_OFF_B;
+
+   if (xy < curclip.tl) code |= C_OFF_TL;
+   else if (xy > curclip.br) code |= C_OFF_BR;
+
+   if (yx > curclip.tr) code |= C_OFF_TR;
+   else if (yx < curclip.bl) code |= C_OFF_BL;
+      
+   CP_CODE(a) = code;
+   return code;
+}
+
+void clip2d_intersect(fix x, fix *dx, fix *dy, fix x1, fix y1, fix x2, fix y2, float *i, float i1, float i2)
+{
+   if (x2 < x1) {
+      fix temp;
+      float ti;
+      temp = x1;
+      x1 = x2;
+      x2 = temp;
+      temp = y1;
+      y1 = y2;
+      y2 = temp;
+      ti = i1;
+      i1 = i2;
+      i2 = ti;
+   }
+
+   *dx = x;
+#ifdef WIN32
+   *dy = y1 + (double) (y2-y1) * (x-x1) / (x2-x1);
+#else
+   *dy = y1 + fix_mul_div(y2-y1, x-x1, x2-x1);
+#endif
+   if (clip_lighting)
+      *i  = i1 + (i2-i1)*(x-x1)/(x2-x1);
+}
+
+void clip2d_intersect_uv(fix x, fix *dx, fix *dy, fix x1, fix y1, fix x2, fix y2, ClipPoint *dest, ClipPoint *p1, ClipPoint *p2)
+{
+   if (x1 < x2) {
+      double interp = (double) (x - x1) / (x2 - x1);
+      *dx = x;
+      *dy = y1 + (y2-y1) * interp;
+      if (clip_lighting)
+         dest->p->grp.i  = p1->p->grp.i + (p2->p->grp.i - p1->p->grp.i)*interp;
+
+      dest->p->grp.w = p1->p->grp.w + (p2->p->grp.w - p1->p->grp.w) * interp;
+      dest->p->p.z = 1 / dest->p->grp.w;
+   } else {
+      double interp = (double) (x - x2) / (x1 - x2);
+      *dx = x;
+      *dy = y2 + (y1-y2) * interp;
+      if (clip_lighting)
+         dest->p->grp.i  = p2->p->grp.i + (p1->p->grp.i - p2->p->grp.i)*interp;
+
+      dest->p->grp.w = p2->p->grp.w + (p1->p->grp.w - p2->p->grp.w) * interp;
+      dest->p->p.z = 1 / dest->p->grp.w;
+   }
+}
+
+void clip2d_compute_intersection(int dest, int p1, int p2, int pass)
+{
+   fix xy,yx;
+#ifdef DBG_ON
+   CP_SX(dest) = -1;
+   CP_SY(dest) = -1;
+#endif
+
+   switch(pass+(g_lgd3d<<3)) {  // determine which plane & what to clip
+
+  // CLIPPING JUST (x,y,i)
+
+      case C_L:
+         clip2d_intersect(curclip.l, &CP_SX(dest), &CP_SY(dest), CP_SX(p1),
+             CP_SY(p1), CP_SX(p2), CP_SY(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         break;
+      case C_R:
+         clip2d_intersect(curclip.r, &CP_SX(dest), &CP_SY(dest), CP_SX(p1),
+             CP_SY(p1), CP_SX(p2), CP_SY(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         break;
+      case C_T:
+         clip2d_intersect(curclip.t, &CP_SY(dest), &CP_SX(dest), CP_SY(p1),
+             CP_SX(p1), CP_SY(p2), CP_SX(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         break;
+      case C_B:
+         clip2d_intersect(curclip.b, &CP_SY(dest), &CP_SX(dest), CP_SY(p1),
+             CP_SX(p1), CP_SY(p2), CP_SX(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         break;
+
+      case C_TL:
+         clip2d_intersect(curclip.tl, &xy, &yx, CP_SXY(p1), CP_SYX(p1),
+             CP_SXY(p2), CP_SYX(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         goto recode_xy;
+      case C_BR:
+         clip2d_intersect(curclip.br, &xy, &yx, CP_SXY(p1), CP_SYX(p1),
+             CP_SXY(p2), CP_SYX(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         goto recode_xy;
+      case C_TR:
+         clip2d_intersect(curclip.tr, &yx, &xy, CP_SYX(p1), CP_SXY(p1),
+             CP_SYX(p2), CP_SXY(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         goto recode_xy;
+      case C_BL:
+         clip2d_intersect(curclip.bl, &yx, &xy, CP_SYX(p1), CP_SXY(p1),
+             CP_SYX(p2), CP_SXY(p2), &CP_I(dest), CP_I(p1), CP_I(p2));
+         goto recode_xy;
+
+
+  // CLIPPING (x,y,u,v,i)
+
+      case C_L + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.l, &CP_SX(dest), &CP_SY(dest), CP_SX(p1),
+             CP_SY(p1), CP_SX(p2), CP_SY(p2), &pts[dest], &pts[p1], &pts[p2]);
+         break;
+      case C_R + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.r, &CP_SX(dest), &CP_SY(dest), CP_SX(p1),
+             CP_SY(p1), CP_SX(p2), CP_SY(p2), &pts[dest], &pts[p1], &pts[p2]);
+         break;
+      case C_T + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.t, &CP_SY(dest), &CP_SX(dest), CP_SY(p1),
+             CP_SX(p1), CP_SY(p2), CP_SX(p2), &pts[dest], &pts[p1], &pts[p2]);
+         break;
+      case C_B + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.b, &CP_SY(dest), &CP_SX(dest), CP_SY(p1),
+             CP_SX(p1), CP_SY(p2), CP_SX(p2), &pts[dest], &pts[p1], &pts[p2]);
+         break;
+
+      case C_TL + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.tl, &xy, &yx, CP_SXY(p1), CP_SYX(p1),
+             CP_SXY(p2), CP_SYX(p2), &pts[dest], &pts[p1], &pts[p2]);
+         goto recode_xy;
+      case C_BR + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.br, &xy, &yx, CP_SXY(p1), CP_SYX(p1),
+             CP_SXY(p2), CP_SYX(p2), &pts[dest], &pts[p1], &pts[p2]);
+         goto recode_xy;
+      case C_TR + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.tr, &yx, &xy, CP_SYX(p1), CP_SXY(p1),
+             CP_SYX(p2), CP_SXY(p2), &pts[dest], &pts[p1], &pts[p2]);
+         goto recode_xy;
+      case C_BL + C_CLIP_UV_OFFSET:
+         clip2d_intersect_uv(curclip.bl, &yx, &xy, CP_SYX(p1), CP_SXY(p1),
+             CP_SYX(p2), CP_SXY(p2), &pts[dest], &pts[p1], &pts[p2]);
+         goto recode_xy;
+
+      recode_xy:
+         CP_SX(dest) = (xy + yx)/2;
+         CP_SY(dest) = xy - CP_SX(dest);
+         break;
+
+      default:
+         Error(1, "clip2d_compute_intersection: Invalid clip code type\n");
+   }
+   code_point(dest);
+#ifdef DBG_ON
+   if (CP_SX(dest) == -1 && CP_SY(dest) == -1)
+      Error(1, "clip2d_compute_intersection: failed mysteriously\n");
+#endif
+}
+
+static int poly[MAX_OUTPUT_PTS], poly2[MAX_OUTPUT_PTS];
+static r3s_phandle poly_out[MAX_OUTPUT_PTS];
+
+int portclip_clip_polygon(int n, r3s_phandle *p, r3s_phandle **q, ClipData *c)
+{
+   // compute clip codes
+   int i, code, c_and, c_or, clip_pass;
+   int *src  = poly;
+   int *dest = poly2;      
+   int *temp;
+
+#if 0
+   curclip.l = fix_floor(c->l);
+   curclip.r = fix_ceil(c->r);
+   curclip.t = fix_floor(c->t);
+   curclip.b = fix_ceil(c->b);
+   curclip.tl = fix_floor(c->tl);
+   curclip.br = fix_ceil(c->br);
+   curclip.bl = fix_floor(c->bl);
+   curclip.tr = fix_ceil(c->tr);
+#else
+   curclip = *c;
+#endif
+
+   c_and = 0xff;
+   c_or  = 0;
+
+#ifdef DBG_ON
+   if (n > MAX_INPUT_PTS)
+      Error(1, "portclip_clip_poly: MAX_INPUT_POINTS exceeded.\n");
+#endif
+
+   for (i=0; i < n; ++i) {
+      pts[i].p = p[i];
+      src[i] = i;
+#ifdef DBG_ON
+      if (CP_SX(src[i]) < fix_make(-1,0))
+         Error(1, "portclip_clip_poly: Bad pt in list 0!\n");
+#endif
+      code = code_point(i);
+      c_and &= code;
+      c_or  |= code;
+   }
+
+   if (c_and) return 0;  // trivial reject
+
+   if (q==NULL) // only wanted to check for trivial reject...
+      return n;
+
+   if (poly_clip_fast || !c_or) {
+      *q = p;
+      return n;
+   } // trivial accept
+
+   clip_num_pts = 0;
+   num_pts = n;
+
+   // now try clipping against all of the appropriate codes
+   i = 1;
+   clip_pass = 0;
+     
+   while (c_or >= i) {
+      if (c_or & i) {
+         int m=0,j,k = n-1;
+
+         // iterate over all the vertices
+         for (j=0; j < n; ++j) {
+#ifdef DBG_ON
+            if (CP_SX(src[k]) < fix_make(-1,0))
+               Error(1, "portclip_clip_poly: Bad pt in list 1!\n");
+#endif
+            if (!(CP_CODE(src[k]) & i))   // k is in, so output it
+               dest[m++] = src[k];
+
+            if ((CP_CODE(src[j]) ^ CP_CODE(src[k])) & i) {
+#ifdef DBG_ON
+               if (num_pts >= MAX_PTS)
+                  Error(1,"portclip_clip_poly: exceeded MAX_PTS\n");
+               if (clip_num_pts >= MAX_DYNAMIC_PTS)
+                  Error(1,"portclip_clip_poly: exceeded MAX_DYNAMIC_PTS\n");
+               if (m >= MAX_OUTPUT_PTS)
+                  Error(1,"portclip_clip_poly: exceeded MAX_OUTPUT_PTS\n");
+#endif
+               // we cross from in to out or vice versa here
+               pts[num_pts].p = &clip_results[clip_num_pts++];
+               clip2d_compute_intersection(num_pts, src[k], src[j], clip_pass);
+               dest[m] = num_pts++;
+#ifdef DBG_ON
+               if (CP_SX(dest[m]) < fix_make(-1,0))
+                  Error(1, "portclip_clip_poly: Bad pt in list 4!\n");
+#endif
+               ++m;
+            }
+            k = j;
+         }
+         if (m == 0) return 0;
+#ifdef DBG_ON
+         if (m > MAX_OUTPUT_PTS)
+            Error(1, "portclip_clip_poly: exceeded MAX_OUTPUT_PTS #2\n");
+#endif
+         n = m;
+         temp = src; src = dest; dest = temp;
+
+            // resum the points if there seems to be more clipping to do
+         if (c_or > i) {
+            c_or = 0;
+            c_and = 0xff;
+            for (j=0; j < n; ++j) {
+               code = CP_CODE(src[j]);
+               c_and &= code;
+               c_or  |= code;
+            }
+            if (c_and) return 0;
+#ifdef DBG_ON
+#ifndef WIN32 // allow for floating pt slop
+            if (c_or & i)        // did we clip it ok?
+               Error(1, "portclip_clip_poly: clip %x failed\n", i);
+            if (c_or & (i - 1))  // did we screw up old clipping?
+               Error(1, "portclip_clip_poly: invalid clip %x:%x\n", i, c_or);
+#endif
+#endif
+         }
+      }
+      i <<= 1;
+      ++clip_pass;
+   }
+
+   // copy points from src into temp output array
+   for (i=0; i < n; ++i) {
+#ifdef DBG_ON
+      if (src[i] >= num_pts)
+         Error(1, "portclip_clip_poly: Bad pt in list 2!\n");
+      if (CP_SX(src[i]) < fix_make(-1,0))
+         Error(1, "portclip_clip_poly: Bad pt in list 3!\n");
+#endif
+      poly_out[i] = pts[src[i]].p;      
+   }
+
+   *q = poly_out;
+
+   return n;
+}
+// $Header: r:/t2repos/thief2/src/portal/merge.c,v 1.17 2000/02/19 13:18:33 toml Exp $
+
+// Portal database optimizer
+
+// This is a standalone program because I wanted it
+// to link faster, so it works under DOS, which means
+// it's standalone.
+
+// It uses the world-rep database format, so it includes
+// that, but it doesn't use the normal world-rep global
+// variables and such, so it doesn't link with anything
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <lg.h>
+
+#include <matrix.h>
+#include <math.h>
+#include <wr.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+#define EXACT_MATCH
+
+int allocations;
+
+void MyFree(void *p)
+{
+   --allocations;
+   Free(p);
+}
+
+#ifdef Free
+#undef Free
+#endif
+
+#define Free  MyFree
+
+bool debug;
+
+#define VALIDATE_SIDEDNESS
+
+//////////////////    STATIC LIMITS    //////////////////////
+
+#define MAX_GLOBAL_POINTS     (65536*2)  // 64*2*16K == 2^(6+1+4+10) = 2^21
+#define MAX_GLOBAL_PLANES     16384
+#define MAX_GLOBAL_RENDER     8000
+#define POINT_HASH            16
+
+//////////////////    BEHINDEDNESS     //////////////////////
+
+enum {
+  COPLANAR=0,
+  INSIDE=1,
+  OUTSIDE=2,
+  CROSSES=3
+};
+
+typedef int Side;
+
+// note CROSSES == INSIDE|OUTSIDE!!!
+
+
+int max_alloc;
+
+///////////////////   MEMORY MANAGEMENT   //////////////////////
+
+void *MallocSafe(size_t sz)
+{
+   void *p = Malloc(sz);
+   if (sz == 0) {
+      printf("Allocated 0.\n");
+      return 0;
+   }
+   if (!p) Error(1, "Out of memory allocating %d.\n", sz);
+   if (++allocations > max_alloc) max_alloc = allocations;
+   memset(p, 0xAA, sz);
+   return p;
+}
+
+void *MallocCounted(size_t sz)
+{
+   void *p = MallocSafe(sz + sizeof(int));
+   * (int *) p = 0;
+   return (int *) p + 1;
+}
+
+#define COUNT(p)  (((int *) p) - 1)
+
+int FreeCounted(void *p)
+{
+   Free(COUNT(p));
+   return 0;
+}
+
+int AddCount(void *p)
+{
+   * COUNT(p) += 1;
+   return 0;
+}
+
+int SubCount(void *p, char *func)
+{
+   int *q = COUNT(p);
+   if ((*q -= 1) <= 0) {
+      if (*q < 0)
+         Error(1, "RefCount decremented below 0: %s!\n", func); 
+      return 1;
+   }
+   return 0;
+}
+
+int SubCountFree(void *p, char *name)
+{
+   if (SubCount(p, name))
+      FreeCounted(p);
+   return 0;
+}
+
+int RefCount(void *p)
+{
+   return *COUNT(p);
+}
+
+  // macros to update ref counts while setting fields
+
+#define SET_PTR(x,y)    (AddCount(y), (x)=(y))
+#define CHANGE_PTR(x,y,name) (AddCount(y), SubCountFree(x,name), (x)=(y))
+#define CLEAR_PTR(x,y,name)  (SubCountFree(x,name), (x)=y)
+
+  // macros to update ref counts & call a cleanup func
+
+#define CHANGE_PTR_CLEANUP(x,y,func,name) \
+    (AddCount(y), (SubCount(x,name) ? func(x) : 0), (x) = (y))
+
+#define CLEAR_PTR_CLEANUP(x,y,func,name) \
+    (SubCount(x,name) && func(x), (x) = y)
+
+///////   Build something I don't know how big it is yet  //////
+
+typedef struct {
+   void *memory;
+   uint allocated_size;
+   uint current_size;
+} DynamicArray;
+
+DynamicArray *MallocArray(int size)
+{
+   DynamicArray *a = MallocSafe(sizeof(DynamicArray));
+   a->memory = MallocSafe(size);
+   a->allocated_size = 0;
+   a->current_size = 0;
+   return a;
+}
+
+void FreeArray(DynamicArray *a)
+{
+   Free(a->memory);
+   Free(a);
+}
+
+DynamicArray *GetArray(void)
+{
+   return MallocArray(32);
+}
+
+void SetArray(DynamicArray *a, int min)
+{
+   if (min > a->allocated_size) {
+      int new_size = 2*a->current_size;
+      if (new_size < min)
+         new_size = min;
+
+      a->memory = Realloc(a->memory, new_size);
+      if (!a->memory) Error(1, "Out of memory.\n");
+   }
+}
+
+void AddArray(DynamicArray *a, int n)
+{
+   SetArray(a, a->current_size + n);
+}
+
+void AppendArray(DynamicArray *a, int n, void *p)
+{
+   AddArray(a, n);
+   memcpy((char *) a->memory + a->current_size, p, n);
+   a->current_size += n;
+}
+
+void *FreezeArray(DynamicArray *a)
+{
+   void *p = MallocSafe(a->current_size);
+   memcpy(p, a->memory, a->current_size);
+   FreeArray(a);   
+   return p;
+}
+
+void *FreezeArrayCounted(DynamicArray *a)
+{
+   void *p = MallocCounted(a->current_size);
+   memcpy(p, a->memory, a->current_size);
+   FreeArray(a);   
+   return p;
+}
+
+///////////////////  FLOAT MATH STUFF  ////////////////////////
+
+#define PLANE_COMP_EPSILON   0.00001
+#define PLANE_CONST_EPSILON  0.0005
+
+
+double PLANE_EPSILON =       0.001;
+
+#define REAL_EPSILON         0.0001
+#define ZERO_EPSILON         0.0001
+#define CONTINUOUS_EPSILON   0.001
+#define POINT_EPSILON        0.001
+
+#define FIXUP_EPSILON        0.0005
+
+
+#define GE_ONE(x)     ((x) >= (1 - REAL_EPSILON))
+#define IS_ZERO(x)    (fabs(x) < ZERO_EPSILON)
+#define FLOAT_EQ(x,y) IS_ZERO((x)-(y))
+#define FLOAT_EQ_EPS(x,y,e) (fabs((x)-(y)) < (e))
+
+#define GE_ONE_DOT(x) ((x) >= (1 - PLANE_COMP_EPSILON))
+
+bool eq_vec(mxs_vector *a, mxs_vector *b)
+{
+   return FLOAT_EQ(a->x,b->x) && FLOAT_EQ(a->y,b->y) && FLOAT_EQ(a->z,b->z);
+}
+
+void cleanup(mxs_real *val)
+{
+   if (floor(*val-FIXUP_EPSILON) != floor(*val)) {
+      *val = floor(*val);
+   } else if (floor(*val+FIXUP_EPSILON) != floor(*val)) {
+      *val = floor(*val+FIXUP_EPSILON);
+   }
+}
+
+///////////////////   PLANE OPERATIONS   //////////////////////
+
+enum {
+   NORM_X=0,
+   NORM_Y=1,
+   NORM_Z=2,
+   NON_AXIAL=3
+};
+
+#define IS_AXIAL(x)   ((x) <= NORM_Z)
+
+typedef struct st_RenderPoly RenderPoly;
+
+typedef struct
+{
+   int plane_type;
+   mxs_vector  norm;
+   mxs_real    d;
+   RenderPoly *data;        // collect per-plane data temporarily
+} mPlane;
+
+mPlane plane[MAX_GLOBAL_PLANES];
+int num_planes;
+
+typedef int Plane;
+
+bool reversed;
+
+mPlane *createPlane(int id, mxs_vector *normal, mxs_real d)
+{
+   mPlane *p = &plane[id];
+
+   p->norm = *normal;
+   p->d = d;
+
+#ifdef EXACT_MATCH
+   if (normal->x == 1 || normal->x == -1) {
+#else
+   if (GE_ONE(fabs(normal->x))) {
+#endif
+      p->plane_type = NORM_X;
+      p->norm.x = 1;
+      p->norm.y = 0;
+      p->norm.z = 0;
+      reversed = (normal->x < 0);
+      if (reversed) p->d = -p->d;
+#ifdef EXACT_MATCH
+   } else if (normal->y == 1 || normal->y == -1) {
+#else
+   } else if (GE_ONE(fabs(normal->y))) {
+#endif
+      p->plane_type = NORM_Y;
+      p->norm.x = 0;
+      p->norm.y = 1;
+      p->norm.z = 0;
+      reversed = (normal->y < 0);
+      if (reversed) p->d = -p->d;
+#ifdef EXACT_MATCH
+   } else if (normal->z == 1 || normal->z == -1) {
+#else
+   } else if (GE_ONE(fabs(normal->z))) {
+#endif
+      p->plane_type = NORM_Z;
+      p->norm.x = 0;
+      p->norm.y = 0;
+      p->norm.z = 1;
+      reversed = (normal->z < 0);
+      if (reversed) p->d = -p->d;
+   } else {
+      p->plane_type = NON_AXIAL;
+      reversed = FALSE;
+   }
+
+   return p;
+}
+
+  // find a matching plane
+Plane findPlane(mxs_vector *normal, mxs_real d)
+{
+   int i;
+   mPlane *p = plane;
+   mxs_real res;
+
+#ifndef EXACT_MATCH
+   cleanup(&normal->x);
+   cleanup(&normal->y);
+   cleanup(&normal->z);
+   cleanup(&d);
+#endif
+
+   for(i=0; i < num_planes; ++i,++p) {
+#ifdef EXACT_MATCH
+      if (d == p->d && normal->x == p->norm.x
+             && normal->y == p->norm.y && normal->z == p->norm.z)
+         res = 1;  // dot product
+      else if (d == -p->d && normal->x == -p->norm.x
+             && normal->y == -p->norm.y && normal->z == -p->norm.z)
+         res = -1;  // dot product
+      else
+         continue;
+#else
+      if (! FLOAT_EQ_EPS(fabs(d), fabs(p->d), PLANE_CONST_EPSILON))
+         continue;
+      res = mx_dot_vec(normal, &p->norm);
+      if (!GE_ONE_DOT(fabs(res)))
+         continue;
+
+      // now, check that the sign swap is right
+      if (res > 0) {
+         if (!FLOAT_EQ_EPS(d, p->d, PLANE_CONST_EPSILON))
+            continue;
+      } else {
+         if (!FLOAT_EQ_EPS(d, -p->d, PLANE_CONST_EPSILON))
+            continue;
+      }
+#endif
+
+      reversed = (res < 0);
+
+      // this is a match (but it may be facing backwards)
+      return i;
+   }
+   if (num_planes == MAX_GLOBAL_PLANES)
+      Error(1, "Increase MAX_GLOBAL_PLANES\n");
+
+   // make a new one!
+   createPlane(num_planes++, normal, d);
+   return i;
+}
+
+void dump_plane(Plane p)
+{
+   if (p < 0 || p > num_planes)
+      printf("Invalid plane %d\n", p);
+   else
+      printf("Plane %d: %g %g %g %g\n", p,
+         plane[p].norm.x, plane[p].norm.y, plane[p].norm.z,
+         plane[p].d);
+}
+
+typedef struct {
+   int num_planes;
+   Plane planes[1];
+} PlaneArray;
+
+PlaneArray *makePlaneArray(int max_elems)
+{
+   PlaneArray *pa = MallocSafe(sizeof(PlaneArray) + max_elems*sizeof(Plane));
+   pa->num_planes = 0;
+   return pa;
+}
+
+void freePlaneArray(PlaneArray *pa)
+{
+   Free(pa);
+}
+
+///////////////////   VERTEX OPERATIONS   //////////////////////
+
+FILE *out_file;
+
+typedef int Point;
+Point hash[POINT_HASH][POINT_HASH][POINT_HASH];
+
+typedef struct {
+   mxs_vector pt;
+   Point next_hash;
+} sPoint;
+
+sPoint point[MAX_GLOBAL_POINTS];
+int num_point = 0;
+
+#define PT(x)   (&point[x].pt)
+int hash_base[3], hash_size[3];
+
+mxs_real FLOOR(mxs_real x)
+{
+   mxs_real y = floor(x + POINT_EPSILON);
+   if (y > x) return y;
+   return floor(x);
+}
+
+void initPointHash(mxs_vector *minv, mxs_vector *maxv)
+{
+   int i,j,k;
+
+   mxs_vector mn,mx;
+
+   mn.x = FLOOR(minv->x);
+   mn.y = FLOOR(minv->y);
+   mn.z = FLOOR(minv->z);
+
+   mx.x = FLOOR(maxv->x);
+   mx.y = FLOOR(maxv->y);
+   mx.z = FLOOR(maxv->z);
+
+   hash_base[0] = mn.x;
+   hash_base[1] = mn.y;
+   hash_base[2] = mn.z;
+
+   hash_size[0] = (mx.x - mn.x) / (POINT_HASH) + 1;
+   hash_size[1] = (mx.y - mn.y) / (POINT_HASH) + 1;
+   hash_size[2] = (mx.z - mn.z) / (POINT_HASH) + 1;
+
+   for (i=0; i < POINT_HASH; ++i)
+      for (j=0; j < POINT_HASH; ++j)
+         for (k=0; k < POINT_HASH; ++k)
+            hash[k][j][i] = -1;             
+
+   num_point = 0;
+}
+
+#define MP(x) ((int) (65536.0 * (x)))
+
+Point findPoint(mxs_vector *pt)
+{
+   int i,j,k;
+   Point *p, q;
+
+#if 0
+   if (FLOOR(pt->x) > pt->x) pt->x = FLOOR(pt->x);
+   if (FLOOR(pt->y) > pt->y) pt->y = FLOOR(pt->y);
+   if (FLOOR(pt->z) > pt->z) pt->z = FLOOR(pt->z);
+#endif
+
+   i = (FLOOR(pt->x) - hash_base[0]) / hash_size[0];
+   j = (FLOOR(pt->y) - hash_base[1]) / hash_size[1];
+   k = (FLOOR(pt->z) - hash_base[2]) / hash_size[2];
+
+   if (i < 0 || j < 0 || k < 0 ||
+        i >= POINT_HASH || j >= POINT_HASH || k >= POINT_HASH) {
+      printf("Hash base: %d %d %d\n", hash_base[0], hash_base[1], hash_base[2]);
+      printf("Hash size: %d %d %d\n", hash_size[0], hash_size[1], hash_size[2]);
+      Error(1, "Invalid hash %d %d %d for %f %f %f\n", i,j,k,
+              MP(pt->x), MP(pt->y), MP(pt->z));
+      
+   }
+
+   p = &hash[k][j][i];
+
+   while ( (q = *p) != -1) {
+      // see if we're q
+      if (FLOAT_EQ_EPS(pt->x, PT(q)->x, POINT_EPSILON)
+          && FLOAT_EQ_EPS(pt->y, PT(q)->y, POINT_EPSILON)
+          && FLOAT_EQ_EPS(pt->z, PT(q)->z, POINT_EPSILON))
+         return q;
+      p = &point[q].next_hash;
+   }
+
+   if (num_point == MAX_GLOBAL_POINTS)
+      Error(1, "Increase MAX_GLOBAL_POINTS");
+
+   point[num_point].next_hash = *p;
+   point[num_point].pt = *pt;
+
+   *p = num_point;
+
+   return num_point++;
+}
+
+void dump_point(Point p)
+{
+   if (p < 0 || p >= num_point)
+      printf("Invalid point %d\n", p);
+   else
+      printf("%d: [%g %g %g]", (int) p, PT(p)->x, PT(p)->y, PT(p)->z);
+}
+
+void emit_point(Point p)
+{
+   fprintf(out_file, "%g %g %g ", PT(p)->x, PT(p)->y, PT(p)->z);
+}
+
+////////////////   VERTEX-PLANE COMPARISON   ////////////////
+
+#if 0
+4  We will try caching vertex-plane comparisons.
+  In this case, when ref counts go to 0 we won't free
+  them.  (Or rather, we'll increment the ref count by
+  one while it's in the shared system.)
+#endif
+
+Side pointPlaneCompare(Point a, Plane p)
+{
+   mPlane *q = &plane[p];
+   mxs_vector *v = PT(a);
+
+   if (IS_AXIAL(q->plane_type)) {
+      mxs_real res = v->el[q->plane_type] + q->d;
+      if (res > PLANE_EPSILON) return INSIDE;
+      if (res < -PLANE_EPSILON) return OUTSIDE;
+      return COPLANAR;
+   } else {
+      mxs_real res = mx_dot_vec(v, &q->norm) + q->d;
+      if (res > PLANE_EPSILON) return INSIDE;
+      if (res < -PLANE_EPSILON) return OUTSIDE;
+      return COPLANAR;
+   }
+}
+
+////////////////        POLYGONS           ////////////////
+
+typedef struct
+{
+   Plane p;
+   int inside;
+   int num_verts;
+   Point vert[1];
+} Polygon;
+
+Polygon *allocatePolygon(int num_v)
+{
+   Polygon *p = MallocCounted(sizeof(Polygon) + num_v * sizeof(Point));
+   p->num_verts = num_v;
+   return p;
+}
+
+typedef void TempPoly;
+
+TempPoly *dynamicPolygon(void)
+{
+   DynamicArray *a = GetArray();
+   Plane p = 0;
+   int n=0, inside=0;
+
+   AppendArray(a, sizeof(p), &p);
+   AppendArray(a, sizeof(inside), &inside);
+   AppendArray(a, sizeof(n), &n);
+
+   return a;
+}
+
+void AddVertexToPolygon(TempPoly *p, Point v)
+{
+   AppendArray((DynamicArray *) p, sizeof(v), &v);
+     // have an unparseable line of code
+   ((Polygon *) ((DynamicArray *) p)->memory)->num_verts += 1;
+}   
+
+Polygon *freezePolygon(TempPoly *t)
+{
+   return (Polygon *) FreezeArrayCounted(t);
+}
+
+void dump_polygon(Polygon *a)
+{
+   printf("Polygon: %d vertices  plane %d\n", a->num_verts, a->p);
+   if (a->num_verts < 20) {
+      int i;
+      for (i=0; i < a->num_verts; ++i)
+          dump_point(a->vert[i]);
+      printf("\n");
+   }
+}
+
+void emit_polygon(Polygon *a)
+{
+   int i;
+   fprintf(out_file, "%d ", a->num_verts);
+   for (i=0; i < a->num_verts; ++i)
+       emit_point(a->vert[i]);
+   fprintf(out_file, "\n");
+}
+
+////////////////    ARRAYS OF POINTERS     ////////////////
+
+//  A generic shared-thingy abstraction like the above.
+//  We'll use this for collections of polygons, collections
+//  of cells, etc.
+
+typedef struct
+{
+   int num_elems;
+   void *data[1];
+} PtrArray;
+
+PtrArray *allocatePtrArray(int num_elems)
+{
+   PtrArray *p = MallocCounted(sizeof(PtrArray) +
+                      (num_elems-1) * sizeof(void *));
+   p->num_elems = num_elems;
+   return p;
+}
+
+typedef void TempPtrArray;
+
+TempPtrArray *dynamicPtrArray(void)
+{
+   DynamicArray *a = GetArray();
+   int n=0;
+
+   AppendArray(a, sizeof(n), &n);
+   return a;
+}
+
+void AddPtrToArray(TempPtrArray *p, void *q)
+{
+   AppendArray((DynamicArray *) p, sizeof(q), &q);
+   ((PtrArray *) ((DynamicArray *) p)->memory)->num_elems += 1;
+}   
+
+void AddPtrCountedToArray(TempPtrArray *p, void *q)
+{
+   AppendArray((DynamicArray *) p, sizeof(q), &q);
+   ((PtrArray *) ((DynamicArray *) p)->memory)->num_elems += 1;
+   AddCount(q);
+}   
+
+PtrArray *freezePtrArray(TempPtrArray *t)
+{
+   return (PtrArray *) FreezeArrayCounted(t);
+}
+
+////////////////     RENDERING INFO        ////////////////
+
+typedef struct {
+   mxs_vector u,v;           // 24
+   mxs_real u_base, v_base;  // u&v values at projection of origin on plane
+   uchar texture_id;
+} RenderData;
+
+RenderData render[MAX_GLOBAL_RENDER];
+int num_render;
+
+void emit_render_aspects(void)
+{
+   int i;
+   fprintf(out_file, "%d\n", num_render);
+   for (i=0; i < num_render; ++i) {
+      fprintf(out_file, "%g %g %g  %g %g %g  %g %g  %d\n",
+           render[i].u.x, render[i].u.y, render[i].u.z,
+           render[i].v.x, render[i].v.y, render[i].v.z,
+           render[i].u_base, render[i].v_base, render[i].texture_id);
+   }
+   fprintf(out_file, "\n\n");
+}
+
+#define UV_EPSILON 0.05
+#define UV_ROUND   (UV_EPSILON/2)
+
+int FindRenderCore(uchar tex, mxs_vector *u, mxs_vector *v,
+                 mxs_real u_base, mxs_real v_base)
+{
+   int i;
+   for (i=0; i < num_render; ++i) {
+       if (render[i].texture_id == tex &&
+#if 1
+           eq_vec(u, &render[i].u) &&
+           eq_vec(v, &render[i].v) &&
+           FLOAT_EQ_EPS(u_base, render[i].u_base, UV_EPSILON) &&
+           FLOAT_EQ_EPS(v_base, render[i].v_base, UV_EPSILON))
+#else
+           1)
+#endif
+          return i;
+   }
+
+   if (i == MAX_GLOBAL_RENDER)
+      Error(1, "Increase MAX_GLOBAL_RENDER\n");
+
+   ++num_render;
+
+   render[i].u = *u;
+   render[i].v = *v;
+   render[i].u_base = u_base;
+   render[i].v_base = v_base;   
+   render[i].texture_id = tex;
+
+   return i;
+}
+
+//  FindRender which works from worldrep--
+// Convert u_base & v_base from the meaning in the
+// worldrep to the meaning above
+
+int FindRender(uchar tex, mxs_vector *u, mxs_vector *v,
+                 Plane p, ushort u_base, ushort v_base, mxs_vector *anchor)
+{
+   // project origin onto plane
+   mxs_vector pt;
+   mxs_real nu,nv, det, f;
+
+   mx_scale_vec(&pt, &plane[p].norm, -plane[p].d);
+
+   // now, the value of u&v at the anchor is u_base,v_base,
+   // so origin of (u,v) is
+   //      origin = anchor - u_base*u - v_base*v
+   // now, we want the (u,v) value at our new point pt
+   //   origin + nu * u + nv * v = pt
+   // or  anchor + (nu-u_base)*u + (nv-v_base)*v = pt
+   // so let tu = nu-u_base, tv = nv-v_base, and just
+   // solve for that:
+   //     anchor + tu * u + tv * v = pt
+
+   // This is three equations and only two variables, but
+   // I don't know of any easier way to solve it than to
+   // use Cramer's rule as if there were 3 variables; i.e.
+   // we introduce anchor * w, where we know w will turn
+   // out to be 1.
+
+   det = anchor->x * (u->y * v->z - u->z * v->y) +
+         anchor->y * (u->z * v->x - u->x * v->z) +
+         anchor->z * (u->x * v->y - u->y * v->x);
+
+   det = 1 / det;
+
+   nu = anchor->x * (pt.y * v->z - pt.z * v->y) +
+        anchor->y * (pt.z * v->x - pt.x * v->z) +
+        anchor->z * (pt.x * v->y - pt.y * v->x);
+
+   nv = anchor->x * (u->y * pt.z - u->z * pt.y) +
+        anchor->y * (u->z * pt.x - u->x * pt.z) +
+        anchor->z * (u->x * pt.y - u->y * pt.x);
+
+   nu = nu * det + u_base/(16*256.0);
+   nv = nv * det + v_base/(16*256.0);
+
+   // now we want to extract a number 0..1 from these
+   f = floor(nu + UV_ROUND);
+   if (f > nu)  // did we round up?
+      nu = 0;
+   else
+      nu = nu - floor(nu);
+
+   f = floor(nv + UV_ROUND);
+   if (f > nv)
+      nv = 0;
+   else
+      nv = nv - floor(nv);
+
+   cleanup(&nu);
+   cleanup(&nv);
+
+   return FindRenderCore(tex, u, v, nu, nv);
+}
+
+struct st_RenderPoly
+{
+   int rend_info;
+   int on_boundary;   // have we found a BSP cutting plane coplanar to this
+   Polygon *poly;
+   RenderPoly *next;
+};
+
+static void bad(char *s)
+{
+   printf("ERROR: Polygon list (%s) had cycle\n");
+   exit(1);
+}
+
+void validatePolyList(RenderPoly *db, char *caller)
+{
+   RenderPoly *cur;
+
+   cur = db->next;
+   while (cur != NULL) {
+      if (cur == db)
+         bad(caller);
+      cur = cur->next;
+      if (cur == NULL) return;
+      if (cur == db)
+         bad(caller);
+      cur = cur->next;
+      if (cur == db)
+         bad(caller);
+      db = db->next;
+   }
+   return;
+}
+
+#define FreePoly   FreeCounted
+
+int FreeRenderPoly(RenderPoly *rp)
+{
+   FreePoly(rp->poly);
+   Free(rp);
+   return 0;
+}
+
+RenderPoly *makeRenderPoly(Polygon *p, RenderPoly *src)
+{
+   RenderPoly *rp = MallocSafe(sizeof(RenderPoly));
+   rp->poly = p;
+   rp->rend_info = src->rend_info;
+   rp->on_boundary = src->on_boundary;
+   return rp;
+}
+
+void emit_renderpoly(RenderPoly *p)
+{
+   fprintf(out_file, "%d ", p->rend_info);
+   emit_polygon(p->poly);
+}
+
+#if 0
+   We needs lists of things.  We could either make
+  linked list, or big arrays.  Since the linked lists
+  need to be built outside of the data structures themselves,
+  they'll require 8 bytes/entry, compared to 2-4 for arrays.
+  So we'll assume we're using arrays.  If we null terminate
+  the list regardless and provide an iterator function, we
+  might be able to hide what decision this is.  We call
+  the "head" of the list abstraction a "node".  These things
+  should be ref counted.
+
+   A cell consists of a pointer to a node of portals.
+
+   A portal is a pointer to a polygon, a pointer to the
+  matching portal, and a pointer to the matching portal's
+  cell.  (Watch for problems with sharing the maching
+  portal or cell.)
+
+   An output portal is a pointer to a polygon and a pointer
+  to a matching output portal.
+
+   An output portal collection consists of a node of output portals.
+
+   A cell database consists of a node of cells.
+#endif
+
+///////////////////////////////////////////////////////////////
+
+//   Well, after seven hundred lines of data structures,
+//   maybe it's time to actually do something interesting.
+
+// The next two functions are the only interesting functions
+// in the entire system
+
+//   ONE:  Polygon-plane comparison
+
+// Actually, we have three versions of the first function. 
+// They move from easy...hard to understand, and slow...fast
+
+Side polygonPlaneCompareSlow(Polygon *p, Plane q)
+{
+   Side side = COPLANAR;
+   int i, n = p->num_verts;
+   if (p->p == q)
+      return p->inside ? INSIDE : OUTSIDE;
+
+   for (i=0; i < n; ++i)
+      side |= pointPlaneCompare(p->vert[i], q);
+   return side;
+}
+
+Side polygonPlaneCompareMiddlin(Polygon *p, Plane q)
+{
+   if (IS_AXIAL(plane[q].plane_type)) {
+      int index = plane[q].plane_type;
+      mxs_real res;
+      double inside_val = -plane[q].d + PLANE_EPSILON;
+      double outside_val = -plane[q].d - PLANE_EPSILON;
+      int n = p->num_verts;
+      Point *a = p->vert;
+      Side side=COPLANAR;
+      for (; n; --n,++a) {
+         res = PT(*a)->el[index];
+         if (res > inside_val) side |= INSIDE;
+         if (res < outside_val) side |= OUTSIDE;
+      }
+      return side;
+   } else
+      return polygonPlaneCompareSlow(p, q);
+}
+
+Side polygonPlaneCompareFast(Polygon *p, Plane q)
+{
+   if (IS_AXIAL(plane[q].plane_type)) {
+      int index = plane[q].plane_type;
+      double res, inside_val = -plane[q].d + PLANE_EPSILON;
+      double outside_val = -plane[q].d - PLANE_EPSILON;
+      int n = p->num_verts;
+      Point *a = p->vert;
+
+        // here's one that checks for the early out of CROSSES,
+        // and cuts out half of the comparisons once it's found
+        // a point not on the plane.  Compare this to Quake's solidbsp.c
+        // attempt at this, which only early outs on CROSSES
+
+        // Note that in general they handle this code faster because
+        // they don't indirect to their vertices; this means the
+        // vertices are right there in the poly, which allows for
+        // a cool pointer arithmetic hack, so they don't have to
+        // constantly offset by [index]...
+
+        // this loop runs while all points are coplanar
+      for (; n; --n,++a) {
+         res = PT(*a)->el[index];
+         if (res > inside_val) goto inside_loop;
+         if (res < outside_val) goto outside_loop;
+      }
+      return COPLANAR;
+
+     inside_loop: --n,++a;
+      for (; n; --n,++a) {
+         res = PT(*a)->el[index];
+         if (res < outside_val) return CROSSES;
+      }
+      return INSIDE;
+
+     outside_loop: --n,++a;
+      for (; n; --n,++a) {
+         res = PT(*a)->el[index];
+         if (res > inside_val) return CROSSES;
+      }
+      return OUTSIDE;
+
+   } else
+      return polygonPlaneCompareSlow(p, q);
+}
+
+//  Decide which one we'll actually use!
+
+#define  polygonPlaneCompare    polygonPlaneCompareFast
+
+
+//   TWO:  Polygon-plane splitting
+
+//  Take a polygon and a plane.  Split the polygon
+// by the plane, returning two new polygons (one of
+// which can be empty).
+
+//  Go check out the first polygon clipper in csg.c,
+// which uses 9 explicit cases to deal with everything.
+// It's a "one-pass" clipper--it just iterates over the
+// points and does everything right the first time.
+
+//  The alternative, which I discovered in Quake's csg4.c,
+// is to use two passes.  The first pass computes all the
+// information about each vertex once.  (This would all
+// get computed during the one pass of the other algorithm.)
+// It can then immediately deal with certain cases, such
+// as the polygon being on one side of the plane, but having
+// a colinear edge, which cause a mess in my stuff.
+
+//  Also, my old stuff is extra messy since it wants to
+// return the new intermediate portal by inferring it from
+// the coplanar edges and edges generated during splitting.
+// This is a mess because then the edges aren't ordered,
+// which is why I used unordered edges in my portalizer,
+// and in the first bsp it does a little build-the-sorted-list
+// step.  In Quake's portals.c, he uses a different approach:
+// the newly generated portal is computed independent of
+// clipping the other planes--just take the split plane, extend
+// it to "infinity", and then clip it by the planes of the
+// polyhedron.
+
+#define MAX_POLY_POINT 1024
+
+mxs_real pt_dist[MAX_POLY_POINT];
+uchar pt_side[MAX_POLY_POINT];
+
+  // if plane is non-zero, then if the polygon is coplanar,
+  // it goes into <plane>.  otherwise, it goes into whichever
+  // side is appropriate
+bool PartitionPolygonByPlane(Polygon *a, Plane p,
+       Polygon **in, Polygon **out, Polygon **planar)
+{
+   int i,n = a->num_verts, j;
+   int c_in, c_out, c_planar;
+   mxs_vector *norm = &plane[p].norm;
+   mxs_real d = plane[p].d;
+#ifdef VALIDATE_SIDEDNESS
+   Side side = polygonPlaneCompare(a, p);
+#endif
+
+   if (n > MAX_POLY_POINT)
+      Error(1, "PartitionPolygonByPlane: %d > MAX_POLY_POINT.\n", n);
+
+   *in = *out = 0;
+
+     // special case if coplanar
+   if (a->p == p) {
+      if (planar) {
+         *planar = a;
+         return TRUE;
+      }
+
+      if (a->inside)
+         *in = a;
+      else
+         *out = a;
+      return TRUE;
+   }
+
+   c_in = c_out = c_planar = 0;
+
+   for (i=0; i < n; ++i) {
+      mxs_vector *q = PT(a->vert[i]);
+      mxs_real dist = mx_dot_vec(q, norm) + d;
+
+      pt_dist[i] = dist;
+
+      if (dist > PLANE_EPSILON) { pt_side[i] = INSIDE; ++c_in; }
+      else if (dist < -PLANE_EPSILON) { pt_side[i] = OUTSIDE; ++c_out; }
+      else { pt_side[i] = COPLANAR; ++c_planar; }
+   }
+
+#ifdef VALIDATE_SIDEDNESS
+   if (side == COPLANAR && (c_in || c_out))
+      Error(1, "Expected coplanar and got inside or outside.\n");
+   if (side == INSIDE && c_out)
+      Error(1, "Expected inside and got outside.\n");
+   if (side == OUTSIDE && c_in)
+      Error(1, "Expected outside and got inside.\n");
+//printf("%s ", "IN\0\0OUT\0CROSS"+4*(side-1));
+#endif
+
+   if (!c_in && !c_out) {
+      printf("WARNING: Didn't grab coplanar case!\n");
+      if (planar) {
+         *planar = a;
+         return TRUE;
+      }
+
+      if (a->inside)
+         *in = a;
+      else
+         *out = a;
+      return TRUE;
+   }
+
+   if (!c_out) {
+      *in = a;
+      return FALSE;
+   }
+   if (!c_in) {
+      *out = a;
+      return FALSE;
+   }
+
+   // ok, now it's well and truely split
+
+   {
+      TempPoly *in_p = dynamicPolygon();
+      TempPoly *out_p = dynamicPolygon();
+
+      j = n-1;
+      for (i=0; i < n; ++i) {
+         if (pt_side[i] != pt_side[j]
+                && pt_side[i] != COPLANAR
+                && pt_side[j] != COPLANAR) {
+              // generate a new intermediate point
+            Point z;
+            mxs_vector loc, *p1 = PT(a->vert[i]), *p2 = PT(a->vert[j]);
+            mxs_real r;
+            int k;
+
+              //   a + (b-a)*t = 0
+              //   (b-a)*t = -a
+              //   t = -a / (b-a)
+            r = -pt_dist[i] / (pt_dist[j] - pt_dist[i]);
+            for (k=0; k < 3; ++k) {
+               if (plane[p].norm.el[k] == 1)
+                  loc.el[k] = -plane[p].d;
+               else
+                  loc.el[k] = p1->el[k] + r * (p2->el[k] - p1->el[k]);
+            }
+            z = findPoint(&loc);
+            AddVertexToPolygon(in_p, z);
+            AddVertexToPolygon(out_p, z);
+         }
+         if (pt_side[i] == COPLANAR) {
+            AddVertexToPolygon(in_p, a->vert[i]);
+            AddVertexToPolygon(out_p, a->vert[i]);
+         } else if (pt_side[i] == INSIDE)
+            AddVertexToPolygon(in_p, a->vert[i]);
+         else
+            AddVertexToPolygon(out_p, a->vert[i]);
+        
+         j = i;
+      }
+
+      *in = freezePolygon(in_p);
+      *out = freezePolygon(out_p);
+
+      (*in)->p = (*out)->p = a->p;
+      (*in)->inside = (*out)->inside = a->inside;
+
+      if (!(*in)->num_verts || !(*out)->num_verts)
+         Error(1, "Bad split.\n");
+   }
+   return FALSE;
+}
+
+void PartitionRenderPolyByPlane(RenderPoly *rp, Plane p,
+       RenderPoly **in, RenderPoly **out, RenderPoly **plane)
+{
+   // partition the polygon itself
+   Polygon *in_p, *out_p, *plane_p=0;
+
+   if (plane) *plane = 0;
+
+   if (PartitionPolygonByPlane(rp->poly, p, &in_p, &out_p, plane?&plane_p:0)) {
+         // if coplanar, mark it as being on a boundary already
+      rp->on_boundary = TRUE;
+   }
+
+   if (plane && plane_p) {
+      if (plane_p != rp->poly)
+         Error(1, "A coplanar plane wasn't the original!\n");
+      *in = 0;
+      *out = 0;
+      return;
+   }
+
+   if (in_p == rp->poly) {
+//printf("in ");
+      *in = rp;
+      *out = 0;
+      return;
+   }
+
+   if (out_p == rp->poly) {
+//printf("out ");
+      *out = rp;
+      *in = 0;
+      return;
+   }
+
+   if (!in_p || !out_p)
+      Error(1, "Split polygon into one fragment different from original\n");
+
+//printf("split ");
+   *in  = makeRenderPoly(in_p, rp);
+   *out = makeRenderPoly(out_p, rp);
+}
+
+//////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////
+
+// a partition is a linked list of plane ptrs each with
+// a linked list of RenderPolys
+
+typedef struct st_PlanePartition PlanePartition;
+struct st_PlanePartition
+{
+   int plane;
+   RenderPoly *head;
+   PlanePartition *next;
+};
+
+PlanePartition *allocPlanePartition(void)
+{
+   return MallocSafe(sizeof(PlanePartition));
+}
+
+void FreePlanePartition(PlanePartition *db)
+{
+   RenderPoly *cur;
+   while (db->head) {
+      cur = db->head;
+      db->head = cur->next;
+      FreeRenderPoly(cur);
+   }
+   Free(db);
+}
+
+void FreePlanePartitionDatabase(PlanePartition *db)
+{
+   PlanePartition *next;
+   while (db) {
+      next = db->next;
+      FreePlanePartition(db);
+      db = next;
+   }
+}
+
+// split a single plane
+void SplitPlanePartition(PlanePartition *db, Plane p,
+        PlanePartition **inside_db, PlanePartition **outside_db)
+{
+   RenderPoly *inside, *outside;
+   RenderPoly *cur, *next;
+
+   if (eq_vec(&plane[p].norm, &plane[db->plane].norm)) {
+      // they're parallel, so we can do this quickly
+      // are they the same plane?
+      if (p == db->plane) {
+         // they're all coplanar
+         FreePlanePartition(db);
+         *inside_db = *outside_db = NULL;
+      } else if (plane[db->plane].d < plane[p].d) {
+         // ax + by + cz + d = 0
+         *inside_db = db;
+         *outside_db = NULL;
+      } else {
+         *inside_db = NULL;
+         *outside_db = db;
+      }
+      return;
+   }
+
+   // really split them
+
+   cur = db->head;
+   db->head = NULL;
+   inside = outside = NULL;
+
+   while (cur) {
+      RenderPoly *in, *out;
+
+      next = cur->next;
+      cur->next = NULL;
+      PartitionRenderPolyByPlane(cur, p, &in, &out, NULL);
+
+      if (in) { in->next = inside; inside = in; }
+      if (out) { out->next = outside; outside = out; }
+
+      cur = next;
+   }
+
+   if (!inside && !outside) {
+      // huh
+      printf("Totally coplanar... ick.\n");
+      *inside_db = NULL;
+      *outside_db = NULL;
+      FreePlanePartition(db);
+   }
+
+   if (!inside) {
+      // all of them went outside, so reuse db as outside
+      *outside_db = db;
+      db->head = outside;
+      *inside_db = NULL;
+      return;
+   }
+
+   if (!outside) {
+      // all of them went outside, so reuse db as outside
+      *inside_db = db;
+      db->head = inside;
+      *outside_db = NULL;
+      return;
+   }
+
+   // reuse db as inside, and allocate a new one for outside
+   *inside_db = db;
+   *outside_db = allocPlanePartition();
+   **outside_db = *db;
+
+   (*outside_db)->head = outside;
+   (*inside_db)->head = inside;
+}
+
+void SplitPartition(PlanePartition *db, Plane p,
+        PlanePartition **inside_db, PlanePartition **outside_db)
+{
+   int i,j,k;
+   PlanePartition *in, *out, *next;
+
+   // iterate over each of the plane partitions
+   *inside_db = NULL;
+   *outside_db = NULL;
+
+   i = j = k = 0;
+
+   while (db != NULL) {
+      next = db->next;
+      db->next = NULL;
+      ++i;
+      SplitPlanePartition(db, p, &in, &out);
+      if (in) {
+         //validatePolyList(in->head, "inside partition");
+         in->next = *inside_db;
+         *inside_db = in;
+         ++j;
+      }
+      if (out) {
+         //validatePolyList(out->head, "outside partition");
+         out->next = *outside_db;
+         *outside_db = out;
+         ++k;
+      }
+      db = next;
+   }
+   //printf("Split %d planesets into %d and %d\n", i, j, k);
+}
+
+/////////////////////////////////////
+//
+//   DATABASE PARTITIONING
+//
+//  We use a recursive n-way paritioning.
+//  First we try to portal-partition as
+//  much as we can.  If we can, we recurse
+//  on each of those partitions.  Otherwise
+//  we BSP partition.
+//
+
+//  Currently the data structure passed in is
+//  a PtrArray of polygons to partition, and the
+//  array of output "final" partitions.  Leaves
+//  just append themselves onto the array.  This
+//  means we don't bother storing the tree
+//  structure.
+
+//  If the output array is null, then we should
+//  go through the motions but not have any side-effects
+//  (don't bother adding on to the array), and we should
+//  return the value of the metric (i.e. this computes
+//  what the outcome of a partition is without carrying
+//  it out.)
+
+int plane_split_metric_infinity = (1 << 24);
+
+bool always_take_0_split;
+int split_weight=1;
+int percent_split_weight;
+int no_split_cost;
+
+int evaluateSplit(PlanePartition *db, Plane p, bool show_res)
+{
+   int weight, count;
+
+   int split, inside, outside;
+
+   split = 0; // count up number of splits
+   inside = 0;
+   outside = 0;
+
+   while (db) {
+      RenderPoly *cur = db->head;
+      while (cur) {
+        Side s = polygonPlaneCompare(cur->poly, p);
+        if (s == CROSSES)
+           ++split;
+        else if (s == INSIDE)
+           ++inside;
+        else if (s == OUTSIDE)
+           ++outside;
+        cur = cur->next;
+      }
+      db = db->next;
+   }
+
+   count = inside + outside + split;
+
+   if (show_res)
+      printf("(Split results) plane %d: %d inside, %d outside, %d split\n",
+                    p, inside, outside, split);
+
+   if (split == 0 && always_take_0_split)
+      return 0;
+
+   weight = 0;
+   if (split_weight)
+      weight += split_weight * split;
+   if (!inside || !outside)
+      weight += no_split_cost;
+   else if (percent_split_weight) {
+      int frac;
+      if (inside > outside)
+         frac = 100 * inside / (outside + inside);
+      else
+         frac = 100 * outside / (inside + outside);
+      // frac is 50..100
+      frac = (frac * 2) - 100;
+      // frac is 0..100
+      weight += percent_split_weight * frac / 100;
+   }
+
+   if (plane[p].plane_type == NON_AXIAL)
+      weight += count / 10;
+
+   if (count > 150 && (inside < count/3 || outside < count/3)) {
+      // encourage even splits to speed up optimizer
+      if (inside < count / 30 || outside < count / 30)
+         weight += count / 10;
+      else
+         weight += (count - 100) / 30;
+   }
+
+   return weight;
+}
+
+Plane SelectSplitPlane(PlanePartition *db)
+{
+   int best_value, value;
+   Plane best_plane;
+   Plane p;
+   PlanePartition *pl;
+
+   best_value = plane_split_metric_infinity;
+
+   // we can either iterate over all planes,
+   // or iterate over all planes from this partition
+
+   for(pl=db; pl != NULL; pl=pl->next) {
+      p = pl->plane;
+#if 0
+      if (plane[p].data)
+         continue;
+#endif
+      value = evaluateSplit(db, p, FALSE);
+      if (value <= best_value) {
+         // favor axial planes
+         if (value == best_value && !IS_AXIAL(plane[p].plane_type))
+            continue;
+
+         if (value == best_value && IS_AXIAL(plane[best_plane].plane_type)) {
+            // compare how well they split up the volume
+         }
+
+         best_value = value;
+         best_plane = p;
+      }
+   }
+   if (best_value == plane_split_metric_infinity) {
+      Error(1, "No split plane was any good.\n");
+   }
+
+   return best_plane;
+}
+
+#define WRITE_LEAF()  fprintf(out_file, "0\n")
+
+void RecursivePartition(PlanePartition *db);
+void BSPPartitionByPlane(PlanePartition *db, Plane p)
+{
+   PlanePartition *inside_part, *outside_part;
+   // now partition into two new databases
+
+   SplitPartition(db, p, &inside_part, &outside_part);
+
+   RecursivePartition(inside_part);
+   RecursivePartition(outside_part);
+}
+
+void BSPPartition(PlanePartition *db)
+{
+   Plane p;
+
+   // select the best-guess split plane
+
+   p = SelectSplitPlane(db);
+   if (debug) evaluateSplit(db, p, TRUE);
+
+   fprintf(out_file, "-1 %15.15g %15.15g %15.15g %15.15g\n",
+      plane[p].norm.x, plane[p].norm.y, plane[p].norm.z, plane[p].d);
+
+   BSPPartitionByPlane(db, p);
+}
+
+//  The PlaneArray data structure is a list of all of the planes
+//  which are potentially valid.  Generally planes become invalid
+//  without being deleted from the list when they're used as a
+//  partitioning.  The absolute truth of which ones are available
+//  is always in plane[p].data.
+
+//  The PlaneArray data structure is there to give us an O(1) data
+//  structure when we're iterating over available planes, which is
+//  crucially necessary when we're trying to do perfectly optimal
+//  splitting, because otherwise we iterate n^n times noting that
+//  a plane is unavailable.  Or something like that.
+
+void RecursivePartition(PlanePartition *db)
+{
+   ////  check for a leaf  ////
+   //
+   //
+
+   if (!db) {
+      WRITE_LEAF();
+      return;
+   }
+
+   ////  BSP partition  ////
+   //
+   //  select the optimal partitioning plane
+
+   BSPPartition(db);
+}
+
+//////////////////    low level merge attempt       //////////////////
+
+int colinear_merge, num_merged, colinear_del;
+
+Polygon *try_merge(Polygon *a, Polygon *b)
+{
+   int i,j, n1,n2, e,f, k, pts;
+   Point p1,p2;
+   mxs_vector norm, edge, rel_norm;
+   mxs_real res;
+   bool delete_i, delete_j;
+   Polygon *out;
+
+   // we know they're from the same plane already
+   if (a->inside != b->inside) return 0;
+
+   // now go look for a shared edge
+
+   n1 = a->num_verts;
+   n2 = b->num_verts;
+
+   for (i=0; i < n1; ++i) {
+      j = (i+1)%n1;
+
+      p1 = a->vert[i];
+      p2 = a->vert[j];
+
+      for (e=0; e < n2; ++e) {
+         f = (e+1)%n2;
+         if (p1 == b->vert[f] && p2 == b->vert[e])
+            goto found_match;
+      }
+   }
+   return 0;
+
+  found_match:
+
+   //++num_merged;
+
+   // now see if we can extend the match (which means
+   // we have some colinear points to delete)
+   //   currently we've matched
+   //        i == f
+   //        j == e
+   // So, we could have points before i, if i is 0.
+   // And we could have points after j.
+
+   if (i == 0) {
+      pts = 0;
+      while (a->vert[(i+n1-1)%n1] == b->vert[(f+1)%n2]) {
+         i = (i+n1-1)%n1, f = (f+1)%n2;
+         if (++pts == n1) return 0;
+      }
+   }
+
+   pts = 0;
+   while (a->vert[(j+1)%n1] == b->vert[(e+n2-1)%n2]) {
+      j = (j+1)%n1, e = (e+n2-1)%n2;
+      if (++pts == n1) return 0;
+   }
+
+   // ok, now we've extended it...
+
+   // now we need to check if this is really valid.
+   // basically,  I.e. whether the result of the
+   // merge is actually convex
+
+   // what we do is test the adjacent edges between
+   // polys to see if their cross product is the same
+   // as that for the poly itself
+
+     // compute the polygon normal
+   norm = plane[a->p].norm;
+   if (!a->inside) { norm.x = -norm.x; norm.y = -norm.y; norm.z = -norm.z; }
+
+     // compute the outward normal to the back edge
+   mx_sub_vec(&edge, PT(a->vert[i]), PT(a->vert[(i+n1-1)%n1]));
+   mx_cross_vec(&rel_norm, &norm, &edge);
+   mx_normeq_vec(&rel_norm);
+
+     // compute the extending edge on the other poly
+   mx_sub_vec(&edge, PT(b->vert[(f+1)%n2]), PT(b->vert[f]));   
+   mx_normeq_vec(&edge);
+   res = mx_dot_vec(&edge, &rel_norm);
+
+   if (res > CONTINUOUS_EPSILON) {
+      return 0;
+   }
+   delete_i = (res > -CONTINUOUS_EPSILON);
+
+     // compute the outward norml to the forward edge on other poly
+   mx_sub_vec(&edge, PT(b->vert[e]), PT(b->vert[(e+n2-1)%n2]));
+   mx_cross_vec(&rel_norm, &norm, &edge);
+   mx_normeq_vec(&rel_norm);
+
+     // compute the extending edge on this poly
+   mx_sub_vec(&edge, PT(a->vert[(j+1)%n1]), PT(a->vert[j]));
+   mx_normeq_vec(&edge);
+   res = mx_dot_vec(&edge, &rel_norm);
+
+   if (res > CONTINUOUS_EPSILON) {
+      return 0;
+   }
+   delete_j = (res > -CONTINUOUS_EPSILON);
+
+     // alright!
+delete_i = delete_j = 0;
+
+   ++num_merged;
+
+   out = allocatePolygon(n1 + n2 - 2 - delete_i - delete_j);
+   out->p = a->p;
+   out->inside = a->inside;
+
+   colinear_del += delete_i + delete_j;
+
+   // start at j and add points until we reach i
+
+   k = 0;
+   for(;;) {
+      j = (j+1) % n1;
+      if (j == i) break;
+      out->vert[k++] = a->vert[j];
+   }
+
+   if (!delete_i)
+      out->vert[k++] = a->vert[i];
+
+   for(;;) {
+      f = (f+1) % n2;
+      if (f == e) break;
+      out->vert[k++] = b->vert[f];
+   }
+
+   if (!delete_j)
+      out->vert[k++] = b->vert[e];
+
+   out->num_verts = k;
+
+   return out;
+}
+
+int merge_render(RenderPoly *a, RenderPoly *b)
+{
+   Polygon *p;
+
+   if (a->rend_info != b->rend_info)
+      return 0;
+
+   p = try_merge(a->poly, b->poly);
+   if (p) {
+      // replace a with merged poly
+      Free(a->poly);
+      a->poly = p;
+      return 1;
+   }
+
+   return 0;
+}
+
+////////       process and merge together rendered polygons    ///////
+
+int add_render_plane(PortalPolygonRenderInfo *r, mxs_vector *anchor, Plane p)
+{
+   return FindRender(r->texture_id, &r->u->raw, &r->v->raw,
+                  p, r->u_base, r->v_base, anchor);
+}
+
+void add_poly_to_plane_list(Polygon *a, int rend)
+{
+   Plane p = a->p;
+   RenderPoly *rp = MallocSafe(sizeof(RenderPoly));
+   rp->rend_info = rend;
+   rp->on_boundary = 0;
+   rp->poly = a;
+
+   rp->next = plane[p].data;
+   plane[p].data = rp;
+}
+
+void merge_poly_list(int p)
+{
+   RenderPoly *i, *j;
+   i = plane[p].data;
+   while (i != NULL) {
+      j = plane[p].data;
+      while (j->next != NULL) {
+         if (i != j->next && merge_render(i, j->next)) {
+            // they were merged, so delete j->next
+            RenderPoly *old = j->next;
+            j->next = j->next->next;
+            FreeRenderPoly(old);
+            // restart j from beginning
+            j = plane[p].data;
+         } else
+            j = j->next;
+      }
+      i = i->next;
+   }
+}
+
+int num_input_polys;
+
+  // turn the n'th polygon in the cell p into a
+  //   Polygon.  v is the appropriate offset into vertex_list
+Polygon *build_poly(PortalCell *p, int n, int v)
+{
+   int i, k = p->poly_list[n].num_vertices;
+   int pl = p->poly_list[n].planeid;
+   Polygon *q = allocatePolygon(k);
+   q->p = findPlane(&p->plane_list[pl].norm->raw,
+                     p->plane_list[pl].plane_constant);
+
+   q->inside = !reversed;
+   for (i=0; i < k; ++i)
+      q->vert[i] = findPoint(&p->vpool[p->vertex_list[v+i]]);
+
+   return q;
+}
+
+void extract_polys_from_cell(PortalCell *p)
+{
+   int i,v,n,k;
+
+   n = p->num_render_polys;
+   v = 0;
+   num_input_polys += n;
+   for (i=0; i < n; ++i) {
+      int pl = p->poly_list[i].planeid;
+      k = add_render_plane(&p->render_list[i],
+            &p->vpool[p->vertex_list[v+p->render_list[i].texture_anchor]],
+            findPlane(&p->plane_list[pl].norm->raw, 
+                     p->plane_list[pl].plane_constant));
+      add_poly_to_plane_list(build_poly(p, i, v), k);
+      v += p->poly_list[i].num_vertices;
+   }
+}
+
+///////////// interface to world-rep data format /////////////
+
+char *read_into(FILE *f, void **data, char *mem, int sz, int count)
+{
+   *data = mem;
+   fread(mem, count, sz, f);
+   return mem + count*sz;   
+}
+
+void bad_cell(PortalCell *p)
+{
+   printf("Bad cell:\n");
+   printf("Num verts: %d\n", p->num_vertices);
+   printf("Num polys; %d\n", p->num_polys);
+   printf("Num render polys: %d\n", p->num_render_polys);
+   printf("Num portal polys: %d\n", p->num_portal_polys);
+   printf("Num planes: %d\n", p->num_planes);
+   Error(1, "Bad cell\n");
+}
+
+mxs_vector vec_min, vec_max;
+
+void init_min_max(void)
+{
+   vec_min.x = 100000;
+   vec_min.y = 100000;
+   vec_min.z = 100000;
+
+   vec_max.x = -100000;
+   vec_max.y = -100000;
+   vec_max.z = -100000;
+};
+
+void update_min_max(mxs_vector *z, int n)
+{
+   while (n--) {
+      if (z->x < vec_min.x) vec_min.x = z->x;
+      if (z->y < vec_min.y) vec_min.y = z->y;
+      if (z->z < vec_min.z) vec_min.z = z->z;
+
+      if (z->x > vec_max.x) vec_max.x = z->x;
+      if (z->y > vec_max.y) vec_max.y = z->y;
+      if (z->z > vec_max.z) vec_max.z = z->z;
+
+      ++z;
+   }
+}
+
+PortalCell *read_cell(FILE *f)
+{
+   PortalCell p, *q;
+   CachedVector *cv;
+   char *mem;
+   int vl, sz, i;
+
+   fread(&vl, 1, sizeof(vl), f);
+   fread(&p, 1, sizeof(p), f);
+
+   if (p.num_vertices > 230 || p.num_polys > 128 ||
+       p.num_render_polys > p.num_polys || p.num_planes > p.num_polys)
+       bad_cell(&p);
+
+   // now figure out how much memory we need
+   sz = sizeof(p) +
+        p.num_vertices * sizeof(Vertex) +
+        p.num_polys * sizeof(PortalPolygonCore) +
+        p.num_render_polys * sizeof(PortalPolygonRenderInfo) +
+        p.num_planes * sizeof(PortalPlane) +
+        p.num_planes * sizeof(CachedVector) +
+        p.num_render_polys * 2 * sizeof(CachedVector) +
+        p.num_render_polys * sizeof(PortalLightMap) + vl;
+   //        p.num_vlist; // this was for vertex lighting
+
+   mem = MallocSafe(sz);
+
+   q = (PortalCell *) mem;
+   *q = p;
+
+   mem += sizeof(p);
+   mem = read_into(f, &q->vpool, mem, sizeof(Vertex), p.num_vertices);
+   mem = read_into(f, &q->poly_list, mem,
+           sizeof(PortalPolygonCore), p.num_polys);
+   mem = read_into(f, &q->render_list, mem,
+           sizeof(PortalPolygonRenderInfo), p.num_render_polys);
+   mem = read_into(f, &q->plane_list, mem, sizeof(PortalPlane), p.num_planes);
+   mem = read_into(f, &q->vertex_list, mem, 1, vl);
+//   mem = read_into(f, &q->vertex_list_lighting, mem, 1, p.num_vlist);
+
+   cv = (CachedVector *) mem;
+   mem += sizeof(CachedVector) * 2 * p.num_render_polys;
+
+   for (i=0; i < p.num_render_polys; ++i) {
+      q->render_list[i].u = &cv[i*2+0];
+      q->render_list[i].v = &cv[i*2+1];
+      fread(&q->render_list[i].u->raw, sizeof(Vector), 1, f);
+      fread(&q->render_list[i].v->raw, sizeof(Vector), 1, f);
+   }
+
+   cv = (CachedVector *) mem;
+   mem += sizeof(CachedVector) * p.num_planes;
+
+   for (i=0; i < p.num_planes; ++i) {
+      q->plane_list[i].norm = &cv[i];
+      fread(&q->plane_list[i].norm->raw, sizeof(Vector), 1, f);
+   }
+
+   mem = read_into(f, &q->light_list, mem,
+           sizeof(PortalLightMap), p.num_render_polys);
+
+   for (i=0; i < p.num_render_polys; ++i) {
+      fseek(f, q->light_list[i].w*q->light_list[i].h, SEEK_CUR);
+   }
+
+   if ((char *) q + sz != mem)
+      Error(1, "read_cell: buffer size different from read amount.");
+
+   update_min_max(q->vpool, p.num_vertices);
+
+   return q;
+}
+
+void move_ptr_list(TempPtrArray *dest, PtrArray *src)
+{
+   int i,n = src->num_elems;
+   for (i=0; i < n; ++i)
+      AddPtrToArray(dest, src->data[i]);      
+}
+
+PortalCell **level;
+PtrArray *db, *part_level;
+int num_cells;
+
+void process_level(char *fname)
+{
+   FILE *f = fopen(fname, "rb");
+   int n, i;
+   char dummy;
+   PlanePartition *pp;
+
+   if (!f) {
+      fprintf(stderr, "merge: file %s not found.\n", fname);
+      exit(1);
+   }
+
+   init_min_max();
+
+   fread(&n, sizeof(n), 1, f);
+   num_cells = n;
+   printf("File has %d cells.\n", n);
+
+   level = MallocSafe(sizeof(PortalCell *)* n);
+
+   for (i=0; i < n; ++i) {
+      if (feof(f)) Error(1, "Premature end of input file after %d cells.\n",i);
+      level[i] = read_cell(f);
+   }
+   if (fread(&dummy, 1, 1, f)) Error(1, "Data appears after file end.\n");
+
+   printf("Allocations: %d\n", allocations);
+
+   printf("Min: %g %g %g\n", vec_min.x, vec_min.y, vec_min.z);
+   printf("Max: %g %g %g\n", vec_max.x, vec_max.y, vec_max.z);
+   initPointHash(&vec_min, &vec_max);
+
+   for (i=0; i < n; ++i)
+      extract_polys_from_cell(level[i]);
+
+   printf("Input polys: %d\n", num_input_polys);
+   printf("Unique planes: %d\n", num_planes);
+   printf("Unique render aspects: %d\n", num_render);
+   printf("Unique vertices: %d\n", num_point);
+
+   printf("Allocations: %d\n", allocations);
+
+   pp = NULL;
+   for (i=0; i < num_planes; ++i) {
+      PlanePartition *pl;
+      merge_poly_list(i);
+      pl = allocPlanePartition();
+      pl->head = plane[i].data;
+      pl->plane = i;
+      pl->next = pp;
+      pp = pl;
+   }
+
+   printf("Merges made: %d\n", num_merged);
+   printf("Merges with internal colinear points: %d\n", colinear_merge);
+   printf("%d colinear points deleted\n", colinear_del);
+
+   printf("Allocations: %d\n", allocations);
+
+   RecursivePartition(pp);
+
+   {
+      int i;
+      for (i=0; i < num_cells; ++i)
+         Free(level[i]);
+      Free(level);
+   }
+}
+
+int main(int argc, char **argv)
+{
+   if (argc > 1 && !strcmp(argv[1], "-d")) {
+      debug = TRUE;
+      --argc;
+      ++argv;
+   }
+
+   if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'e') {
+      PLANE_EPSILON = atof(argv[1]+2);
+      --argc;
+      ++argv;
+      printf("Epsilon is %lg\n", PLANE_EPSILON);
+   }
+
+   if (argc > 1) {
+      out_file = fopen("bsp.out", "w");
+      process_level(argv[1]);
+      printf("Current allocations: %d\nMax allocations: %d\n",
+            allocations, max_alloc);
+      fclose(out_file);
+   }
+   return 0;
+}
+
+#define vector_scale  (2 * FIX_UNIT)
+
+void compute_texture_vertex(g3s_vector *dest, g3s_vector *start, int from, int to)
+{
+   g3s_vector p;
+   fix sc;
+
+   p.x = vertex[to].point.x - vertex[from].point.x;
+   p.y = vertex[to].point.y - vertex[from].point.y;
+   p.z = vertex[to].point.z - vertex[from].point.z;
+
+   sc = fix_sqrt(fix_mul(p.x,p.x) + fix_mul(p.y,p.y) + fix_mul(p.z,p.z));
+   sc = fix_div(vector_scale, sc);
+
+   dest->x = start->x + fix_mul(p.x, sc);
+   dest->y = start->y + fix_mul(p.y, sc);
+   dest->z = start->z + fix_mul(p.z, sc);
+}
+
+void compute_normal(g3s_vector *norm, g3s_vector *p0, g3s_vector *p1, g3s_vector *p2)
+{
+   g3s_vector delta1, delta2, result;
+
+   delta1.x = p1->x - p0->x;
+   delta1.y = p1->y - p0->y;
+   delta1.z = p1->z - p0->z;
+
+   delta2.x = p2->x - p1->x;
+   delta2.y = p2->y - p1->y;
+   delta2.z = p2->z - p1->z;
+
+   result.x = fix_mul(delta1.z, delta2.y) - fix_mul(delta1.y, delta2.z);
+   result.y = fix_mul(delta1.x, delta2.z) - fix_mul(delta1.z, delta2.x);
+   result.z = fix_mul(delta1.y, delta2.x) - fix_mul(delta1.x, delta2.y);
+
+   *norm = result;
+}
+
+void compute_surface_tmapping(int r, int n)
+{
+   int a,b,c,i;
+   int p = region[r].vertex_palette;
+   fix len;
+   g3s_vector temp;
+
+   a = v_palette[p + surf_v[surface[n].vlist_offset + 0]];
+   b = v_palette[p + surf_v[surface[n].vlist_offset + 1]];
+   c = v_palette[p + surf_v[surface[n].vlist_offset + 2]];
+
+   compute_texture_vertex(&surface[n].u_vect, &vertex[a].point, a, b);
+   compute_texture_vertex(&surface[n].v_vect, &surface[n].u_vect, b, c);
+
+   // now compute normal to surface
+
+   for(i=2; i < surface[n].num_vertices; ++i) {
+      c = v_palette[p + surf_v[surface[n].vlist_offset + i]];
+      compute_normal(&temp, &vertex[a].point, &vertex[b].point, &vertex[c].point);
+      len = fix_mul(temp.x, temp.x) + fix_mul(temp.y,temp.y) + fix_mul(temp.z,temp.z);
+      if (len > 64) break;
+      // probably colinear, so try next point
+   }
+     
+   g3_vec_normalize(&temp);
+   surface[n].normal = temp;
+}
+
+// $Header: r:/t2repos/thief2/src/portal/oracle.c,v 1.2 2000/02/19 13:18:35 toml Exp $
+
+// Oracle: can answer any question in O(1) time.
+//   It does this by cacheing the result from a previous frame
+
+#include <lg.h>
+#include <string.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+int oracle_flags;
+int oracle_save;
+int oracle_last_memorized;
+
+uchar *current_memorize;
+uchar *last_memorize;
+int current_playback;
+int current_record, oracle_record_size;
+
+// INVARIANT:   oracle_save != 0 iff current_memorize != 0
+
+void OracleFinishQueues(void)
+{
+   if (current_memorize) {
+      if (last_memorize)
+         Free(last_memorize);
+      last_memorize = current_memorize;
+      oracle_last_memorized = oracle_save;
+
+      current_memorize = 0;
+      oracle_save = 0;
+   }
+}
+
+void OracleStartFrame(int answer_flags, int memorize_flags)
+{
+   OracleFinishQueues();
+
+   if (answer_flags == oracle_last_memorized) {
+      oracle_flags = answer_flags;
+      current_playback = 0;
+   } else
+      oracle_flags = 0;
+
+   if (memorize_flags) {
+      oracle_save = memorize_flags;
+      oracle_record_size = 1024;
+      current_memorize = Malloc(oracle_record_size);
+      current_record = 0;
+   }
+}
+
+// make the oracle try to answer exactly this set of flags
+void OracleSmartStart(int answer_flags)
+{
+   if (answer_flags == oracle_last_memorized)
+      OracleStartFrame(answer_flags, 0);
+   else if (answer_flags == oracle_save)
+      OracleStartFrame(answer_flags, 0);
+   else
+      OracleStartFrame(0, answer_flags);
+}
+
+bool OracleStore(void *data, int datasize)
+{
+   while (current_record + datasize >= oracle_record_size) {
+      oracle_record_size *= 2;
+      current_memorize = Realloc(current_memorize, oracle_record_size);
+   }
+
+   memcpy(current_memorize + current_record, data, datasize);
+   current_record += datasize;
+   return TRUE;
+}
+
+bool OracleFetch(int requeue, void *data, int datasize)
+{
+   memcpy(data, last_memorize + current_playback, datasize);
+   current_playback += datasize;
+   if (requeue)
+      OracleStore(data, datasize);
+   return TRUE;
+}
+
+bool OracleFetchBool(int requeue)
+{
+   bool result;
+   OracleFetch(requeue, &result, sizeof(result));
+   return result;
+}
+
+bool OracleStoreBool(bool result)
+{
+   OracleStore(&result, sizeof(result));
+   return result;
+}
+
+#include <string.h>
+#include <stdio.h>
+#include <conio.h>
+#include <stdlib.h>
+#include <math.h>
+
+#include <lg.h>
+#include <fix.h>
+#include <2d.h>
+#include <unlit.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+unsigned char *scr;
+int row;
+
+#define MAX_PTS 256   // 100*100 == 20K triangles, but we want e.g. 50*200
+
+grs_vertex row_a[MAX_PTS+1],row_b[MAX_PTS+1];
+fix xlist[MAX_PTS+1],ulist[MAX_PTS+1];
+
+#define RAND_LEN 256
+
+static fix rand_list[RAND_LEN];
+static int rand_count=0;
+
+#define my_rand()  (rand_list[rand_count = (rand_count+1)&(RAND_LEN-1)]);
+
+#define SWAP(a,b,temp)  ((temp)=(a),(a)=(b),(b)=(temp))
+
+extern grs_bitmap texture;
+extern bool swap_uv, wireframe;
+int tris;
+
+#if 0
+  #define draw_tri(t)    gr_lin_map(&texture, 3, t)
+#elif 0
+  #define draw_tri(t)    mapper(&texture, 3, t)
+#else
+  #define draw_tri(t)    render_tri(&texture, t);
+#endif
+
+int row_table[1024];
+
+point blah[3];
+point *blah_list[3] = { blah,blah+1,blah+2 };
+
+void render_tri(grs_bitmap *b, grs_vertex **vl)
+{
+   int i;
+   for (i=0; i < 3; ++i) {
+      blah[i].sx = vl[i]->x;
+      blah[i].sy = vl[i]->y;
+      blah[i].u = vl[i]->u/65536.0;
+      blah[i].v = vl[i]->v/65536.0;
+   }
+   unlit_triangle(blah_list, b->bits);
+}
+
+void draw_grid(int x0, int y0, int x1, int y1, int nx, int ny,
+      fix u0, fix v0, fix u1, fix v1)
+{
+   int i,j;
+   fix y,v;
+
+   grs_vertex *prev, *next, *temp;
+   g2ut_func *mapper = gr_lin_umap_expose(&texture, 0, 0);
+
+   prev = row_a;
+   next = row_b;
+
+   for (i=0; i <= nx; ++i) {
+      xlist[i] = fix_make(x0+(x1-x0)*i/nx,0)-0x8000;
+      ulist[i] = u0 + fix_mul_div(u1-u0,i,nx);
+   }
+
+   y = fix_make(y0,0)-0x8000;
+   v = v0;
+   for (i=0; i <= nx; ++i) {
+      prev[i].x = xlist[i];
+      prev[i].y = y;
+      if (!swap_uv) {
+         prev[i].u = ulist[i];
+         prev[i].v = v;
+      } else {
+         prev[i].v = ulist[i];
+         prev[i].u = v;
+      }
+   }
+
+   for (j=1; j <= ny; ++j) {
+      y = fix_make(y0+(y1-y0)*j/ny,0)-0x8000;
+      if (j == ny) {
+         for (i=0; i <= nx; ++i) {
+            next[i].x = xlist[i];
+            next[i].y = y;
+         }
+      } else {
+         next[0].x = xlist[0];
+         next[0].y = y;
+         for (i=1; i < nx; ++i) {
+            next[i].x = xlist[i] + my_rand();
+            next[i].y = y + my_rand();
+         }
+         next[i].x = xlist[i];
+         next[i].y = y;
+      }
+      v = v0 + fix_mul_div(v1-v0,j,ny);
+      if (!swap_uv) {
+         for (i=0; i <= nx; ++i) {
+            next[i].u = ulist[i];
+            next[i].v = v;
+         }
+      } else {
+         for (i=0; i <= nx; ++i) {
+            next[i].v = ulist[i];
+            next[i].u = v;
+         }
+      }
+
+      // ok, now draw all the triangles
+      for (i=0; i < nx; ++i) {
+         grs_vertex *tri[3];
+         tri[0] = &prev[i];
+         tri[1] = &prev[i+1];
+         tri[2] = &next[i];
+         draw_tri(tri);
+         tri[0] = &next[i];
+         tri[2] = &next[i+1];
+         draw_tri(tri);
+         tris += 2;
+      }
+      if (wireframe) {
+         gr_set_fcolor(15);
+         for (i=0; i < nx; ++i) {
+            gr_line(&prev[i], &prev[i+1]);
+            gr_line(&next[i], &prev[i+1]);
+            gr_line(&prev[i], &next[i]);
+         }
+      }
+
+      SWAP(next, prev, temp);
+   }
+}
+
+int scale;
+void init_random(void)
+{
+   int i;
+   for (i=0; i < RAND_LEN; ++i)
+      rand_list[i] = ((((rand()) & 0x3fff) - 0x2000) << 2) * (scale+1);
+}
+
+int grid_size_x = 2, grid_size_y = 2;
+int multi_grid_poly=0, multi_grid_split=8;
+
+void draw_scene(void)
+{
+   int i;
+   scr = grd_bm.bits;
+   row = grd_bm.row;
+   for (i=0; i < grd_bm.h; ++i)
+      row_table[i] = row * i;
+   init_random();
+   if (!multi_grid_poly) {
+      draw_grid(0,0,grd_bm.w,grd_bm.h, grid_size_x, grid_size_y,
+           0,0, fix_make(240,0), fix_make(240,0));
+   } else {
+      // compute number of quads
+      int poly = (grid_size_x-1) * (grid_size_y-1);
+      // distribute them between the two sides
+      int poly_left = multi_grid_poly * poly / 100 + 1;
+      int poly_right = poly - poly_left;
+
+      int left_x,left_y;
+      int right_x,right_y, best,x,y;
+      fix uv;
+
+      // left size is  multi_grid_split/16 of whole x thing
+      // so to maintain same ratio:
+      //     (left_x/(multi_grid_split/16))/left_y = grid_x/grid_y
+      //   grid_y*left_x*16 = grid_x*left_y*multi_grid_split
+
+      // and we want left_x * left_y = poly_left
+      //      (grid_x*left_y*multi_grid_split/16/grid_y) * left_y = poly_left
+      //  left_y^2 = poly_left * 16 * grid_y / multi_grid_split / grid_x
+
+      if (poly_right < 1) poly_right = 1;
+
+      left_y = sqrt(poly_left * 16 * grid_size_y / multi_grid_split / grid_size_x);
+      if (left_y == 0) left_y = 1;
+      left_x = poly_left / left_y;
+      if (left_x == 0) { left_x = 0; if (left_y > 1) --left_y; }
+
+      x = left_x; y = left_y;
+      best = x * y;
+      ++x;
+      if (abs(poly_left - best) > abs(poly_left - x*y))
+         left_x = x, left_y = y, best = x*y;
+      ++y;
+      if (abs(poly_left - best) > abs(poly_left - x*y))
+         left_x = x, left_y = y, best = x*y;
+      --x;
+      if (abs(poly_left - best) > abs(poly_left - x*y))
+         left_x = x, left_y = y, best = x*y;
+
+      poly_left = best;
+
+      // ok, we've got poly_left as close as we can
+      if (poly - poly_left > 1) poly_right = poly - poly_left;
+
+      right_y = sqrt(poly_right * 16 * grid_size_y / (16-multi_grid_split) / grid_size_x);
+      if (right_y == 0) right_y = 1;
+      right_x = poly_right / right_y;
+      if (right_x == 0) { right_x = 0; if (right_y > 1) --right_y; }
+
+      x = right_x; y = right_y;
+      best = x * y;
+      ++x;
+      if (abs(poly_right - best) > abs(poly_right - x*y))
+         right_x = x, right_y = y, best = x*y;
+      ++y;
+      if (abs(poly_right - best) > abs(poly_right - x*y))
+         right_x = x, right_y = y, best = x*y;
+      --x;
+      if (abs(poly_right - best) > abs(poly_right - x*y))
+         right_x = x, right_y = y, best = x*y;
+
+      // ok, we're all set
+      x = grd_bm.w * multi_grid_split / 16;
+      uv = fix_make(240 * multi_grid_split/16,0);
+
+      draw_grid(0,0,x,grd_bm.h, left_x, left_y,
+           0,0, uv, fix_make(240,0));
+      draw_grid(x,0,grd_bm.w,grd_bm.h, right_x, right_y,
+           uv,0, fix_make(240,0), fix_make(240,0));
+   }
+}
+// $Header: r:/t2repos/thief2/src/portal/porthw.c,v 1.24 2000/02/19 13:18:39 toml Exp $
+#include <string.h>
+
+#include <dev2d.h>
+#include <lgd3d.h>
+
+#include <palmgr.h>
+
+#include <port.h>
+#include <porthw.h>
+#include <wrdb.h>
+#include <wrdbrend.h>
+
+#include <mprintf.h>
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+EXTERN BOOL g_lgd3d;
+
+// only referenced if _not_ using hardware _and_ 
+// AGGREGATE_LIGHTMAPS_IN_SOFTWARE is defined
+BOOL pt_aggregate_lightmaps = FALSE;
+
+extern void portsurf_update_bits(uchar *bits, int row, PortalLightMap *lt);
+
+typedef struct porthw_texture porthw_texture;
+typedef struct porthw_strip porthw_strip;
+typedef struct porthw_elem porthw_elem;
+
+struct porthw_elem {
+   short *ptr;
+   int frame;
+   int next_elem;
+   char u0, v0;         // offset within texture
+   uchar flags;         // are we dynamic?
+   uchar texture_index;
+};
+
+struct porthw_strip {
+   int elem_index;
+   int next_strip;
+   char w, h, v0, pad;
+};
+
+struct porthw_texture {
+   grs_bitmap *bm;
+   uchar *bits;
+   int strip_index;  // index of first strip in this texture
+   int frame;
+   int h;            // unallocated height remaining in this texture
+   int next_texture; // next in texture chain (ordered by increasing age)
+   int flags;
+};
+
+#ifdef RGB_LIGHTING
+
+#ifdef RGB_888
+#define LM_BITMAP_TYPE BMT_FLAT32
+#define LM_FLAGS BMF_RGB_8888
+#else // RGB_888
+#define LM_BITMAP_TYPE BMT_FLAT16
+#define LM_FLAGS BMF_RGB_555
+#endif // RGB_888
+
+#else
+#define LM_BITMAP_TYPE BMT_FLAT8
+#define LM_FLAGS 0
+#endif
+
+#ifdef BIG_LIGHTMAPS
+#define LM_MAX_SIZE 64
+#else
+#define LM_MAX_SIZE 20
+#endif
+
+#define TEX_SIZE 64
+
+#define HWF_DYNAMIC     8     // Dynamic or animated lightmaps only
+#define HWF_UPDATED    16     // Set if any lightmaps have been added or 
+                              // updated in the past frame.
+
+#define START_MAX_ELEMS 2048
+#define START_MAX_TEXTURES 32			// so we have 2*64*64*32 = 256k of texture memory for lightmaps
+#define START_MAX_STRIPS 384
+
+static porthw_texture *texture_list;
+static porthw_strip *strip_list;
+static porthw_elem *elem_list;     // list of all allocated lightmaps
+
+static int max_strips;
+static int max_textures;
+static int max_elems;
+
+static int num_strips;
+static int num_textures;
+static int num_elems;
+
+static int base_texture;
+static int free_strip_index;
+static int free_elem_index;
+
+static int cur_frame = 0;
+
+#ifndef RGB_LIGHTING
+static int pt_lightmap_pal_index = -1;
+
+static void pt_init_lightmap_pal(void)
+{
+   uchar *pal = Malloc(768);
+   int i;
+
+   for (i=0; i<256; i++)
+      pal[3*i] = pal[3*i+1] = pal[3*i+2] = i;
+
+   pt_lightmap_pal_index = palmgr_alloc_pal(pal);
+   Free(pal);
+}
+#endif
+
+static void free_texture(int texture_index)
+{
+    int i;
+    porthw_texture *texture;
+    porthw_strip *strip;
+    int *p_tex_index = &base_texture;
+    
+    // first remove texture from texture chain...
+    while ( *p_tex_index != -1 )
+    {
+        i = *p_tex_index;
+        texture = &texture_list[i];
+        if (i == texture_index) {
+            *p_tex_index = texture->next_texture;   
+            break;
+        }
+        p_tex_index = (int*)&texture->next_texture;
+    }
+
+   AssertMsg1(i!=-1, "free_texture(): couldn't find texture %i in texture chain!\n", texture_index);
+   texture = &texture_list[texture_index];
+
+   // now free strips and elements
+   for (i = texture->strip_index;
+        i != -1;
+        i = strip->next_strip)
+   {
+      int j;
+      porthw_elem *elem;
+
+      strip = &strip_list[i];
+      for (j = strip->elem_index;
+           j != -1;
+           j = elem->next_elem)
+      {
+         elem = &elem_list[j];
+         AssertMsg(elem->ptr != NULL, "free_texture(): element already freed!\n");
+         *(elem->ptr) = 0;
+         elem->ptr = NULL;
+      }
+      elem->next_elem = free_elem_index;
+      free_elem_index = strip->elem_index;
+   }
+   strip->next_strip = free_strip_index;
+   free_strip_index = texture->strip_index;
+}
+
+static porthw_texture *init_texture(int texture_index)
+{
+   porthw_texture *texture = &texture_list[texture_index];
+   texture->bm = gr_alloc_bitmap(LM_BITMAP_TYPE, LM_FLAGS, TEX_SIZE, TEX_SIZE);
+   texture->bits = texture->bm->bits;
+#ifndef RGB_LIGHTING
+   if (pt_lightmap_pal_index < 0)
+      pt_init_lightmap_pal();
+   texture->bm->align = pt_lightmap_pal_index;
+#endif
+   return texture;
+}
+
+static int get_free_texture(void)
+{
+   int texture_index;
+   int min_frame = cur_frame;
+   int retval = -1;
+   porthw_texture *texture;
+
+   for (texture_index = base_texture;
+      texture_index != -1;
+      texture_index = texture->next_texture)
+   {
+      texture = &texture_list[texture_index];
+      if (texture->frame <= min_frame) {
+         min_frame = texture->frame;
+         retval = texture_index;
+      }
+   }
+   AssertMsg(retval != -1, "get_free_texture(): no textures to free!\n");
+
+   if (min_frame < cur_frame)
+      free_texture(retval);
+   else
+   {
+      max_textures += max_textures>>2;
+      Warning(("get_free_texture(): growing texture_list to %i entries...\n", max_textures));
+#ifndef SHIP
+      if (max_textures > 256)
+         Warning(("porthw: get_free_texture(): Scene has more textures than we can use!\n"));
+#endif
+      texture_list = (porthw_texture *)Realloc(texture_list, max_textures * sizeof(porthw_texture));
+      retval = num_textures++;
+      texture = init_texture(retval);
+   } 
+
+   return retval;
+}
+
+
+
+// allocate a new texture
+static porthw_texture *alloc_texture(void)
+{
+   porthw_texture *texture;
+   int texture_index;
+
+   if (num_textures < max_textures) {
+      texture_index = num_textures++;
+      texture = init_texture(texture_index);
+   } else {
+      texture_index = get_free_texture();
+      texture = &texture_list[texture_index];
+   }
+
+   texture->flags = 0;
+   texture->next_texture = base_texture;
+   texture->h = TEX_SIZE;
+   texture->strip_index = -1;
+
+   base_texture = texture_index;
+   return texture;
+}
+
+// allocate a new strip from the specified texture
+static porthw_strip *alloc_strip(porthw_texture *texture, int h)
+{
+   porthw_strip *strip;
+   int strip_index;
+
+   if (free_strip_index != -1) {
+      strip_index = free_strip_index;
+      free_strip_index = strip_list[strip_index].next_strip;
+   } else {
+      if (num_strips >= max_strips) {
+         max_strips += max_strips>>2;
+         Warning(("porthw.c  alloc_strip(): growing strip_list to %i entries...\n", max_strips));
+         strip_list = (porthw_strip *)Realloc(strip_list, max_strips * sizeof(porthw_strip));
+      }
+      strip_index = num_strips++;
+   }
+
+   strip = &strip_list[strip_index];
+   strip->next_strip = texture->strip_index;
+   strip->h = h;
+   strip->w = texture->bm->w;
+   strip->elem_index = -1;
+   strip->v0 = texture->bm->h - texture->h;
+   texture->strip_index = strip_index;
+   texture->h -= h;
+
+   return strip;
+}
+
+static porthw_elem *alloc_elem(porthw_texture *texture, int texture_index, porthw_strip *strip, int w, short *ptr)
+{
+   int elem_index;
+   porthw_elem *elem;
+
+   if (free_elem_index != -1) {
+      elem_index = free_elem_index;
+      free_elem_index = elem_list[elem_index].next_elem;
+   } else {
+      if (num_elems >= max_elems) {
+         max_elems += max_elems>>2;
+         Warning(("porthw.c  alloc_elem(): growing elem_list to %i entries...\n", max_elems));
+         elem_list = (porthw_elem *)Realloc(elem_list, max_elems * sizeof(porthw_elem));
+      }
+      elem_index = num_elems++;
+   }
+
+   elem = &elem_list[elem_index];
+   elem->next_elem = strip->elem_index;
+   elem->u0 = texture->bm->w - strip->w;
+   elem->v0 = strip->v0;
+   elem->texture_index = texture_index;
+   elem->ptr = ptr;
+   strip->elem_index = *ptr = elem_index;
+   strip->w -= w;
+   return elem;
+}
+
+
+static void porthw_alloc_lightmap(PortalLightMap *lt, short *ptr)
+{
+   int texture_index, w, h;
+   porthw_texture *texture;
+   porthw_strip *strip;
+   porthw_elem *elem;
+   uchar *bits;
+
+   w = lt->w;
+   h = lt->h;
+   if ((w > LM_MAX_SIZE) || (h > LM_MAX_SIZE)) {
+      Warning(("Lightmap size out of range: w=%i h=%i\n",w,h));
+      return;
+   }
+   if (h<32)
+      h = (h+3) & (~3);
+   else
+      h = (h+7) & (~7);
+
+   for (
+      texture_index=base_texture;
+      texture_index!=-1;
+      texture_index = texture_list[texture_index].next_texture)
+   {
+      int strip_index;
+
+      texture = &texture_list[texture_index];
+      for (
+         strip_index = texture->strip_index;
+         strip_index >=0;
+         strip_index = strip->next_strip)
+      {
+         strip = &strip_list[strip_index];
+         if ((strip->h == h) && (strip->w >= w))
+            // This should do it!
+            break;
+      }
+      if (strip_index != -1)
+         break;
+
+      if (texture->h >= h)
+      {  // allocate new strip
+         strip = alloc_strip(texture, h);
+         break;
+      }
+   }
+   if (texture_index==-1) {
+      texture = alloc_texture();
+      texture_index = base_texture;
+      strip = alloc_strip(texture, h);
+   }
+   elem = alloc_elem(texture, texture_index, strip, w, ptr);
+   bits = texture->bits + elem->u0 * sizeof(LightmapEntry) + elem->v0 * texture->bm->row;
+   portsurf_update_bits(bits, texture->bm->row, lt);
+   texture->flags |= HWF_UPDATED;
+   elem->flags = lt->dynamic_light ? HWF_DYNAMIC : 0;
+}
+
+// what is says...
+void porthw_start_frame(int frame)
+{
+   if (elem_list==NULL)
+   {
+      if (g_lgd3d)
+         Warning(("porthw_start_frame(): porthw not initialized!\n"));
+      return;
+   }
+
+   cur_frame = frame;
+   if (g_tmgr != NULL)
+      g_tmgr->start_frame(frame);
+}
+
+// reload any textures that have been modified this frame
+void porthw_end_frame(void)
+{
+   extern BOOL portal_multitexture;
+   static BOOL last_multitexture=0;
+   int i;
+   bool drop_all = last_multitexture != portal_multitexture;
+
+   if (last_multitexture)
+      lgd3d_set_texture_level(1);
+
+   if (drop_all)
+      for (i=0; i<num_textures; i++) {
+         porthw_texture *tex = &texture_list[i];
+         g_tmgr->unload_texture(tex->bm);
+         tex->flags |= HWF_UPDATED;
+      }
+
+   if (portal_multitexture)
+      lgd3d_set_texture_level(1);
+   else
+      lgd3d_set_texture_level(0);
+
+   for (i=0; i<num_textures; i++) {
+      porthw_texture *tex = &texture_list[i];
+
+      if (!(tex->flags & HWF_UPDATED))
+         continue;
+
+      if (tex->bm->flags & BMF_LOADED)
+         g_tmgr->reload_texture(tex->bm);
+      else
+         g_tmgr->load_texture(tex->bm);
+
+      tex->flags &= ~HWF_UPDATED;
+   }
+   lgd3d_set_texture_level(0);
+   last_multitexture = portal_multitexture;
+}
+
+// call after lgd3d_init()
+void porthw_init(void)
+{
+   if (!g_lgd3d)
+      return;
+
+   if (elem_list != NULL) {
+      Warning(("porthw_init(): already initialized!\n"));
+      return;
+   }
+
+   max_elems = START_MAX_ELEMS;
+   max_strips = START_MAX_STRIPS;
+   max_textures = START_MAX_TEXTURES;
+
+   elem_list = (porthw_elem *)Malloc(max_elems * sizeof(porthw_elem));
+   strip_list = (porthw_strip *)Malloc(max_strips * sizeof(porthw_strip));
+   texture_list = (porthw_texture *)Malloc(max_textures * sizeof(porthw_texture));
+
+   num_elems = 1;             // 0th element is bogus
+   num_strips = 0;
+   num_textures = 0;
+
+   base_texture = -1;
+   free_strip_index = -1;
+   free_elem_index = -1;
+
+   clear_surface_cache();
+}
+
+// call before lgd3d_shutdown()
+void porthw_shutdown(void)
+{
+   int i;
+
+   if (elem_list == NULL) {
+      if (g_lgd3d)
+         Warning(("porthw_shutdown(): Already shutdown!\n"));
+      return;
+   }
+
+   // clear cache
+   for (i=1; i<num_elems; i++)
+   {
+      if ((elem_list[i].ptr != NULL) && (*(elem_list[i].ptr) == i))
+         *(elem_list[i].ptr) = 0;
+   }
+
+   // free textures
+   for (i=0; i<num_textures; i++) {
+      porthw_texture *tex = &texture_list[i];
+      lgd3d_unload_texture(tex->bm);
+      gr_free(tex->bm);
+   }
+
+   num_elems = 1;
+   num_strips = 0;
+   num_textures = 0;
+
+   base_texture = -1;
+   free_strip_index = -1;
+   free_elem_index = -1;
+
+   Free(elem_list);
+   elem_list = NULL;
+
+   Free(strip_list);
+   strip_list = NULL;
+
+   Free(texture_list);
+   texture_list = NULL;
+}
+
+
+void porthw_uncache_lightmap(PortalPolygonRenderInfo *render)
+{
+   int i = render->cached_surface;
+
+   if (i>=num_elems)
+      Warning((
+         "porthw_uncache_lightmap(): index %i greater than num_elems %i.\n",
+         i, num_elems));
+   else if (i>0)
+      elem_list[i].frame = -1;
+}
+
+
+// preload all lightmaps to be used this frame:
+void porthw_preload_lightmap(
+         PortalPolygonRenderInfo *render,
+         PortalLightMap *lt)
+{
+   porthw_elem *elem;
+
+   if (elem_list == NULL)
+      return;
+
+   if (render->cached_surface == 0) {
+      porthw_alloc_lightmap(lt, &render->cached_surface);
+      elem = &elem_list[render->cached_surface];
+   } else {
+      elem = &elem_list[render->cached_surface];
+      if ((lt->dynamic_light) ||
+          (elem->frame == -1) ||
+          (elem->flags & HWF_DYNAMIC))
+      {
+         porthw_texture *tex = &texture_list[elem->texture_index];
+         tex->flags |= HWF_UPDATED;
+         if (lt->dynamic_light)
+            elem->flags |= HWF_DYNAMIC;
+         else
+            elem->flags &= ~HWF_DYNAMIC;
+
+         portsurf_update_bits(tex->bits + elem->u0*sizeof(LightmapEntry)
+                         + elem->v0 * tex->bm->row, tex->bm->row, lt);
+      }
+   }
+   texture_list[elem->texture_index].frame = elem->frame = cur_frame;
+}
+
+
+bool punt_hardware_lighting=FALSE;
+
+// Main entry point.  Allocates lightmaps and textures as 
+// appropriate.  Sets hw->lm, hw->lm_u0, and hw->lm_v0.
+void porthw_get_cached_lightmap(hw_render_info *hw,
+      PortalPolygonRenderInfo *render,
+      PortalLightMap *lt)
+{
+   if ((punt_hardware_lighting)||(elem_list==NULL)) {
+      hw->lm = NULL;
+   } else if (render->cached_surface==0) {
+      Warning(("porthw_get_cached_lightmap(): Found unpreloaded lightmap!\n"));
+      hw->lm = NULL;
+   } else {
+      porthw_elem *elem = &elem_list[render->cached_surface];
+      hw->lm = texture_list[elem->texture_index].bm;
+      hw->lm_u0 = elem->u0 + 0.5;
+      hw->lm_v0 = elem->v0 + 0.5;
+   }
+}
+#include <string.h>
+#include <stdio.h>
+#include <conio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <dos.h>
+
+#include <lg.h>
+#include <2d.h>
+#include <mprintf.h>
+
+#include "perfcore.h"
+#include "char.h"
+#include <memall.h>
+#include <dbmem.h>   // must be last header! 
+
+/////////////////////////////////////////////////////////////
+//
+//     interface to 2d
+//
+//  note wacky linear framebuffer requests; is
+//  this still how you do stuff?
+//
+
+extern unsigned char *scr;
+extern int row;
+
+uchar pal[768];
+grs_screen *screen;
+grs_canvas draw_canv;
+grs_bitmap off;
+
+void clear_off(void)
+{
+   memset(off.bits, 0, off.w*off.h);
+}
+
+uchar pal[768];
+void init_offscreen(void)
+{
+   short w,h;
+   w = grd_cap->w;
+   h = grd_cap->h;
+   if (off.bits)
+      Free(off.bits);
+   off.bits = (uchar *) Malloc(w*h);
+   off.type = BMT_FLAT8;
+   off.flags = 0;
+   off.align = 0;
+   off.w = w;
+   off.h = h;
+   off.row = w;
+
+   gr_make_canvas(&off, &draw_canv);
+   clear_off();
+
+   scr = off.bits;
+   row = w;
+}
+
+bool try_direct;
+bool direct_hack;
+bool double_buffer;
+bool no_blit;
+
+void set_screen_mode(int mode)
+{
+   int modeFlags;
+
+   if (screen)
+      gr_free_screen(screen);
+   if (gr_mode_linear(mode)) {
+      modeFlags = CLEAR_LINEAR;
+      direct_hack = try_direct;
+   } else {
+      modeFlags = CLEAR_BANKED;
+      direct_hack = 0;
+   }
+   double_buffer = try_direct && direct_hack;
+
+   gr_set_mode(mode,modeFlags);
+
+   if (try_direct && direct_hack == 0)
+      mprintf("Couldn't get a linear %dx%d mode.\n", grd_cap->w, grd_cap->h); 
+
+   screen = gr_alloc_screen( grd_cap->w, grd_cap->h * (1 + double_buffer));
+   if (!screen && double_buffer) {
+      double_buffer = 0;
+      screen = gr_alloc_screen( grd_cap->w, grd_cap->h);
+   }
+   gr_set_screen(screen);
+   gr_clear(0);
+   init_offscreen();
+}
+
+void setup_draw_canv(void)
+{
+   if (direct_hack) {
+      gr_make_canvas(&grd_bm, &draw_canv);
+      draw_canv.bm.h = off.h;
+   } else
+      gr_make_canvas(&off, &draw_canv);
+}
+
+bool cur_screen;
+void show_screen(void)
+{
+   if (!direct_hack) {
+      if (!no_blit)
+         gr_bitmap(&off, 0, 0);
+   }
+   if (double_buffer) {
+      if (cur_screen == 0) {
+         gr_set_focus(0, grd_bm.h);
+         draw_canv.bm.bits = grd_bm.bits;
+      } else {
+         gr_set_focus(0, 0);
+         draw_canv.bm.bits = grd_bm.bits + grd_bm.row * draw_canv.bm.h;
+      }
+      cur_screen = !cur_screen;
+   }         
+}
+
+void start_graphics(void)
+{
+   gr_init();
+}
+
+#define P0   0
+#define P1   (255/3)
+#define P2   (255*2/3)
+#define P3   255
+int pal_data[] =
+{
+   P3,P3,P3,
+
+   P3,P0,P0,
+   P3,P0,P1,
+   P3,P0,P2,
+   P3,P1,P0,
+   P3,P1,P1,
+   P3,P1,P2,
+   P3,P2,P0,
+   P3,P2,P1,
+   P3,P2,P2,
+   P3,P3,P0,
+   P3,P3,P1,
+   P3,P3,P2,
+
+   P0,P3,P0,
+   P1,P3,P0,
+   P2,P3,P0,
+   P0,P3,P1,
+   P1,P3,P1,
+   P2,P3,P1,
+// P0,P3,P2,
+   P1,P3,P2,
+   P2,P3,P2,
+// P0,P3,P3,
+// P1,P3,P3,
+   P2,P3,P3,
+
+   P0,P0,P3,
+   P0,P1,P3,
+// P0,P2,P3,
+   P1,P0,P3,
+   P1,P1,P3,
+   P1,P2,P3,
+   P2,P0,P3,
+   P2,P1,P3,
+   P2,P2,P3,
+// P3,P0,P3,
+   P3,P1,P3,
+   P3,P2,P3
+};
+#undef P0
+#undef P1
+#undef P2
+#undef P3
+
+grs_bitmap texture;
+
+void init_graphic_data(void)
+{
+   int x,y,r,g,b,n;
+
+   for (y=0; y < 32; ++y) {
+     // setup y palette banks
+     r = pal_data[y*3+0];
+     g = pal_data[y*3+1];
+     b = pal_data[y*3+2];
+     for (x=0; x < 8; ) {
+        n = (y * 8 + x) * 3;
+        pal[n+0] = r * (x*2+2) / 16;
+        pal[n+1] = g * (x*2+2) / 16;
+        pal[n+2] = b * (x*2+2) / 16;
+        ++x;
+     } 
+   }
+
+   gr_init_bitmap(&texture, (uchar *) Malloc(256*256), BMT_FLAT8, 0, 256,256);
+   for (y=0; y < 256; ++y)
+      for (x=0; x < 256; ++x)
+         texture.bits[x+256*y] = (x+23)^y;
+}
+
+char fps_buffer[64];
+extern int tris;
+bool updated;
+int check_delay = 200;
+
+void process_time(void)
+{
+   static int checkpoint_time;
+   static int checkpoint_frame;
+   static int this_frame;
+
+   struct dostime_t time;
+   int hund;
+
+   _dos_gettime(&time);
+   hund = ((time.hour*60 + time.minute)*60
+          + time.second)*100 + time.hsecond;
+
+   if (hund < checkpoint_time) // wrapped!
+      this_frame = 0;          // force a restart
+
+   if (!this_frame || (hund > checkpoint_time + check_delay && this_frame - checkpoint_frame > 1)) {
+      if (this_frame) {
+         // show the FPS
+         double fps = (this_frame - checkpoint_frame)
+                   / ((hund - checkpoint_time) / 100.0);
+         sprintf(fps_buffer, "%.1lf fps  %d polys", fps, tris);
+         updated = TRUE;
+      }
+      checkpoint_time = hund;
+      checkpoint_frame = this_frame;
+   }
+   ++this_frame;
+   tris = 0;
+}
+
+#define MOV   (0.02/map_scale)
+#define ROT   0x10
+
+bool clear=TRUE;
+bool swap_uv;
+bool wireframe;
+
+extern int grid_size_x, grid_size_y;
+extern int scale;
+
+int mode_index;
+int modes[] =
+{
+   GRM_320x200x8,
+   GRM_320x400x8,
+   GRM_640x400x8,
+   GRM_640x480x8,
+   GRM_800x600x8
+};
+int mode_count = sizeof(modes) / sizeof(modes[0]);
+
+void reset_screen(void)
+{
+   set_screen_mode(modes[mode_index]);
+   setup_draw_canv();
+   gr_set_pal(0, 256, pal);
+}
+
+void mode_switch(int d)
+{
+   mode_index = (mode_index + d + mode_count) % mode_count;
+   reset_screen();
+}
+
+void mode_set(int d)
+{
+   mode_index = d % mode_count;
+   reset_screen();
+}
+
+FILE *in,*out;
+bool show_times = TRUE;
+
+void update_screen(void)
+{
+   gr_push_canvas(&draw_canv);
+   if (clear)
+      gr_clear(0);
+   draw_scene();
+   process_time();
+   if (show_times)
+      draw_string(scr, row, 2, 160, fps_buffer);
+   gr_pop_canvas();
+   show_screen();
+}
+
+void write_mode_info(void)
+{
+   fprintf(out, "%c%c%c%c%c%c grid:%2dx%2d screen:%4dx%3d  ",
+       "b "[no_blit],
+       " c"[clear],
+       " u"[swap_uv],
+       " d"[direct_hack],
+       " w"[wireframe],
+       " t"[show_times],
+       grid_size_x, grid_size_y,
+       grd_bm.w, grd_bm.h);
+}
+
+#define GRID   256
+
+bool output_info;
+void output_time(void)
+{
+   int check_old = check_delay;
+
+   // first, we're in the middle of a phase,
+   // so clear it out
+
+   updated = FALSE;
+   check_delay = 100;
+   while (!updated)
+      update_screen();
+
+   // now let's process an entire phase
+   check_delay = check_old;
+   updated = FALSE;
+   while (!updated)
+      update_screen();
+
+   if (output_info)
+      write_mode_info();
+
+   fprintf(out, "%s\n", fps_buffer);
+}
+
+extern int multi_grid_poly, multi_grid_split;
+
+void doit(void)
+{
+   reset_screen();
+
+   for(;;) {
+      update_screen();
+
+      while (kbhit() || in) { 
+         int c;
+         if (kbhit()) {
+            c = getch();
+               // if non-interactive, don't accept anything except "quit"
+            if (in) {
+               if (c != 'Q' && c != 27)
+                  continue;
+            }
+         }
+         else
+            c = feof(in) ? 'Q' : fgetc(in);
+
+         switch(c) {
+            case ';':
+               if (in) {
+                  char buf[256];
+                  fgets(buf, 256, in);
+               }
+               break;
+
+            case '=':
+            case '+':
+                      if (grid_size_x < GRID) ++grid_size_x;
+                      if (grid_size_y < GRID) ++grid_size_y;
+                      break;
+            case '-':
+                      if (grid_size_x > 1) --grid_size_x;
+                      if (grid_size_y > 1) --grid_size_y;
+                      break;
+
+            case '0': grid_size_x = 1;
+                      grid_size_y = 1;
+                      break;
+
+              // some default grid sizes; making them multiples of 4 (or 8)
+              // lets us use 'h' and 'v' without changing the poly count
+            case '9': grid_size_x = 72;
+                      grid_size_y = 72;
+                      break;
+
+            case '8': grid_size_x = 48;
+                      grid_size_y = 48;
+                      break;
+          
+            case '7': grid_size_x = 32;
+                      grid_size_y = 32;
+                      break;
+
+            case '6': grid_size_x = 24;
+                      grid_size_y = 24;
+                      break;
+
+            case '5': grid_size_x = 16;
+                      grid_size_y = 16;
+                      break;
+
+            case 'h': grid_size_x *= 2;
+                      grid_size_y /= 2;
+                      if (grid_size_x > GRID) grid_size_x = GRID;
+                      if (grid_size_y < 1) grid_size_y = 1;
+                      break;
+
+            case 'v': grid_size_y *= 2;
+                      grid_size_x /= 2;
+                      if (grid_size_y > GRID) grid_size_y = GRID;
+                      if (grid_size_x < 1) grid_size_x = 1;
+                      break;
+
+            case 'x': if (grid_size_x < GRID) ++grid_size_x; break;
+            case 'X': if (grid_size_x > 1) --grid_size_x; break;
+            case 'y': if (grid_size_y < GRID) ++grid_size_y; break;
+            case 'Y': if (grid_size_y > 1) --grid_size_y; break;
+
+            case '[': if (multi_grid_split > 1) --multi_grid_split; break;
+            case ']': if (multi_grid_split < 15) ++multi_grid_split; break;
+
+            case '{': if (multi_grid_poly > 1) --multi_grid_poly; break;
+            case '}': if (multi_grid_poly < 99) ++multi_grid_poly; break;
+            case ')': multi_grid_poly =  0; break;
+            case '!': multi_grid_poly =  3; break;
+            case '@': multi_grid_poly =  7; break;
+            case '#': multi_grid_poly = 12; break;
+            case '$': multi_grid_poly = 18; break;
+            case '%': multi_grid_poly = 24; break;
+            case '^': multi_grid_poly = 30; break;
+            case '&': multi_grid_poly = 36; break;
+            case '*': multi_grid_poly = 42; break;
+            case '(': multi_grid_poly = 48; break;
+
+            case 'm': mode_switch(1); break;
+            case 'M': mode_switch(-1); break;
+
+            case '1': mode_set(0); break;
+            case '2': mode_set(1); break;
+            case '3': mode_set(3); break;
+
+            case 'd': try_direct = !try_direct; reset_screen(); break;
+            case 'b': no_blit = !no_blit; break;
+            case 'u': swap_uv = !swap_uv; break;
+            case 'w': wireframe = !wireframe; break;
+
+            case 't': show_times = !show_times; break;
+            case 'T': output_time(); break;
+            case 'i': output_info = !output_info; break;
+
+            case '>': if (scale < 8) ++scale; break;
+            case '<': if (scale > 0) --scale; break;
+
+            case 'c': clear = !clear; break;
+
+            case 27: case 'Q': return; break;
+         }
+      }
+   }
+}
+
+#pragma off(unreferenced)
+int main(int argc, char **argv)
+{
+   int i,j;
+
+   if (argc >= 2) {
+      // argv[1] = script
+      // argv[2] = output file
+      in = fopen(argv[1], "r");
+      if (!in) {
+         printf("Unable to open script file '%s'.\n", argv[1]);
+         return 1;
+      }
+      if (argc >= 3) {
+         out = fopen(argv[2], "w");
+         if (!out) {
+            printf("Unable to open output file '%s'.\n", argv[2]);
+            return 1;
+         }
+      }
+      if (argc >= 4)
+         fprintf(out, "%s\n", argv[3]);
+
+      check_delay = 1000;  // run each test for 10 s
+      output_info = TRUE;
+      show_times = FALSE;
+   }
+
+   init_graphic_data();
+   start_graphics();
+
+   doit();
+
+   if (in) fclose(in);
+   if (out) fclose(out);
+
+   gr_close();
+   return 0;
+}
+#pragma on(unreferenced)
+

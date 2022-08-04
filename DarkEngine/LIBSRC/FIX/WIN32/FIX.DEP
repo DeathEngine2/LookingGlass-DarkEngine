@@ -1,0 +1,23 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+fix.obj: dbg.h dbgmacro.h fix.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h trigtab.h types.h
+
+fix_pow.obj: fix.h types.h
+
+fixsprnt.obj: fix.h types.h
+
+fix_asm.obj: thunks.inc
+
+atofix.obj: fix.h types.h
+
+fix24.obj: fix.h trigtab.h types.h
+
+f_exp.obj: fix.h trigtab.h types.h
+
+trigtab.obj: fix.h types.h
+
+fixdiv.obj: cseg.inc msmacros.inc thunks.inc type.inc
+
+safefix.obj: dbg.h dbgmacro.h fix.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h

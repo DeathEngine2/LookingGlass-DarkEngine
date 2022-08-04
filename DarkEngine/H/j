@@ -1,0 +1,209 @@
+3d.h:// Point definition and manipulation
+AIL.H:#define VOC_BLK_PTR       1  // Pointer to current block
+AIL.H:#define VOC_REP_BLK       2  // Pointer to beginning of repeat loop block
+AIL.H:   REALFAR  prev_ISR;               // Pointer to previous INT 66H ISR
+AIL.H:   VDI_HDR *VHDR;                // Pointer to driver header (same as buf)
+AIL.H:   SAMPLE     *samples;             // Pointer to list of SAMPLEs
+AIL.H:   SEQUENCE   *sequences;           // Pointer to list of SEQUENCEs
+AIL.H:   WAVE_ENTRY *library;             // Pointer to wave library
+AIL.H:   WAVE_ENTRY *wave [NUM_CHANS];    // Pointer to WAVE_ENTRY for each channel
+AIL3.H:   REALFAR  prev_ISR;               // Pointer to previous INT 66H ISR
+AIL3.H:   VDI_HDR *VHDR;                // Pointer to driver header (same as buf)
+AIL3.H:   SAMPLE     *samples;             // Pointer to list of logical SAMPLEs
+ANIM.H:   Point          anchorOff;		// amt by which anchor moved, or 0,0
+ANIM.H:   Point          newsize;			// new changed size, or 0,0
+ANIM.H:	Point size;				// size of anim
+ANIM.H:	Point anchor;			// anchor point of anim
+ANIM.H:Point AnimGetSize(Ref animRef);					// get size of an anim
+ARQAPI.H:    // Pointer to object used to execute read
+BASE.H:} Point;
+BASE.H:// macros to make comparing Points easier
+BASE.H:#define PointsEqual(p1,p2) (!memcmp(&(p1),&(p2),sizeof(Point)))
+BASE.H:#define PointSetNull(p) do {(p).x = -1; (p).y = -1;} while (0);
+BASE.H:#define PointCheckNull(p) ((p).x == -1 && (p).y == -1)
+BASE.H:   Point ul;
+BASE.H:   Point lr;
+BUTARRAY.H:Gadget *gad_buttonarray_create(Gadget *parent, Point coord, int z, int msize_x, int msize_y, int window_x, int window_y,
+CACHEAPI.H:    // Add a client to the caching system.  Pointer argument is not stored.
+COMTOOLS.H:// "Interface Pointers," IPtrs: These macros provide automatic query &
+COMTOOLS.H:    // Pointer operators
+COMTOOLS.H:    // Pointer operators
+COMTOOLS.H:        class cOuterPointer \
+COMTOOLS.H:            cOuterPointer() : m_pOuterUnknown(NULL) {}; \
+CURDAT.H:extern Point LastCursorPos;
+CURSORS.H:typedef void (*CursorDrawFunc)(int cmd, Region* r, struct _cursor* c, Point pos);
+CURSORS.H:  Point hotspot;
+CURSORS.H:errtype uiMakeBitmapCursor(Cursor* c, grs_bitmap* bm, Point hotspot);
+CURSORS.H:void uiComposedBlit(grs_bitmap* bm, Point xy);
+CURSORS.H:#define UI_DETECT_SCREEN_SIZE (MakePoint(-1,-1))
+CURSORS.H:extern errtype uiUpdateScreenSize(Point size);
+CURSORS.H:// Points *c to the top cursor on cs; or NULL if there is no 
+DSUTIL.H://  pDS         -- Pointer to an IDirectSound that will be used to create
+DSUTIL.H://  pDSB        -- Pointer to an IDirectSoundBuffer to be reloaded.
+DSUTIL.H://  pDS         -- Pointer to an IDirectSound that will be used to create
+DYNARRAY.H:// @TBD (toml 12-16-96): remove usages of this, replace with AsPointer()
+DYNARRAY.H:    T * AsPointer();
+DYNARRAY.H:    const T * AsPointer() const;
+DYNARRAY.H:    const T * pExaminePointer;
+DYNARRAY.H:inline T * cDynArray<T>::AsPointer()
+DYNARRAY.H:inline const T * cDynArray<T>::AsPointer() const
+EFILE.H: * Added tolerance param to EsetRemoveRedundantPoints
+EFILE.H: * Modified EsetScalePoints() to take object index, added EsetRotatePoints(),
+EFILE.H:void ErecAllocPoints(Erec *perec, int numPts);
+EFILE.H:void ErecMakePoints(Erec *perec, int numPts, Epoint *ppts);
+EFILE.H:void EsetRemoveRedundantPoints(Erec *perec, double tol);
+EFILE.H:void EsetScalePoints(Erec *perec, int index, Evector vscale);
+EFILE.H:void EsetRotatePoints(Erec *perec, int index, double rotate);
+EVENT.H:#define UIEVFRONT  Point pos;        /* all ui events have a "screen" position */  \
+EVENT.H:  Point joypos;     /* joystick position */
+EVENT.H:  UIEVBACK(sizeof(uchar)+sizeof(Point));
+EVENT.H:extern Point uiJoystickMouseGain;
+FDESC.H:      Point anchorPt;   // point to anchor from
+GADGETS.H:   Point conversion;
+GADGETS.H:   Point delta;
+GADGETS.H:Gadget *gadget_init(int display_type, Point extent);
+GADGETS.H:errtype gadget_move(Gadget *g, Point coord, int z);
+GFILE.H:bool GfileFindImage(grs_bitmap *pbm, Point currLoc, Rect *parea, uchar bordCol);
+GSHELAPI.H:typedef struct Point      Point;
+GSHELAPI.H:    STDMETHOD_(BOOL, SetOSCursor)(THIS_ sGrBitmap * pCursorBitmap, const Point * pHotSpot) PURE;
+HASHSET.H:    // Pointer to an array of chunks
+HEAPAGNT.H:/* HeapAgent Entry-Point API identifiers: errorAPI field of MEM_ERROR_INFO */
+IMAGEHLP.H:    DWORD   FramePointer;
+IPW.H:bool IpwFindImage(Image *pim, Point currLoc, Rect *parea);
+MENU.H:Gadget *gad_menu_create(Gadget *parent, Point *coord, int z, TNGStyle *sty, int width, char *name);
+OLD3D.H:// Point definition and manipulation
+PICT.H:	Point size;
+PLAIN.H:Gadget *gad_plain_create_from_tng(void *ui_data, Point loc, TNG **pptng, Point size);
+PTRSET.H:class __CPPTOOLSAPI cPointerSetBase : protected cHashSetBase
+PTRSET.H:// CLASS: cPointerSet
+PTRSET.H:class cPointerSet : protected cPointerSetBase
+PTRSET.H:inline TYPE *cPointerSet<TYPE>::Search(const TYPE *pKey) const
+PTRSET.H:inline TYPE *cPointerSet<TYPE>::Insert(const TYPE *pNode)
+PTRSET.H:inline TYPE *cPointerSet<TYPE>::Remove(const TYPE *pNode)
+PTRSET.H:inline TYPE *cPointerSet<TYPE>::GetFirst(tHashSetHandle &Handle) const
+PTRSET.H:inline TYPE *cPointerSet<TYPE>::GetNext(tHashSetHandle &Handle) const
+PTRSET.H:inline void cPointerSet<TYPE>::SetEmpty()
+PTRSET.H:inline BOOL cPointerSet<TYPE>::IsEmpty()
+PUSHBUTT.H:Gadget *gad_pushbutton_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, int button_type, void *display_data, Point size);
+QBOXGADG.H:// Point origin;
+QBOXGADG.H:// gad_qbox_add("Hit Points", QB_INT_SLOT, &crit.hp, QB_NO_OPTION);
+QBOXGADG.H:Gadget *gad_qbox_start(Gadget *parent, Point coord, int z, TNGStyle *sty, ushort options, char *name, Point ss);
+QBOXGADG.H:Gadget *gad_qbox_start_full(Gadget *parent, Point coord, int z, TNGStyle *sty, ushort options, char *name, Point ss, Point spacing,
+QBOXGADG.H:   Point border, Ref left_id, Ref right_id);
+RECT.H: * Added RECT_FILL and MakePoint
+RECT.H://	Here are the Point and Rect structs
+RECT.H:typedef struct Point {
+RECT.H:} Point;
+RECT.H:	Point ul;
+RECT.H:	Point lr;
+RECT.H://	Point macros
+RECT.H:#define PointsEqual(p1,p2) (*(long*)(&(p1)) == *(long*)(&(p2)))
+RECT.H:#define PointSetNull(p) do {(p).x = -1; (p).y = -1;} while (0);
+RECT.H:#define PointCheckNull(p) ((p).x == -1 && (p).y == -1)
+RECT.H:int RectTestPt(Rect *prect, Point pt);
+RECT.H:void RectMove(Rect *pr, Point delta);
+RECT.H:void RectOffsettedRect(Rect *pr, Point delta, Rect *proff);
+RECT.H:int RectClipCode(Rect *prect, Point pt);
+RECT.H://Point MakePoint(short x, short y);  // Guess what this does.
+RECT.H://#define MakePoint(x,y) (Point)(((ushort)y<<16)+((ushort)x))
+RECT.H:Point MakePointInline(ushort x, ushort y);
+RECT.H:#pragma aux MakePointInline = \
+RECT.H:__inline Point MakePointInline(ushort x, ushort y)
+RECT.H:__inline Point MakePointInline(ushort x, ushort y)
+RECT.H:    return *((Point *)(&l));
+RECT.H:#define MakePoint(x,y) MakePointInline((ushort)x,(ushort)y)
+REGION.H:int region_traverse_point(Region *reg, Point target, TravRectCallback fn, int order, void *data);
+REGION.H:bool region_test_pt(Region* reg, Point pt);
+RLTYPES.H:    RLLightPoint,
+RLTYPES.H:    RLLightParallelPoint
+RLTYPES.H:static const RLRenderQuality RLFillPoints =     0x30;
+RLTYPES.H:    RLFillPoints        = 0 * RLLightMax,
+SGL.H:extern int  CALL_CONV	sgl_revolve_polygon(	int nNoPoints, 
+SGL.H:// pContext: Pointer to a context structure for this set of triangles.
+SGL.H:// pFaces: Pointer to the first face in the array of faces.
+SGL.H:// pVertices: Pointer to the first vertex in the array of vertices, some or all
+SLIDER.H:Gadget *gad_slider_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, int alignemnt, int min, int max,
+SLIDER.H:   int value, int increment, Point size);
+SMRTHEAP.H:/* SmartHeap Entry-Point API identifiers: errorAPI field of MEM_ERROR_INFO */
+SMRTHEAP.H:/* Pointer Status: returned by MemCheckPtr */
+TEXTGADG.H:Gadget *gad_textgadget_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, ulong options, Point size);
+TEXTTOOL.H:} TTPoint;
+TEXTTOOL.H:   TTPoint crn;
+TNG.H:   Point frobsize;      // size of non-resource frobs
+TNG.H:   errtype (*draw_func)(struct _TNG *ptng, ushort partmask, Point loc);
+TNG.H:   bool (*mousebutt)(struct _TNG *ptng, uchar type, Point rel);
+TNG.H:   bool (*mousemove)(struct _TNG *ptng, Point loc);
+TNG.H:void TNGDrawBase(TNG *ptng, Point coord, Point size);
+TNG.H:void TNGDrawBitmapRef(Ref ref, Point pt);
+TNG.H:void TNGDrawTileMapRef(Ref ref, Point pt);
+TNG.H:bool tng_cb_mousebutt(TNG *ptng, uchar type, Point loc);
+TNG.H:bool tng_cb_mousemove(TNG *ptng, Point loc);
+TNG.H:errtype tng_cb_draw(TNG *ptng, ushort partmask, Point loc);
+TNG.H:extern Point tngZeroPt;
+TNGAPP.H:extern Point tng_absloc(TNG* ptng);
+TNGAPP.H:extern Gadget *gad_pushbutton_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, int button_type,
+TNGAPP.H:   void *display_data, Point size);
+TNGAPP.H:extern Gadget *gad_slider_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, int alignment, int min, int max,
+TNGAPP.H:   int value, int increment, Point size);
+TNGAPP.H:extern Gadget *gad_textgadget_create_from_tng(void *ui_data, Point loc, TNG **pptng, TNGStyle *sty, ulong options, Point size);
+TNGBARRY.H:   void (*func)(Rect* r, Point butcoord, void* data);
+TNGBARRY.H:   Point bsize, msize, wsize, scroll_size;
+TNGBARRY.H:   Point size, offset, lsel;
+TNGBARRY.H:errtype tng_buttonarray_init(void *ui_data, TNG *ptng, TNGStyle *sty, ushort options, Point msize, Point wsize, Point bsize, int num_sel);
+TNGBARRY.H:errtype tng_buttonarray_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGBARRY.H:errtype tng_buttonarray_size(TNG *ptng, Point *ppt);
+TNGBARRY.H:bool tng_buttonarray_mousebutt(TNG *ptng, uchar type, Point loc);
+TNGMENU.H:   Point coord;
+TNGMENU.H:   Point size;
+TNGMENU.H:errtype tng_menu_init(void *ui_data, TNG *ptng, TNGStyle *sty, Point coord, int width, 
+TNGMENU.H:errtype tng_menu_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGMENU.H:errtype tng_menu_size(TNG *ptng, Point *ppt);
+TNGMENU.H:bool tng_menu_mousebutt(TNG *ptng, uchar type, Point loc);
+TNGMENU.H:errtype tng_menu_popup_loc(TNG *ptng, Point poploc);
+TNGPLAIN.H:   Point size;
+TNGPLAIN.H:errtype tng_plain_init(void *ui_data, TNG *ptng, Point size);
+TNGPLAIN.H:errtype tng_plain_size(TNG *ptng, Point *ppt);
+TNGPUSHB.H:   Point size;
+TNGPUSHB.H:errtype tng_pushbutton_init(void *ui_data, TNG *ptng, TNGStyle *sty, int button_type, void *display_data, Point size);
+TNGPUSHB.H:errtype tng_pushbutton_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGPUSHB.H:errtype tng_pushbutton_size(TNG *ptng, Point *ppt);
+TNGPUSHB.H:bool tng_pushbutton_mousebutt(TNG *ptng, uchar type, Point loc);
+TNGQBOX.H:   void *var;                  // Pointer to actual variable
+TNGQBOX.H:   Point aux_size;
+TNGQBOX.H:   Point size, slot_size, spacing, border;
+TNGQBOX.H:errtype tng_quickbox_init(void *ui_data, TNG *ptng, TNGStyle *sty, ushort options, Point slot_size, Point spacing, Point border,
+TNGQBOX.H:errtype tng_quickbox_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGQBOX.H:errtype tng_quickbox_size(TNG *ptng, Point *ppt);
+TNGQBOX.H:bool tng_quickbox_mousebutt(TNG *ptng, uchar type, Point loc);
+TNGSLIDR.H:   Point size;
+TNGSLIDR.H:errtype tng_slider_init(void *ui_data, TNG *ptng, TNGStyle *sty, int alignment, int min, int max, int value, int increm, Point size);
+TNGSLIDR.H:errtype tng_slider_full_init(void *ui_data, TNG *ptng, TNGStyle *sty, int alignment, int min, int max, int value, int increm, Point size,
+TNGSLIDR.H:errtype tng_slider_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGSLIDR.H:errtype tng_slider_size(TNG *ptng, Point *ppt);
+TNGSLIDR.H:bool tng_slider_mousebutt(TNG *ptng, uchar type, Point loc);
+TNGSLIDR.H:bool tng_slider_apply_click(TNG *ptng, Point loc);
+TNGTEXTG.H:   Point size;
+TNGTEXTG.H:errtype tng_textgadget_init(void *ui_data, TNG *ptng, TNGStyle *sty, ulong options, Point size, Point abs_loc);
+TNGTEXTG.H:errtype tng_textgadget_2d_draw(TNG *ptng, ushort partmask, Point loc);
+TNGTEXTG.H:errtype tng_textgadget_size(TNG *ptng, Point *ppt);
+TNGTEXTG.H:bool tng_textgadget_mousebutt(TNG *ptng, uchar type, Point loc);
+VESA.H:   ulong	OEMStringPtr;          	/* Pointer to OEM string            */
+VESA.H:   ushort VideoModePtrOff;       /* Pointer to supported modes offset  */
+VESA.H:   ulong	OemVendorNamePtr;		   /* Pointer to Vendor Name string	*/
+VESA.H:   ulong	OemProductNamePtr;		/* Pointer to Product Name string	*/
+VESA.H:   ulong OemProductRevPtr;		   /* Pointer to Product Revision str	*/
+VESA.H:   ulong	WinFuncPtr;				   /* Pointer to window function       */
+VESA.H:   ulong	OffScreenMemOffset;		/* Pointer to start of offscreen mem*/
+VOX.H:   grs_bitmap *col;  // Pointers to color maps
+VOX.H:   grs_bitmap *ht;   // Pointers to height maps
+biped.h:// Point lower arm towards world vector
+dispapi.h:    // Pointers in ModeCap will automatically monitored. They may
+dispapi.h:    // invalidated/fixed-up across Lock/Unlock cycles.  Pointer must already
+loco.h:// Pointer to the app clock
+util2d.h:extern int UtilRefAnchor(Ref r, Point *anchor);
+vec2.h:extern mxs_real Vec2PointLineDist(Vec2 *p, Vec2 *l1, Vec2 *l2);
+vec2.h:extern mxs_real Vec2PointSegmentDist(Vec2 *p, Vec2 *l1, Vec2 *l2);
+vec2.h:extern mxs_real Vec2PointSegmentClosest(Vec2 *p, Vec2 *l1, Vec2 *l2, mxs_real *s, Vec2 *c);
+vec2.h:void Vec2TangentThruPoint(Vec2 *c, mxs_real r, Vec2 *p, Vec2 *tangent_pt, fixang *tangent_angle, uchar dir);
+vec2.h:void Vec2PointFromParamVector(Vec2 *pt, Vec2 *p, Vec2 *v, mxs_real t);
+vec2.h:void Vec2PointFromParamSegment(Vec2 *pt, Vec2 *p, Vec2 *q, mxs_real t);

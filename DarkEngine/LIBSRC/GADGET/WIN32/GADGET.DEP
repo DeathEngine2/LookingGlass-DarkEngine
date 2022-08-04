@@ -1,0 +1,69 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+gadget.obj: 2d.h _dstruct.h altfix.h appagg.h array.h cfg.h cfgdbg.h \
+	 comtools.h config.h cursors.h datapath.h dbg.h dbgmacro.h dev2d.h \
+	 dispapi.h dispguid.h drawelem.h error.h event.h fix.h fixreal.h \
+	 font.h g2.h gadbase.h gadbox.h gadbutt.h gadget.h gadgint.h \
+	 gadmenu.h gadscale.h gcompose.h guistyle.h hash.h hotkey.h kb.h \
+	 kbcook.h keydefs.h lg.h lgadover.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h lgsprntf.h lzw.h matrixs.h memall.h memmacro.h mouse.h \
+	 mxang.h prikind.h rect.h region.h res.h restypes.h slab.h types.h \
+	 uibutton.h uigadget.h util2d.h utilcomp.h
+
+drawelem.obj: 2d.h array.h cfgdbg.h comtools.h cursors.h datapath.h dbg.h \
+	 dbgmacro.h dev2d.h drawelem.h error.h fix.h font.h g2.h gadbase.h \
+	 gadbox.h gadbutt.h gadget.h gadmenu.h gadscale.h guistyle.h lg.h \
+	 lgadover.h lgalt.h lgassert.h lglocmsg.h lglog.h lgsprntf.h lzw.h \
+	 matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h rect.h \
+	 region.h res.h restypes.h slab.h types.h util2d.h utilcomp.h
+
+util2d.obj: 2d.h 2dres.h appagg.h array.h cfgdbg.h comtools.h cursors.h \
+	 datapath.h dbg.h dbgmacro.h dev2d.h dispapi.h dispguid.h drawelem.h \
+	 error.h fdesc.h fix.h font.h g2.h gadbase.h gadbox.h gadbutt.h \
+	 gadget.h gadmenu.h gadscale.h guistyle.h lg.h lgadover.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lzw.h matrixs.h memall.h memmacro.h \
+	 mouse.h mxang.h prikind.h rect.h region.h res.h restypes.h slab.h \
+	 types.h util2d.h utilcomp.h
+
+gcompose.obj: 2d.h 2dres.h appagg.h comtools.h datapath.h dbg.h dbgmacro.h \
+	 dev2d.h dispapi.h dispguid.h error.h fdesc.h fix.h font.h g2.h \
+	 gcompose.h gfile.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 matrixs.h memall.h memmacro.h mxang.h prikind.h rect.h res.h \
+	 restypes.h types.h
+
+uibutton.obj: 2d.h 2dres.h array.h cfgdbg.h comtools.h cursors.h datapath.h \
+	 dbg.h dbgmacro.h dev2d.h drawelem.h error.h event.h fdesc.h fix.h \
+	 font.h g2.h gadbase.h gadbox.h gadbutt.h gadget.h gadgint.h \
+	 gadmenu.h gadscale.h gcompose.h guistyle.h kb.h kbcook.h keydefs.h \
+	 lg.h lgadover.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mouse.h mprintf.h mxang.h prikind.h rect.h \
+	 region.h res.h restypes.h slab.h types.h uibutton.h uigadget.h
+
+gadblist.obj: 2d.h array.h comtools.h cursors.h datapath.h dbg.h dbgmacro.h \
+	 dev2d.h drawelem.h error.h event.h fix.h font.h g2.h gadbase.h \
+	 gadblist.h gadbox.h gadbutt.h gadget.h gadmenu.h gadscale.h \
+	 guistyle.h lg.h lgadover.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h rect.h \
+	 region.h res.h restypes.h slab.h types.h uibutton.h uigadget.h
+
+gadtext.obj: 2d.h array.h comtools.h cursors.h datapath.h dbg.h dbgmacro.h \
+	 dev2d.h drawelem.h error.h event.h fix.h font.h g2.h gadbase.h \
+	 gadbox.h gadbutt.h gadget.h gadmenu.h gadscale.h gadtext.h \
+	 guistyle.h lg.h lgadover.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 matrixs.h memall.h memmacro.h mouse.h mxang.h prikind.h rect.h \
+	 region.h res.h restypes.h slab.h types.h uibutton.h uigadget.h \
+	 uitexted.h
+
+uitexted.obj: 2d.h array.h cfgdbg.h comtools.h cursors.h datapath.h dbg.h \
+	 dbgmacro.h dev2d.h drawelem.h error.h event.h fix.h font.h g2.h \
+	 gadbase.h gadbox.h gadbutt.h gadget.h gadgint.h gadmenu.h \
+	 gadscale.h gadtext.h gcompose.h guistyle.h kb.h kbcook.h keydefs.h \
+	 lg.h lgadover.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mouse.h mprintf.h mxang.h prikind.h rect.h \
+	 region.h res.h restypes.h slab.h types.h uibutton.h uigadget.h \
+	 uitexted.h
+
+guistyle.obj: 2d.h 2dres.h comtools.h datapath.h dbg.h dbgmacro.h dev2d.h \
+	 fdesc.h fix.h font.h g2.h gfile.h guistyle.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 prikind.h rect.h res.h restypes.h types.h

@@ -1,0 +1,812 @@
+Target compilers are:
+Watcom 10.6, Windows
+Watcom 10.6, DOS
+MSVC 4.2, Windows
+
+Target Libraries are:
+lgalloc
+lg
+res
+
+Log is O:\haha.log
+
+------------------------------------------------------
+Installing "lgalloc" on 07-15-97 at 21:32:24 for wdm...
+
+---- Watcom 10.6, Windows
+make sb=X:\PRJ flav=opt comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106\a611
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106\a611\opt
+mkdir X:\PRJ\tech\obj\win32\w106\a611\libsrc\lgalloc
+mkdir X:\PRJ\tech\obj\win32\w106\a611\libsrc\lgalloc\opt
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 0 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 1 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+time: 9 sec
+membase.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\membase.cpp 
+time: 1 sec
+pool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\pool.cpp 
+time: 1 sec
+poolimp.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\poolimp.cpp 
+time: 1 sec
+multpool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\multpool.cpp 
+time: 1 sec
+dbgalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp 
+time: 1 sec
+nonover.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\nonover.cpp 
+time: 0 sec
+heap.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\heap.cpp 
+time: 2 sec
+memtimer.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memtimer.cpp 
+time: 3 sec
+primallc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\primallc.cpp 
+time: 2 sec
+stdalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\stdalloc.cpp 
+time: 8 sec
+Archiving lgalloc.lib.  Flavor = opt.
+        lgalloc.lib <-- nonexistent
+time: 0 sec
+total time: 38 sec
+Deleting temporary files in mk901674.
+make sb=X:\PRJ flav=dbg comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106\a611\dbg
+mkdir X:\PRJ\tech\obj\win32\w106\a611\libsrc\lgalloc\dbg
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 1 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 1 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+time: 11 sec
+membase.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\membase.cpp 
+time: 1 sec
+pool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\pool.cpp 
+time: 1 sec
+poolimp.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\poolimp.cpp 
+time: 1 sec
+multpool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\multpool.cpp 
+time: 2 sec
+dbgalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp 
+time: 2 sec
+nonover.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\nonover.cpp 
+time: 1 sec
+heap.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\heap.cpp 
+time: 2 sec
+memtimer.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memtimer.cpp 
+time: 2 sec
+primallc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\primallc.cpp 
+time: 1 sec
+stdalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\stdalloc.cpp 
+time: 9 sec
+Archiving lgalloc.lib.  Flavor = dbg.
+        lgalloc.lib <-- nonexistent
+time: 1 sec
+total time: 37 sec
+Deleting temporary files in mk901678.
+make sb=X:\PRJ flav=shp comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106\a611\shp
+mkdir X:\PRJ\tech\obj\win32\w106\a611\libsrc\lgalloc\shp
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 1 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 1 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+.\memtimer.h(68): Error! E336: (col 33) declaration specifiers are required to declare 'cAverageTimer' 
+.\memtimer.h(68): Note! N393: (col 33) included from x:\prj\tech\libsrc\lgalloc\memcore.cpp(20) 
+.\memtimer.h(68): Error! E006: (col 21) syntax error; probable cause: missing ';' 
+.\memtimer.h(69): Error! E336: (col 35) declaration specifiers are required to declare 'cAverageTimer' 
+.\memtimer.h(69): Error! E498: (col 21) syntax error before 'm_ReallocTimer'; probable cause: incorrectly spelled type name 
+.\memtimer.h(70): Error! E336: (col 32) declaration specifiers are required to declare 'cAverageTimer' 
+.\memtimer.h(70): Error! E498: (col 21) syntax error before 'm_FreeTimer'; probable cause: incorrectly spelled type name 
+.\memtimer.h(72): Error! E121: (col 1) syntax error 
+total time: 11 sec
+Deleting temporary files in mk901682.
+make sb=X:\PRJ flav=ocv comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\w106\a611\ocv
+mkdir X:\PRJ\tech\obj\win32\w106\a611\libsrc\lgalloc\ocv
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 0 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 0 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+time: 9 sec
+membase.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\membase.cpp 
+time: 1 sec
+pool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\pool.cpp 
+time: 1 sec
+poolimp.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\poolimp.cpp 
+time: 1 sec
+multpool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\multpool.cpp 
+time: 2 sec
+dbgalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp 
+time: 3 sec
+nonover.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\nonover.cpp 
+time: 1 sec
+heap.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\heap.cpp 
+time: 1 sec
+memtimer.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memtimer.cpp 
+time: 2 sec
+primallc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\primallc.cpp 
+time: 2 sec
+stdalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\stdalloc.cpp 
+time: 9 sec
+Archiving lgalloc.lib.  Flavor = ocv.
+        lgalloc.lib <-- nonexistent
+time: 1 sec
+total time: 37 sec
+Deleting temporary files in mk901684.
+
+---- Watcom 10.6, DOS
+make sb=X:\PRJ flav=opt comp=w106 sys=dos4g build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file dos4g\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\dos4g
+mkdir X:\PRJ\tech\libsrc\lgalloc\dos4g\w106
+mkdir X:\PRJ\tech\libsrc\lgalloc\dos4g\w106\a611
+mkdir X:\PRJ\tech\libsrc\lgalloc\dos4g\w106\a611\opt
+mkdir X:\PRJ\tech\obj\dos4g\w106\a611\libsrc\lgalloc
+mkdir X:\PRJ\tech\obj\dos4g\w106\a611\libsrc\lgalloc\opt
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 1 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 1 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(315): Warning! W014: (col 1) no reference to symbol 'pfnPage' 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(315): Note! N392: (col 1) 'unsigned long (* pfnPage)( unsigned long, sAllocLimits * )' in 'int AllocSetPageFunc( unsigned long (* )( unsigned long, sAllocLimits * ))' defined in: x:\prj\tech\libsrc\lgalloc\memcore.cpp(305) (col 48) 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(324): Warning! W014: (col 1) no reference to symbol 'pLimits' 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(324): Note! N392: (col 1) 'sAllocLimits * pLimits' in 'void AllocGetLimits( sAllocLimits * )' defined in: x:\prj\tech\libsrc\lgalloc\memcore.cpp(319) (col 42) 
+time: 1 sec
+membase.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\membase.cpp 
+time: 0 sec
+pool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\pool.cpp 
+time: 1 sec
+poolimp.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\poolimp.cpp 
+time: 1 sec
+multpool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\multpool.cpp 
+time: 1 sec
+dbgalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp 
+time: 0 sec
+nonover.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\nonover.cpp 
+time: 0 sec
+heap.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\heap.cpp 
+time: 2 sec
+memtimer.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memtimer.cpp 
+time: 1 sec
+primallc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\primallc.cpp 
+time: 1 sec
+stdalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\stdalloc.cpp 
+time: 1 sec
+Archiving lgalloc.lib.  Flavor = opt.
+        lgalloc.lib <-- nonexistent
+time: 1 sec
+total time: 18 sec
+Deleting temporary files in mk901688.
+make sb=X:\PRJ flav=dbg comp=w106 sys=dos4g build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file dos4g\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\dos4g\w106\a611\dbg
+mkdir X:\PRJ\tech\obj\dos4g\w106\a611\libsrc\lgalloc\dbg
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\allcguid.cpp 
+time: 0 sec
+memall.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\lgalloc\memall.c 
+x:\prj\tech\libsrc\lgalloc\memall.c(98): Warning! W202: Symbol 'checked_free' has been defined, but not referenced
+time: 3 sec
+memcore.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memcore.cpp 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(315): Warning! W014: (col 1) no reference to symbol 'pfnPage' 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(315): Note! N392: (col 1) 'unsigned long (* pfnPage)( unsigned long, sAllocLimits * )' in 'int AllocSetPageFunc( unsigned long (* )( unsigned long, sAllocLimits * ))' defined in: x:\prj\tech\libsrc\lgalloc\memcore.cpp(305) (col 48) 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(324): Warning! W014: (col 1) no reference to symbol 'pLimits' 
+x:\prj\tech\libsrc\lgalloc\memcore.cpp(324): Note! N392: (col 1) 'sAllocLimits * pLimits' in 'void AllocGetLimits( sAllocLimits * )' defined in: x:\prj\tech\libsrc\lgalloc\memcore.cpp(319) (col 42) 
+time: 2 sec
+membase.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\membase.cpp 
+time: 1 sec
+pool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\pool.cpp 
+time: 6 sec
+poolimp.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\poolimp.cpp 
+time: 3 sec
+multpool.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\multpool.cpp 
+time: 1 sec
+dbgalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp 
+time: 1 sec
+nonover.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\nonover.cpp 
+time: 1 sec
+heap.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\heap.cpp 
+time: 2 sec
+memtimer.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\memtimer.cpp 
+time: 0 sec
+primallc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\primallc.cpp 
+time: 1 sec
+stdalloc.obj <-- nonexistent
+wpp386 x:\prj\tech\libsrc\lgalloc\stdalloc.cpp 
+time: 1 sec
+Archiving lgalloc.lib.  Flavor = dbg.
+        lgalloc.lib <-- nonexistent
+time: 1 sec
+total time: 35 sec
+Deleting temporary files in mk901690.
+
+---- MSVC 4.2, Windows
+make sb=X:\PRJ flav=opt comp=v42 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\v42
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\v42\a611
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\v42\a611\opt
+mkdir X:\PRJ\tech\obj\win32\v42\a611\libsrc\lgalloc
+mkdir X:\PRJ\tech\obj\win32\v42\a611\libsrc\lgalloc\opt
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\allcguid.cpp | tee  allcguid.err
+allcguid.cpp
+time: 2 sec
+memall.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memall.c | tee  memall.err
+memall.c
+time: 1 sec
+memcore.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memcore.cpp | tee  memcore.err
+memcore.cpp
+time: 11 sec
+membase.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\membase.cpp | tee  membase.err
+membase.cpp
+time: 1 sec
+pool.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\pool.cpp | tee  pool.err
+pool.cpp
+time: 5 sec
+poolimp.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\poolimp.cpp | tee  poolimp.err
+poolimp.cpp
+time: 4 sec
+multpool.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\multpool.cpp | tee  multpool.err
+multpool.cpp
+time: 4 sec
+dbgalloc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp | tee  dbgalloc.err
+dbgalloc.cpp
+x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp(27) : warning C4073: initializers put in library initialization area
+time: 2 sec
+nonover.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\nonover.cpp | tee  nonover.err
+nonover.cpp
+time: 1 sec
+heap.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\heap.cpp | tee  heap.err
+heap.cpp
+time: 6 sec
+memtimer.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memtimer.cpp | tee  memtimer.err
+memtimer.cpp
+x:\prj\tech\libsrc\lgalloc\memtimer.cpp(21) : warning C4073: initializers put in library initialization area
+time: 3 sec
+primallc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\primallc.cpp | tee  primallc.err
+primallc.cpp
+time: 4 sec
+stdalloc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\stdalloc.cpp | tee  stdalloc.err
+stdalloc.cpp
+time: 7 sec
+Archiving lgalloc.lib.  Flavor = opt.
+        lgalloc.lib <-- nonexistent
+Microsoft (R) 32-Bit Library Manager Version 4.20.6164
+Copyright (C) Microsoft Corp 1992-1996. All rights reserved.
+
+/OUT:x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\lgalloc.lib 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\allcguid.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\memall.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\memcore.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\membase.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\pool.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\poolimp.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\multpool.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\dbgalloc.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\nonover.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\heap.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\memtimer.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\primallc.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\stdalloc.obj 
+time: 3 sec
+total time: 75 sec
+Deleting temporary files in mk901694.
+make sb=X:\PRJ flav=dbg comp=v42 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\v42\a611\dbg
+mkdir X:\PRJ\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\allcguid.cpp | tee  allcguid.err
+allcguid.cpp
+time: 2 sec
+memall.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memall.c | tee  memall.err
+memall.c
+time: 2 sec
+memcore.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memcore.cpp | tee  memcore.err
+memcore.cpp
+time: 8 sec
+membase.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\membase.cpp | tee  membase.err
+membase.cpp
+time: 3 sec
+pool.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\pool.cpp | tee  pool.err
+pool.cpp
+time: 6 sec
+poolimp.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\poolimp.cpp | tee  poolimp.err
+poolimp.cpp
+time: 2 sec
+multpool.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\multpool.cpp | tee  multpool.err
+multpool.cpp
+time: 2 sec
+dbgalloc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp | tee  dbgalloc.err
+dbgalloc.cpp
+x:\prj\tech\libsrc\lgalloc\dbgalloc.cpp(27) : warning C4073: initializers put in library initialization area
+time: 2 sec
+nonover.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\nonover.cpp | tee  nonover.err
+nonover.cpp
+time: 2 sec
+heap.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\heap.cpp | tee  heap.err
+heap.cpp
+time: 2 sec
+memtimer.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memtimer.cpp | tee  memtimer.err
+memtimer.cpp
+x:\prj\tech\libsrc\lgalloc\memtimer.cpp(21) : warning C4073: initializers put in library initialization area
+time: 2 sec
+primallc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\primallc.cpp | tee  primallc.err
+primallc.cpp
+time: 1 sec
+stdalloc.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\stdalloc.cpp | tee  stdalloc.err
+stdalloc.cpp
+time: 6 sec
+Archiving lgalloc.lib.  Flavor = dbg.
+        lgalloc.lib <-- nonexistent
+Microsoft (R) 32-Bit Library Manager Version 4.20.6164
+Copyright (C) Microsoft Corp 1992-1996. All rights reserved.
+
+/OUT:x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\lgalloc.lib 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\allcguid.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\memall.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\memcore.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\membase.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\pool.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\poolimp.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\multpool.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\dbgalloc.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\nonover.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\heap.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\memtimer.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\primallc.obj 
+x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\stdalloc.obj 
+time: 3 sec
+total time: 56 sec
+Deleting temporary files in mk901703.
+make sb=X:\PRJ flav=shp comp=v42 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+WARNING: Can't find dependency file win32\lgalloc.dep.
+mkdir X:\PRJ\tech\libsrc\lgalloc\win32\v42\a611\shp
+mkdir X:\PRJ\tech\obj\win32\v42\a611\libsrc\lgalloc\shp
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+allcguid.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\allcguid.cpp | tee  allcguid.err
+allcguid.cpp
+time: 1 sec
+memall.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memall.c | tee  memall.err
+memall.c
+time: 1 sec
+memcore.obj <-- nonexistent
+p:\v42\bin\cl.exe x:\prj\tech\libsrc\lgalloc\memcore.cpp | tee  memcore.err
+memcore.cpp
+.\memtimer.h(68) : error C2501: 'cAverageTimer' : missing decl-specifiers
+.\memtimer.h(68) : error C2146: syntax error : missing ';' before identifier 'm_AllocTimer'
+.\memtimer.h(68) : error C2501: 'm_AllocTimer' : missing decl-specifiers
+.\memtimer.h(69) : error C2501: 'cAverageTimer' : missing decl-specifiers
+.\memtimer.h(69) : error C2146: syntax error : missing ';' before identifier 'm_ReallocTimer'
+.\memtimer.h(69) : error C2501: 'm_ReallocTimer' : missing decl-specifiers
+.\memtimer.h(70) : error C2501: 'cAverageTimer' : missing decl-specifiers
+.\memtimer.h(70) : error C2146: syntax error : missing ';' before identifier 'm_FreeTimer'
+.\memtimer.h(70) : error C2501: 'm_FreeTimer' : missing decl-specifiers
+total time: 12 sec
+Deleting temporary files in mk901709.
+
+---- Making local
+make sb=X:\PRJ flav=opt comp=w106 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+Comparing x:\prj\tech\h\allocapi.h and allocapi.h.
+	x:\prj\tech\h\allocapi.h not found.
+cp allocapi.h x:\prj\tech\h\allocapi.h
+Comparing x:\prj\tech\h\allcguid.h and allcguid.h.
+	x:\prj\tech\h\allcguid.h not found.
+cp allcguid.h x:\prj\tech\h\allcguid.h
+Comparing x:\prj\tech\h\allocovr.h and allocovr.h.
+	x:\prj\tech\h\allocovr.h not found.
+cp allocovr.h x:\prj\tech\h\allocovr.h
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+Comparing x:\prj\tech\h\poolimp.h and poolimp.h.
+	poolimp.h is changed, updating x:\prj\tech\h\poolimp.h
+cp poolimp.h x:\prj\tech\h\poolimp.h
+Comparing x:\prj\tech\h\mallocdb.h and mallocdb.h.
+	x:\prj\tech\h\mallocdb.h not found.
+cp mallocdb.h x:\prj\tech\h\mallocdb.h
+Comparing x:\prj\tech\h\dbmem.h and dbmem.h.
+	x:\prj\tech\h\dbmem.h not found.
+cp dbmem.h x:\prj\tech\h\dbmem.h
+cp x:\prj\tech\obj\win32\w106\a611\libsrc\lgalloc\opt\lgalloc.lib x:\prj\tech\lib\win32\w106\a611\opt\lgalloc.lib
+touch x:\prj\tech\lib\win32\w106\a611\opt\lgalloc.lib
+total time: 5 sec
+Deleting temporary files in mk901710.
+make sb=X:\PRJ flav=dbg comp=w106 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\win32\w106\a611\libsrc\lgalloc\dbg\lgalloc.lib x:\prj\tech\lib\win32\w106\a611\dbg\lgalloc.lib
+touch x:\prj\tech\lib\win32\w106\a611\dbg\lgalloc.lib
+total time: 2 sec
+Deleting temporary files in mk901711.
+make sb=X:\PRJ flav=shp comp=w106 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+total time: 2 sec
+Deleting temporary files in mk901712.
+make sb=X:\PRJ flav=ocv comp=w106 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\win32\w106\a611\libsrc\lgalloc\ocv\lgalloc.lib x:\prj\tech\lib\win32\w106\a611\ocv\lgalloc.lib
+touch x:\prj\tech\lib\win32\w106\a611\ocv\lgalloc.lib
+total time: 2 sec
+Deleting temporary files in mk901713.
+make sb=X:\PRJ flav=opt comp=w106 sys=dos4g local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\dos4g\w106\a611\libsrc\lgalloc\opt\lgalloc.lib x:\prj\tech\lib\dos4g\w106\a611\opt\lgalloc.lib
+touch x:\prj\tech\lib\dos4g\w106\a611\opt\lgalloc.lib
+total time: 2 sec
+Deleting temporary files in mk901713.
+make sb=X:\PRJ flav=dbg comp=w106 sys=dos4g local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\dos4g\w106\a611\libsrc\lgalloc\dbg\lgalloc.lib x:\prj\tech\lib\dos4g\w106\a611\dbg\lgalloc.lib
+touch x:\prj\tech\lib\dos4g\w106\a611\dbg\lgalloc.lib
+total time: 5 sec
+Deleting temporary files in mk901714.
+make sb=X:\PRJ flav=opt comp=v42 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\opt\lgalloc.lib x:\prj\tech\lib\win32\v42\a611\opt\lgalloc.lib
+touch x:\prj\tech\lib\win32\v42\a611\opt\lgalloc.lib
+total time: 7 sec
+Deleting temporary files in mk901715.
+make sb=X:\PRJ flav=dbg comp=v42 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+cp x:\prj\tech\obj\win32\v42\a611\libsrc\lgalloc\dbg\lgalloc.lib x:\prj\tech\lib\win32\v42\a611\dbg\lgalloc.lib
+touch x:\prj\tech\lib\win32\v42\a611\dbg\lgalloc.lib
+total time: 5 sec
+Deleting temporary files in mk901717.
+make sb=X:\PRJ flav=shp comp=v42 sys=win32 local
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LGALLOC (SB=X:\PRJ)
+Do not know how to make EXETARG memtest local
+x:\prj\tech\h\allocapi.h newer than allocapi.h, no comparison attempted.
+x:\prj\tech\h\allcguid.h newer than allcguid.h, no comparison attempted.
+x:\prj\tech\h\allocovr.h newer than allocovr.h, no comparison attempted.
+Comparing x:\prj\tech\h\memall.h and memall.h.
+memall.h and x:\prj\tech\h\memall.h are the same, not updating.
+x:\prj\tech\h\virtmem.h newer than virtmem.h, no comparison attempted.
+Comparing x:\prj\tech\h\pool.h and pool.h.
+pool.h and x:\prj\tech\h\pool.h are the same, not updating.
+x:\prj\tech\h\poolimp.h newer than poolimp.h, no comparison attempted.
+x:\prj\tech\h\mallocdb.h newer than mallocdb.h, no comparison attempted.
+x:\prj\tech\h\dbmem.h newer than dbmem.h, no comparison attempted.
+total time: 2 sec
+Deleting temporary files in mk901718.
+
+------------------------------------------------------
+Installing "lg" on 07-15-97 at 21:39:50 for wdm...
+
+---- Watcom 10.6, Windows
+make sb=X:\PRJ flav=opt comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LG (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LG (SB=X:\PRJ)
+mkdir X:\PRJ\tech\libsrc\lg\win32\w106
+mkdir X:\PRJ\tech\libsrc\lg\win32\w106\a611
+mkdir X:\PRJ\tech\libsrc\lg\win32\w106\a611\opt
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+dbg.obj <-- coremutx.h
+wcc386 x:\prj\tech\libsrc\lg\dbg.c 
+time: 1 sec
+tmpalloc.obj <-- tmpalloc.c
+wcc386 x:\prj\tech\libsrc\lg\tmpalloc.c 
+time: 1 sec
+lglog.obj <-- coremutx.h
+wpp386 x:\prj\tech\libsrc\lg\lglog.cpp 
+time: 10 sec
+lgassert.obj <-- coremutx.h
+wpp386 x:\prj\tech\libsrc\lg\lgassert.cpp 
+time: 11 sec
+coremutx.obj <-- coremutx.h coremutx.cpp
+wpp386 x:\prj\tech\libsrc\lg\coremutx.cpp 
+time: 9 sec
+Archiving lg.lib.  Flavor = opt.
+        lg.lib <-- dbg.obj tmpalloc.obj lglog.obj lgassert.obj coremutx.obj
+time: 1 sec
+total time: 37 sec
+Deleting temporary files in mk901719.
+make sb=X:\PRJ flav=dbg comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LG (SB=X:\PRJ)
+Current project set to X:\PRJ\TECH\LIBSRC\LG (SB=X:\PRJ)
+mkdir X:\PRJ\tech\libsrc\lg\win32\w106\a611\dbg
+
+Performing flags check...
+No flags changed.
+
+Building in backing tree. No automatic dependancy creation.
+Use 'make depend' if necessary.
+dbg.obj <-- coremutx.h
+wcc386 x:\prj\tech\libsrc\lg\dbg.c 
+time: 2 sec
+tmpalloc.obj <-- tmpalloc.c
+wcc386 x:\prj\tech\libsrc\lg\tmpalloc.c 
+time: 0 sec
+lglog.obj <-- coremutx.h
+wpp386 x:\prj\tech\libsrc\lg\lglog.cpp 
+time: 14 sec
+lgassert.obj <-- coremutx.h
+wpp386 x:\prj\tech\libsrc\lg\lgassert.cpp 
+time: 9 sec
+coremutx.obj <-- coremutx.h coremutx.cpp
+wpp386 x:\prj\tech\libsrc\lg\coremutx.cpp 
+time: 16 sec
+Archiving lg.lib.  Flavor = dbg.
+        lg.lib <-- dbg.obj tmpalloc.obj lglog.obj lgassert.obj coremutx.obj
+time: 2 sec
+total time: 47 sec
+Deleting temporary files in mk901723.
+make sb=X:\PRJ flav=shp comp=w106 sys=win32 build
+Current project set to X:\PRJ\TECH\LIBSRC\LG (SB=X:\PRJ)

@@ -1,0 +1,2 @@
+x:\prj\tech\libsrc\cpptools\str.cpp(829): Warning! W014: (col 5) no reference to symbol 'nID' 
+x:\prj\tech\libsrc\cpptools\str.cpp(829): Note! N392: (col 5) 'unsigned short nID' in 'int cAnsiStr::LoadStringA( unsigned short )' defined in: x:\prj\tech\libsrc\cpptools\str.cpp(803) (col 34) 

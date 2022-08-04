@@ -1,0 +1,41 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+// $Header: r:/prj/cam/src/shock/RCS/shkrdrbs.h 1.3 1999/02/25 16:21:10 XEMU Exp $
+
+#ifndef __SHKRDRBS_H
+#define __SHKRDRBS_H
+
+#include <rect.h>
+#include <simtime.h>
+
+enum eRadarStatus {kRadarOff, kRadarOn,};
+enum eTargetType { kTargetNone, kTargetEnemy, kTargetPowerup, };
+
+#define kMaxRadarTargets   64
+
+class cRadar
+{
+public:
+   cRadar(void);
+
+   void On(void);
+   void Off(void);
+   void Scan(void);
+   void Status(int *pTargetNum, Point **ppTargetPts, int **ppTargetData);
+
+private:
+   eRadarStatus m_status;
+   int m_numTargets; 
+   mxs_vector m_targetVecs[kMaxRadarTargets]; // raw unrotated target data
+   Point m_targetPts[kMaxRadarTargets];       // player relative target points
+   tSimTime m_lastScanTime;
+   int m_targetData[kMaxRadarTargets];
+};
+
+extern cRadar g_radar;
+
+
+#endif

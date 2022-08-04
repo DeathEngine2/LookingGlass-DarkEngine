@@ -1,0 +1,33 @@
+
+
+tmgr.obj: dbg.h dbgmacro.h dev2d.h fix.h grspoint.h lgassert.h lglog.h \
+         matrixs.h memall.h memmacro.h mprintf.h mxang.h r3ds.h tdrv.h \
+         tmgr.h types.h 
+
+
+blit.obj: dev2d.h fix.h lgassert.h lglog.h matrixs.h mxang.h setup.h types.h 
+
+
+clip.obj: d3dpoint.h dev2d.h fix.h lgassert.h lglog.h matrixs.h memall.h \
+         memmacro.h mxang.h tmpalloc.h types.h 
+
+
+enum.obj: comtools.h dddynf.h dev2d.h dynfunc.h fix.h g2.h grspoint.h \
+         lgassert.h lgd3d.h lglog.h matrixs.h memall.h memmacro.h mprintf.h \
+         mxang.h r3ds.h setup.h tmgr.h types.h 
+
+
+render.obj: d3dmacs.h dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h lgassert.h \
+         lgd3d.h lglog.h matrixs.h memall.h memmacro.h mprintf.h mxang.h \
+         r3ds.h setup.h tdrv.h texture.h tmgr.h tmpalloc.h types.h 
+
+
+setup.obj: appagg.h comtools.h dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h \
+         lgassert.h lgd3d.h lglog.h matrixs.h mprintf.h mxang.h r3ds.h \
+         setup.h texture.h tmgr.h types.h wdispapi.h wdspguid.h 
+
+
+texture.obj: appagg.h cbchain.h comtools.h dbg.h dbgmacro.h dev2d.h dispapi.h \
+         dispguid.h fix.h g2.h grspoint.h lgassert.h lgd3d.h lglog.h \
+         matrixs.h mprintf.h mxang.h r3ds.h rect.h setup.h tdrv.h texture.h \
+         tmgr.h types.h wdispapi.h wdispcb.h wdspguid.h 

@@ -1,0 +1,454 @@
+head	 1.8;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.8
+date	 2000.03.23.17.55.15;  author adurant;  state Exp;
+branches ;
+next	 1.7;
+
+1.7
+date	 2000.03.05.16.45.46;  author ccarollo;  state Exp;
+branches ;
+next	 1.6;
+
+1.6
+date	 2000.03.03.16.57.42;  author ccarollo;  state Exp;
+branches ;
+next	 1.5;
+
+1.5
+date	 2000.02.29.09.55.24;  author adurant;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 2000.02.01.20.07.20;  author TJS;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.01.24.13.08.16;  author TJS;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 2000.01.13.15.59.47;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.08.02.14.46.09;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Scripts specifically in support of mission 4: Framed
+@
+
+
+1.8
+log
+@Framed alarms turn themselves off outside of 75 feet from player.
+@
+text
+@#include "drkgoalt.h"
+#include "drkstats.h"
+
+#define kObjNull ((object)OBJ_NULL)
+
+#define PICK_ID_QVAR "PickID"
+
+///////////////////////////////////////
+
+BEGIN_SCRIPT(TwoPickDoorTraining, RootScript)
+
+METHODS:
+
+   METHOD void DoTrain()
+   {
+      // If the script is no longer active, do nothing
+      if (GetData("CurActive") == TRUE)
+      {
+         if (GetData("CurSelected") == TRUE)
+         {
+            // Draw some text, depending if we have our picks ready or not
+            if ((object)GetData("CurPickObj") == kObjNull)
+            {
+               string hintString1 = Data.GetString("PlayHint", "SelectPickDoor"); // LockpickDoor2
+               string command1 = Data.GetString("PlayAct", "CycleInventory");
+               string command2 = Data.GetString("PlayAct", "Countercycle");
+
+               string DisplayOutput = hintString1 + "\n" + 
+                  command1 + " = " + DarkUI.DescribeKeyBinding(Data.GetString("PlayCmd", "CycleInventory_command")) + "\n" +
+                  command2 + " = " + DarkUI.DescribeKeyBinding(Data.GetString("PlayCmd", "Countercycle_command"));
+
+               DarkUI.TextMessage(DisplayOutput, rgb(255,0,0), 30000);
+            }
+            else
+            {
+               string hintString2 = Data.GetString("PlayHint", "LockpickDoor2");
+               string command = Data.GetString("PlayAct", "Use");
+
+               string DisplayOutput = hintString2 + "\n" + command + " = " + 
+                  DarkUI.DescribeKeyBinding(Data.GetString("PlayCmd", "Use_command"));
+
+               DarkUI.TextMessage(DisplayOutput, rgb(255,0,0), 30000);
+            }
+         }
+         else
+            DarkUI.TextMessage("", rgb(255,0,0), 30000);
+      }
+   }
+
+MESSAGES:
+
+   OnSim()
+   {
+      if (message.starting)
+      {
+         // Create quest vars, if not already there, and subscribe to changes
+         Quest.Set(PICK_ID_QVAR, kObjNull);
+         Quest.SubscribeMsg(self, PICK_ID_QVAR);
+
+         // Initialize our data
+         SetData("CurPickObj", kObjNull);
+         SetData("CurActive", TRUE);
+         SetData("CurSelected", FALSE);
+
+      }
+
+      DefaultOnSim();
+   }
+
+   OnQuestChange()
+   {
+      object pickObj = Quest.Get(PICK_ID_QVAR);
+
+      if ((pickObj == kObjNull) || !Object.InheritsFrom(pickObj, "Lockpick"))
+      {
+         // Note switch away from lockpicks
+         if ((object)GetData("CurPickObj") != kObjNull)
+         {
+            SetData("CurPickObj", kObjNull);
+            DoTrain();
+         }
+      }
+      else
+      {
+         // Note switch to lockpicks
+         if ((object)GetData("CurPickObj") != pickObj)
+         {
+            SetData("CurPickObj", pickObj);
+            DoTrain();
+         }
+      }
+      
+      DefaultOnQuestChange();
+   }
+
+   OnWorldSelect()
+   {
+      SetData("CurSelected", TRUE);
+      DoTrain();
+
+      DefaultOnWorldSelect();
+   }
+
+   OnWorldDeSelect()
+   {
+      SetData("CurSelected", FALSE);
+      DoTrain();
+
+      DefaultOnWorldDeSelect();
+   }
+
+   OnNowUnlocked()
+   {
+      // Deselect and update
+      SetData("CurSelected", FALSE);
+      DoTrain();
+
+      // Disable the script, they "won"
+      SetData("CurActive", FALSE);
+
+      DefaultOnNowUnlocked();
+   }
+
+END_SCRIPT(TwoPickDoorTraining)
+
+///////////////////////////////////////
+
+BEGIN_SCRIPT(TwoPickTraining, RootScript)
+
+MESSAGES:
+
+   OnInvSelect()
+   {
+      Quest.Set(PICK_ID_QVAR, self);
+      DefaultOnInvSelect();
+   }
+
+   OnInvDeSelect()
+   {
+      Quest.Set(PICK_ID_QVAR, kObjNull);
+      DefaultOnInvSelect();
+   }
+
+END_SCRIPT(TwoPickTraining)
+
+///////////////////////////////////////////////////////////////////////////////
+
+#define CASUALTY_GOAL_NORMAL 1
+
+BEGIN_SCRIPT(SpecialGoals, RootScript)
+METHODS:
+   METHOD void CheckCasualties()
+   {
+      // Only track the Kockouts stat here, instead of tracking knockouts
+      // _and_ kills.  We'll track kills separately using the existing
+      // J'Accuse script.  Tracking the kills stat doesn't tell us _who_
+      // got killed, which we need to know in order to discount kills of
+      // creatures who were _already_ knocked out, which we don't want to
+      // count twice.  -TJS, 8/1/99
+      integer KO=Quest.Get(kDarkStatKnockouts), kills=GetData("Kills");
+      integer casualties=KO+kills;
+      integer limit, difficulty;
+
+      for(difficulty=0;difficulty<3;difficulty++)
+      {
+         string qvar=GoalStateVarName(CASUALTY_GOAL_NORMAL+difficulty);
+
+         limit=Quest.Get(string("casualty_limit_")+string(difficulty));
+
+         if(casualties>limit && Quest.Get(qvar)!=kGoalFailed)
+            Quest.Set(qvar,kGoalFailed);
+      }
+   }
+MESSAGES:
+   OnBeginScript()
+   {
+      Quest.SubscribeMsg(self,kDarkStatKnockouts);
+      if(!IsDataSet("Kills"))
+         SetData("Kills",0);
+      DefaultOnBeginScript();
+   }
+   OnQuestChange()
+   {
+      // For the love of God, whatever you do, don't go about setting the
+      // goal state quest variable if it's not KO's that have changed.  You'll
+      // stand to get another OnQuestChange() message (from a _diffferent_
+      // script on the _same_ object's subscription to a _different_ quest
+      // variable) and infinitely recurse.
+
+      if(stricmp(message.m_pName,kDarkStatKnockouts)==0) // i.e. if it was KO's state changing
+         CheckCasualties();
+      DefaultOnQuestChange();
+   }
+   OnMessage()
+   {
+      if(MessageIs("J'Accuse"))
+      {
+         object victim=message.from, metaprop=Object.Named("M-KnockedOut");
+
+         // Looks like the player killed somebody.  But have we already scored
+         // them as a knockout?
+         if(!Object.HasMetaProperty(victim,"M-WasKnockedOut"))
+         {
+            integer kills=GetData("Kills");
+            kills++;
+            SetData("Kills",kills);
+            CheckCasualties();
+         }
+      }        
+      DefaultOnMessage();
+   }
+END_SCRIPT(SpecialGoals)
+
+BEGIN_SCRIPT(AlarmRadius, RootScript)
+
+METHODS:
+
+    METHOD boolean CheckRadius()
+    {
+       integer validradius = 75;
+       vector mypos = Object.Position(self);
+       if ((object)Object.Named("Player")==(object)0)
+          return FALSE;
+       vector playpos = Object.Position(Object.Named("Player"));
+       vector deltapos = mypos-playpos;
+       return (deltapos.Magnitude()<validradius);
+    }
+
+MESSAGES:
+
+    OnBeginScript()
+    {
+       if (!IsDataSet("GotTurnOn"))
+          SetData("GotTurnOn",0);
+       if (!IsDataSet("AmTurnedOn"))
+          SetData("AmTurnedOn",0);
+       DefaultOnBeginScript();
+    }
+
+    OnMessage()
+    {
+       if (MessageIs("TurnOn"))
+       {
+          if (!((integer)GetData("GotTurnOn")==1))
+             SetOneShotTimer(self,"radcheck",0.5);
+          SetData("GotTurnOn",1);
+          SetData("AmTurnedOn",1);
+       }
+       if (MessageIs("TurnOff"))
+       {
+          SetData("AmTurnedOn",0);
+       }
+       DefaultOnMessage();
+    }
+
+    OnTimer()
+    {
+       if (message.name == "radcheck")
+       {
+          boolean inrad = CheckRadius();
+          boolean amon = ((integer)GetData("AmTurnedOn")==1);
+          if ((inrad) && (!amon))
+             SendMessage(self,"TurnOn");
+          if ((!inrad) && (amon))
+             SendMessage(self,"TurnOff");
+          SetOneShotTimer(self,"radcheck",1.0);
+       }
+       DefaultOnTimer();       
+    }
+
+END_SCRIPT(AlarmRadius)
+
+
+
+@
+
+
+1.7
+log
+@Changed training initialization from BeginScript to OnSim with
+message.starting, like I said I was going to before I checked it in the
+first time (whoops)
+@
+text
+@d214 1
+d216 56
+@
+
+
+1.6
+log
+@Added 2-lockpick training script
+@
+text
+@d52 1
+a52 1
+   OnBeginScript()
+d54 5
+a58 3
+      // Create quest vars, if not already there, and subscribe to changes
+      Quest.Set(PICK_ID_QVAR, kObjNull);
+      Quest.SubscribeMsg(self, PICK_ID_QVAR);
+d60 4
+a63 4
+      // Initialize our data
+      SetData("CurPickObj", kObjNull);
+      SetData("CurActive", TRUE);
+      SetData("CurSelected", FALSE);
+d65 3
+a67 1
+      DefaultOnBeginScript();
+@
+
+
+1.5
+log
+@OnMessage calls base class
+@
+text
+@d4 140
+@
+
+
+1.4
+log
+@Stopped recursive case in casualty checker.
+@
+text
+@d65 2
+a66 2
+         DefaultOnMessage();
+      }
+@
+
+
+1.3
+log
+@Oops.
+@
+text
+@d22 2
+d26 2
+a27 2
+         if(casualties>limit)
+            Quest.Set(GoalStateVarName(CASUALTY_GOAL_NORMAL+difficulty),kGoalFailed);
+d40 9
+a48 1
+      CheckCasualties();
+@
+
+
+1.2
+log
+@Moved TrigRoomObject out into traps.scr
+@
+text
+@d22 1
+a22 1
+         limit=Quest.Get("casualty_limit_"+string(difficulty));
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@a60 26
+/* TravellingMcGuffin
+   An object with this script send a TurnOn message when
+   taken to a specific room.  Link the object to the room, with a Route
+   link, to specify where it needs to go.  It'll also get a TurnOff
+   when removed from the room.
+   We intend that this will be used to score victory conditions, by
+   making the object also a Quest Var setting trap.
+   @@TODO: This might actually be a good trigger to put in Gen.
+   */
+BEGIN_SCRIPT(TrigRoomObject, Room)
+MESSAGES:
+   OnObjRoomTransit()
+   {
+      string msg;
+      object newroom=message.ToObjId; // what room am I entering?
+
+      if(Link.AnyExist("Route",self,newroom))
+         msg="TurnOn";
+      else
+         msg="TurnOff";
+
+      Link.BroadcastOnAllLinks(self,msg,"ControlDevice");
+      DefaultOnObjRoomTransit();
+   }
+END_SCRIPT(TrigRoomObject)
+
+@

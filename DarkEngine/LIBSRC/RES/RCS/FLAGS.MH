@@ -1,0 +1,50 @@
+head	 1.2;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.2
+date	 1997.06.30.09.49.40;  author DAVET;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1997.06.25.10.46.32;  author KEVIN;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Flags for res library.
+@
+
+
+1.2
+log
+@Changed TRACE_ALL_ALLOCS to $(TRACE_ALL_ALLOCS)
+@
+text
+@TRACE_ALL_ALLOCS = 
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+
+TRACE_ALL_ALLOCS = 
+
+ALL_FLAGS = $(TRACE_ALL_ALLOCS)
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d7 3
+a9 1
+ALL_FLAGS = TRACE_ALL_ALLOCS
+@

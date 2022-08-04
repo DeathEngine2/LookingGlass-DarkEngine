@@ -1,0 +1,14 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+recorder.obj: aggmemb.h appagg.h appapi.h appguid.h comtools.h constrid.h \
+	 dbg.h dbgmacro.h dynarray.h filekind.h filepath.h filespec.h \
+	 fnamutil.h hashfns.h hashfunc.h hashset.h hshstimp.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h objcguid.h pool.h \
+	 prikind.h recapi.h recguid.h recorder.h recprmpt.h str.h types.h
+
+rectempl.obj: comtools.h dbg.h dbgmacro.h dynarray.h filekind.h filespec.h \
+	 hashfns.h hashfunc.h hashset.h hshstimp.h hshsttem.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h pool.h recapi.h \
+	 recguid.h recorder.h types.h
+
+recprmpt.obj: recprmpt.h

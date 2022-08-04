@@ -1,0 +1,9 @@
+TRACE_ALL_ALLOCS = 
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+
+TRACE_ALL_ALLOCS = 
+
+ALL_FLAGS = $(TRACE_ALL_ALLOCS)

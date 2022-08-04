@@ -1,0 +1,29 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+actmovie.obj: 2d.h actmovie.h aggmemb.h amalloc.h amvideo.h appagg.h \
+	 comtools.h constrid.h control.h datapath.h dbg.h dbgmacro.h ddraw.h \
+	 dev2d.h dispapi.h dispguid.h error.h evcode.h fix.h font.h g2.h \
+	 getlgvid.h imutil.h kb.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 lgvdguid.h lgvidapi.h lzw.h matrixs.h memall.h memmacro.h mouse.h \
+	 movconst.h movieapi.h moviguid.h mtype.h mxang.h objcguid.h \
+	 prikind.h pumpenum.h recapi.h recguid.h rect.h res.h restypes.h \
+	 strmif.h thrdtool.h types.h util2d.h utilcomp.h uuids.h vfwmsgs.h \
+	 wappapi.h wappguid.h wdispapi.h wdspguid.h
+
+amguids.obj: uuids.h
+
+amalloc.obj: actmovie.h amalloc.h amvideo.h comtools.h control.h dbg.h \
+	 dbgmacro.h ddraw.h dev2d.h evcode.h fix.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lgvidapi.h matrixs.h memall.h memmacro.h \
+	 movconst.h movieapi.h moviguid.h mtype.h mxang.h strmif.h \
+	 thrdtool.h types.h uuids.h vfwmsgs.h
+
+imutil.obj: amvideo.h astring.h ddraw.h dev2d.h fix.h imutil.h lgassert.h \
+	 lglog.h matrixs.h mprintf.h mtype.h mxang.h strmif.h types.h \
+	 uuids.h
+
+mtype.obj: lgassert.h lglog.h mtype.h strmif.h
+
+getlgvid.obj: dbg.h dbgmacro.h filekind.h filepath.h filespec.h fnamutil.h \
+	 getlgvid.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h str.h types.h

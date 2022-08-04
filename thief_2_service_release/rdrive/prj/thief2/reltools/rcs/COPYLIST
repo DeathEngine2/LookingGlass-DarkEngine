@@ -1,0 +1,210 @@
+head	 1.5;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @# @;
+
+
+1.5
+date	 2000.01.31.18.31.55;  author adurant;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 1999.12.11.18.19.55;  author adurant;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 1999.12.11.18.02.25;  author adurant;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1999.12.08.12.01.18;  author adurant;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.12.07.21.10.52;  author adurant;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@copylist
+@
+
+
+1.5
+log
+@thief2 not cam
+@
+text
+@r:\prj\thief2\src
+r:\prj\thief2\src\sound
+r:\prj\thief2\src\ai
+r:\prj\thief2\src\csg
+r:\prj\thief2\src\editor
+r:\prj\thief2\src\motion
+r:\prj\thief2\src\portal
+r:\prj\thief2\src\shock
+r:\prj\thief2\src\dark
+r:\prj\thief2\src\physics
+r:\prj\thief2\src\scripts
+r:\prj\thief2\src\render
+r:\prj\thief2\src\script
+r:\prj\thief2\src\object
+r:\prj\thief2\src\actreact
+r:\prj\thief2\src\framewrk
+r:\prj\thief2\src\sim
+r:\prj\thief2\src\ui
+r:\prj\thief2\src\engfeat
+r:\prj\thief2\bin
+r:\prj\thief2\scripts\src
+r:\prj\thief2\scripts\osm
+x:\prj\tech\libsrc\mprintf
+x:\prj\tech\libsrc\lg
+x:\prj\tech\libsrc\lgalloc
+x:\prj\tech\libsrc\matrix
+x:\prj\tech\libsrc\fix
+x:\prj\tech\libsrc\dstruct
+x:\prj\tech\libsrc\cpptools
+x:\prj\tech\libsrc\comtools
+x:\prj\tech\libsrc\templgen
+x:\prj\tech\libsrc\compapis
+x:\prj\tech\libsrc\appcore
+x:\prj\tech\libsrc\dev2d
+x:\prj\tech\libsrc\g2
+x:\prj\tech\libsrc\font
+x:\prj\tech\libsrc\dispdev
+x:\prj\tech\libsrc\config
+x:\prj\tech\libsrc\res
+x:\prj\tech\libsrc\namedres
+x:\prj\tech\winsrc\input
+x:\prj\tech\libsrc\gameshel
+x:\prj\tech\libsrc\timer
+x:\prj\tech\libsrc\rnd
+x:\prj\tech\libsrc\recorder
+x:\prj\tech\libsrc\ui
+x:\prj\tech\libsrc\gadget
+x:\prj\tech\libsrc\sound
+x:\prj\tech\libsrc\sndutil
+x:\prj\tech\libsrc\actmovie
+x:\prj\tech\libsrc\r3d
+x:\prj\tech\libsrc\star
+x:\prj\tech\libsrc\skel
+x:\prj\tech\libsrc\mp
+x:\prj\tech\libsrc\md
+x:\prj\tech\libsrc\dump
+x:\prj\tech\libsrc\vec2
+x:\prj\tech\libsrc\prof
+x:\prj\tech\libsrc\gfile
+x:\prj\tech\libsrc\lgd3d
+x:\prj\tech\libsrc\mm
+x:\prj\tech\winsrc\entrywin
+x:\prj\tech\libsrc\sndsrc
+x:\prj\tech\lib\win32\v60\a611\dbg
+x:\prj\tech\lib\win32\v60\a611\opt
+x:\prj\tech\lib\win32\v60\a611\shp
+x:\prj\tech\lib\win32\v50\a611\dbg
+x:\prj\tech\lib\win32\v50\a611\opt
+x:\prj\tech\lib\win32\v50\a611\shp
+x:\prj\tech\lib\win32\v42\a611\dbg
+x:\prj\tech\lib\win32\v42\a611\opt
+x:\prj\tech\lib\win32\v42\a611\shp
+x:\prj\tech\h
+x:\prj\tech\h\win32
+x:\prj\tech\inc
+x:\prj\tech\inc\win32
+r:\prj\thief2\h
+r:\prj\thief2\h\win32
+r:\prj\thief2\libsrc\ref
+r:\prj\thief2\libsrc\script
+x:\prj\3rdsrc\lib
+
+
+
+
+
+
+
+
+@
+
+
+1.4
+log
+@also copy v60 libs... duh
+@
+text
+@d1 20
+a20 20
+r:\prj\cam\src
+r:\prj\cam\src\sound
+r:\prj\cam\src\ai
+r:\prj\cam\src\csg
+r:\prj\cam\src\editor
+r:\prj\cam\src\motion
+r:\prj\cam\src\portal
+r:\prj\cam\src\shock
+r:\prj\cam\src\dark
+r:\prj\cam\src\physics
+r:\prj\cam\src\scripts
+r:\prj\cam\src\render
+r:\prj\cam\src\script
+r:\prj\cam\src\object
+r:\prj\cam\src\actreact
+r:\prj\cam\src\framewrk
+r:\prj\cam\src\sim
+r:\prj\cam\src\ui
+r:\prj\cam\src\engfeat
+r:\prj\cam\bin
+d77 4
+a80 4
+r:\prj\cam\h
+r:\prj\cam\h\win32
+r:\prj\cam\libsrc\ref
+r:\prj\cam\libsrc\script
+@
+
+
+1.3
+log
+@more files to copy....
+@
+text
+@d64 3
+@
+
+
+1.2
+log
+@script copy source
+@
+text
+@d2 1
+d5 4
+d10 1
+a10 1
+r:\prj\cam\src\portal
+d12 8
+a19 4
+r:\prj\cam\src\editor
+r:\prj\cam\src\physics
+r:\prj\cam\src\shock
+r:\prj\cam\src\motion
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d12 2
+a13 2
+r:\prj\cam\scripts\src
+r:\prj\cam\scripts\osm
+@

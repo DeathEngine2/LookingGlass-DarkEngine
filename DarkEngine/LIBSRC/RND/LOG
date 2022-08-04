@@ -1,0 +1,15 @@
+WARNING: Can't find dependency file win32\rnd.dep.
+map root w: = x:\prj\tech\obj\win32\w105\a611\libsrc\rnd >\dev\nul
+map root v: = x:\prj >\dev\nul
+
+Performing flags check...
+
+Building in backing tree; use 'make depend' if necessary.
+rnd.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\rnd\rnd.c
+time: 1 sec
+Archiving rnd.lib.  Flavor = dbg.
+rnd.lib <-- nonexistent
+time: 1 sec
+total time: 3 sec
+Deleting temporary files in mk174403.

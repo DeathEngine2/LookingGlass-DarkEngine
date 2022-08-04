@@ -1,0 +1,453 @@
+head	 1.9;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.9
+date	 2000.03.15.20.07.10;  author adurant;  state Exp;
+branches ;
+next	 1.8;
+
+1.8
+date	 2000.03.04.08.58.17;  author rsmith;  state Exp;
+branches ;
+next	 1.7;
+
+1.7
+date	 2000.02.28.10.36.36;  author adurant;  state Exp;
+branches ;
+next	 1.6;
+
+1.6
+date	 2000.02.24.21.26.53;  author adurant;  state Exp;
+branches ;
+next	 1.5;
+
+1.5
+date	 2000.02.24.00.54.43;  author TJS;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 2000.02.15.16.26.42;  author TJS;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.02.09.12.42.23;  author TJS;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 2000.02.07.20.13.23;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 2000.01.28.15.22.41;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@"Kidnap" scripts.  Includes gen.
+@
+
+
+1.9
+log
+@Cavador snaps watchobj links to him when he falls unconscious
+@
+text
+@#include "gen.scr" // we want to inherit from quest var traps...
+#include "drkgoalt.h"
+
+// Script file for Thief 2 - Mission 15 - Kidnap
+
+#include "loadup.scr"
+
+const int CAVADOR_LIVE_GOAL=1;
+
+/* Randomizes the given quest var at the beginning of time,
+   and deletes self if quest var is initialized (non-zero)
+   and not the value indicated in our property.
+   */
+BEGIN_SCRIPT(RandPatrolPt, TrigQVar)
+
+   METHOD void Trigger(boolean satisfied)
+   {
+      // instead of triggering, self-destruct when unsatisfied
+      if(!satisfied)
+         Object.Destroy(self);
+   }
+
+   METHOD void ProcessOperation(char op, integer arg, integer sigfigs,
+                                string qvar, boolean reverse)
+   {
+      if(Quest.Get(qvar)!=0)
+         Base::ProcessOperation(op,arg,sigfigs,qvar,reverse);
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      // Don't do default, as we don't want to subscribe.
+      ;
+   }
+   OnSim()
+   {
+      // Yeah, this randomizes once per object, which is dopey, but functional.
+      if(message.starting)
+      {
+         string command, qvar;
+         boolean randomize=TRUE;
+         integer route=-1;
+         integer init=Quest.Get("CavRouteInit");
+
+         if(VarName(command,qvar) && !init)
+         {
+            if(DarkGame.ConfigIsDefined("CavadorRoute"))
+            {
+               DarkGame.ConfigGetInt("CavadorRoute",route);
+               if(route<1 || route>3)
+                  route=-1;
+            }
+            
+            if(route==-1)
+               route=Data.RandInt(1,3);
+            Quest.Set(qvar,route);
+            Quest.Set("CavRouteInit",TRUE);
+         }
+	 SetOneShotTimer(self,"Go",0.0);
+      }
+      DefaultOnSim();
+   }
+   OnTimer()
+   {
+      ParseOperation(FALSE);
+      DefaultOnTimer();
+   }
+END_SCRIPT(RandPatrolPt)
+
+
+/* Reacts to the presence of a certain object (presumably Cavador) within its radius,
+   sending TurnOn and TurnOff messages.  Only checks for proximity occasionally.
+   */
+BEGIN_SCRIPT(BlueLightSensor, RootScript)
+METHODS:
+   METHOD void Check()
+   {
+      if(Link.AnyExist("ScriptParams",self))
+      {
+         link sp=Link.GetOne("ScriptParams",self);
+         integer radius=sp.GetData();
+         object target=sp.To();
+         vector mypos=Object.Position(self);
+         vector targpos=Object.Position(target);
+         boolean on=((mypos-targpos).Magnitude()<radius);
+         boolean last=!on;
+
+         if(IsDataSet("Last"))
+            last=GetData("Last");
+
+         if(on != last)
+         {
+            if(on) 
+            {
+               if(IsDataSet("OffTimer"))
+               {
+                  timer_handle oldtime=GetData("OffTimer");
+                  KillTimer(oldtime);
+                  ClearData("OffTimer");
+               }
+               Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice");
+            }
+            else if(!Locked.IsLocked(self))
+            {
+               integer time=240*1000;
+
+               if(Property.Possessed(self,"ScriptTiming"))
+                  time=Property.Get(self,"ScriptTiming");
+
+               timer_handle offhandle=SetOneShotTimer(self,"Off",float(time)/1000.0);
+               SetData("OffTimer",offhandle);
+            }
+         }
+         SetData("Last",on);
+      }
+      SetOneShotTimer(self,"Check",5.0);
+   }
+
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting)
+         Check();
+      DefaultOnSim();
+   }
+   OnTimer()
+   {
+      if(message.name=="Check")
+         Check();
+      else if(message.name=="Off")
+         Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice");
+         
+      DefaultOnTimer();
+   }
+END_SCRIPT(BlueLightSensor)
+
+
+
+BEGIN_SCRIPT(MrCavador, AI)
+
+METHODS:
+  
+   METHOD void SnapWatchLinks()
+   {
+      if (Link.AnyExist("~AIWatchObj",self))
+      {
+         linkset wolinks = Link.GetAll("~AIWatchObj",self);
+         while (wolinks.AnyLinksLeft())
+         {
+            Link.Destroy(wolinks.Link());
+            wolinks.NextLink();
+         }
+      }
+      else
+         Debug.MPrint("No ~AIWatchObj links from ",self);
+   }
+
+MESSAGES:
+  
+   OnSim()
+   {
+      if (message.starting)
+         SetOneShotTimer("SpewPos",20.0);
+      DefaultOnSim();
+   }
+
+   OnSlain()
+   {
+      Quest.Set(GoalStateVarName(CAVADOR_LIVE_GOAL),kGoalFailed);
+      DefaultOnSlain();
+   }
+
+   OnAIModeChange()
+   {  
+      if ((message.mode==kAIM_Dead) && (message.previous_mode != kAIM_Dead))
+      {
+         SnapWatchLinks();
+      }
+      DefaultOnAIModeChange();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "SpewPos")
+      {
+         Debug.MPrint("Cavador's(",self,") X,Y,Z = ",Object.Position(self));
+		 if (Object.Exists(Object.Named("BobJr")))
+	         Debug.MPrint("BobJr's(",Object.Named("BobJr"),") X,Y,Z = ",Object.Position(Object.Named("BobJr")));
+		 if (Object.Exists(Object.Named("BobJrII")))
+	         Debug.MPrint("BobJrII's(",Object.Named("BobJrII"),") X,Y,Z = ",Object.Position(Object.Named("BobJrII")));
+         Debug.MPrint("==============================");
+         SetOneShotTimer("SpewPos",20.0);
+      }   
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(MrCavador)
+
+
+
+
+
+
+
+// Script: FaceWaypoint
+/* Put on a moving terrain object, will manhandle its tweq rotate
+   property whenever it gets to a waypoint, so as to cause it to
+   try to face the orientation of the waypoint.
+   */
+BEGIN_SCRIPT(FaceWaypoint, MovingTerrain)
+METHODS:
+   // returns true if already close enough to desired facing
+   METHOD bool TweqToFace()
+   {
+      // cast all facings to ints to simplify things, since
+      // that's the precision we're interested in anyway.
+      integer facing=Object.Facing(self).z;
+      integer face_targ=GetData("FaceTarg");
+      vector tweqparams;
+      boolean forward;
+
+      if(((360+facing-face_targ)%360)<4)
+         return TRUE;
+      // at/near zero, wrap around to whatever's closer to target.
+      if(facing>=359 || facing <=1)
+      {
+         if(face_targ<180)
+            facing=0;
+         else
+            facing=360;
+      }
+      forward=(face_targ>facing);
+      if(fabs(real(facing-face_targ))>175.0)
+      {
+         if(forward)
+            face_targ=0;
+         else
+            face_targ=360;
+         forward=!forward;
+      }
+
+      if(!Property.Possessed(self,"CfgTweqRotate"))
+         Property.Add(self,"CfgTweqRotate");
+
+      // Debug.MPrint(self," facing ",facing," wants ",face_targ);
+      // Debug.MPrint("Desired facing change=",fabs(real(facing-face_targ)));
+
+      tweqparams=Property.Get(self,"CfgTweqRotate","z rate-low-high");
+      tweqparams.y=facing;
+      tweqparams.z=face_targ;
+
+      Property.Set(self,"CfgTweqRotate","z rate-low-high",tweqparams);
+      
+      ActReact.React("tweq_control",1.0,self,0,kTweqTypeRotate,
+                     (forward)?kTweqDoForward:kTweqDoReverse);
+      ActReact.React("tweq_control",1.0,self,0,kTweqTypeRotate,kTweqDoActivate);
+      return FALSE;
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      if(!IsDataSet("FaceTarg"))
+      {
+         integer facing=Object.Facing(self).z;
+         SetData("FaceTarg",facing);
+      }
+      DefaultOnBeginScript();
+   }      
+   OnTweqComplete()
+   {
+      TweqToFace(); // will re-activate if necessary
+      DefaultOnTweqComplete();
+   }
+   OnMovingTerrainWaypoint()
+   {
+      object point=message.waypoint;
+      // Interested in heading, our rotation around z axis.
+      integer face_targ=Object.Facing(point).z;
+
+      SetData("FaceTarg",face_targ);
+      TweqToFace();
+
+      DefaultOnMovingTerrainWaypoint();
+   }
+END_SCRIPT(FaceWaypoint)
+
+
+
+@
+
+
+1.8
+log
+@added location debug spew for cavador's problematic bodyguards
+@
+text
+@d140 19
+a158 1
+BEGIN_SCRIPT(MrCavador, RootScript)
+d172 9
+@
+
+
+1.7
+log
+@Cavador location spew
+@
+text
+@d161 5
+@
+
+
+1.6
+log
+@rand patrol now works
+@
+text
+@d142 8
+d155 11
+@
+
+
+1.5
+log
+@Added FaceWaypt script from Thief 1.
+@
+text
+@a58 1
+            SetOneShotTimer(self,"Go",0.0);
+d60 1
+@
+
+
+1.4
+log
+@Included inventory loadup.
+@
+text
+@d155 84
+@
+
+
+1.3
+log
+@Added MrCavador
+@
+text
+@d6 2
+@
+
+
+1.2
+log
+@Added config var cheat to RandomPatrolPt.
+Wrote BlueLightSensor script.
+@
+text
+@d2 1
+d6 2
+d138 8
+a145 1
+
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@a2 2
+#include "time.h" // because we suck.
+
+d33 1
+d37 3
+d41 1
+a41 3
+         // Hard-coding the fact that there are only three possibilities.
+         // c'est la vie.
+         if(VarName(command,qvar))
+d43 12
+a54 1
+            Quest.Set(qvar,Data.RandInt(1,3));
+a55 1
+         SetOneShotTimer(self,"Go",0.0);
+d65 78
+@

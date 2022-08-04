@@ -1,0 +1,706 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "invtype.h"
+#include "drkgoalt.h"
+#include "aiteams.h"
+
+#include "tally.scr"
+
+const int FOLLOW_NOTE_GOAL=0;
+const int READ_NOTE_GOAL=1;
+
+// How often to check for player's distance to scroll
+const float CHECK_FREQ=3.0;
+
+// Script file for Thief 2 - Mission 8 - Courier
+
+
+// @TODO: This whole scheme is not yet robust in the face of Garrett picking
+// up the note.  The following courier doesn't really know what to do.
+BEGIN_SCRIPT(GoalScroll, RootScript)
+
+MESSAGES:
+   OnFrobInvEnd()
+   {
+      if(object(message.Frobber)==object("Player")) // as if it could be otherwise...
+      {
+         Quest.Set(GoalStateVarName(READ_NOTE_GOAL),kGoalComplete);
+         SetOneShotTimer(self,"ReadNoteVO",0.1);
+      }
+      DefaultOnFrobInvEnd();
+   }
+   OnSim()
+   {
+      if(message.starting)
+      {
+         SetData("Dropped",FALSE);
+         SetOneShotTimer(self,"DistCheck",CHECK_FREQ);
+      }
+      DefaultOnSim();
+   }
+   OnContained()
+   {
+      if(message.event==kContainRemove)
+      {
+         // If the courier wasn't rendered last frame, our position hasn't
+         // been updated.  We must teleport.
+         object cont=message.container;
+         if(!Object.InheritsFrom(cont,"Avatar") &&
+            !Object.RenderedThisFrame(cont))
+            Object.Teleport(self,vector(0,0,0),vector(0,0,0),cont);
+
+         // perhaps the Courier dropped us.  We'll need physics.
+         if(!Physics.HasPhysics(self))
+            Property.Add(self,"PhysType");
+         Object.RemoveMetaProperty(self,"MostlyFrobInert");
+      }
+      else
+      {
+         if(Property.Possessed(message.container,"AI"))
+         {
+            // This should _necessarily_ be true, but check anyway
+            if(Link.AnyExist("~Contains",self))
+            {
+               link contlink=Link.GetOne("~Contains",self);
+
+               contlink.SetData(kContainTypeAlt);
+            }
+         }
+      }
+      DefaultOnContained();
+   }
+   OnWorldSelect()
+   {
+      Sound.PlayVoiceOver(self,"gar0802");
+      DefaultOnWorldSelect();
+   }
+   OnTimer()
+   {
+      if(message.name=="DistCheck")
+      {
+         integer thresh=100;
+         vector p1=Object.Position(self);
+
+         if(Link.AnyExist("~Contains",self))
+         {
+            // Don't depend on mesh attach to update our position.
+            object container=Link.GetOne("~Contains",self).To();
+            p1=Object.Position(container);
+         }
+
+         vector p2=Object.Position("Player");
+         real dist=(p1-p2).Magnitude();
+
+         // note in Garret's inventory should have his same position, BTW
+
+         if(Property.Possessed(self,"scriptTiming"))
+            thresh=Property.Get(self,"scriptTiming");
+         Property.Set(self,"scriptTiming",thresh);
+
+         // Debug.MPrint("Distance to note is ",dist);
+
+         if(dist>thresh)
+            Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+
+         SetOneShotTimer(self,"DistCheck",CHECK_FREQ);
+      }
+      else if(message.name=="ReadNoteVO")
+      {
+         Sound.PlayVoiceOver(self,"gar0804");
+      }
+      DefaultOnTimer();
+   }
+END_SCRIPT(GoalScroll)
+
+
+#define NULLOBJ object(0)
+/* This script goes on the guys carrying the note.  If they spot Garrett _while_
+   they are carrying the note, you lose.
+   */
+BEGIN_SCRIPT(Conspirator, AI)
+METHODS:
+   METHOD object TheNote()
+   {
+      // @TODO: Why did I write this in this crazy-ass way? -TJS
+      if(Link.AnyExist("Contains",self))
+      {
+         linkset inv=Link.GetAll("Contains",self);
+         while(inv.AnyLinksLeft())
+         {
+            if(inv.Link().To()==object("TheNote"))
+               return inv.Link().To();
+            inv.NextLink();
+         }
+      }
+      return NULLOBJ;
+   }
+   METHOD void CheckNoteProps()
+   {
+      object note=TheNote();
+      integer mode=kAIM_Dead;
+
+      if(Property.Possessed(self,"AI_Mode"))
+         mode=Property.Get(self,"AI_Mode");
+      if(note!=NULLOBJ && mode!=kAIM_Dead &&
+         !Object.HasMetaProperty(note,"MostlyFrobInert"))
+         Object.AddMetaProperty(note,"MostlyFrobInert");
+   }
+END_SCRIPT(Conspirator)
+
+
+BEGIN_SCRIPT(Courier, Conspirator)
+METHODS:
+   OnBeginScript()
+   {
+      CheckNoteProps();
+      DefaultOnBeginScript();
+   }
+   OnAIModeChange()
+   {
+      object note=TheNote();
+      switch(message.mode)
+      {
+         case kAIM_Dead:
+            // Dead or KO'd.  Scroll I carry is now frobbable.
+            if(note!=NULLOBJ)
+               Object.RemoveMetaProperty(note,"MostlyFrobInert");
+            break;
+      }
+         
+      DefaultOnAIModeChange();
+   }
+   OnHighAlert()
+   {
+      // player loses the mission if we currently have the note.
+      if(TheNote()!=NULLOBJ)
+         Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+      DefaultOnHighAlert();
+   }
+   OnMessage()
+   {
+      if (MessageIs("Reached"))
+      {
+         int stop_chance = (int)message.data;
+         int r = Data.RandInt(0,100);
+
+         Reply(r <= stop_chance);
+      }
+      DefaultOnMessage();
+   }
+
+END_SCRIPT(Courier)
+
+
+BEGIN_SCRIPT(Moseley, Conspirator)
+METHODS:
+   METHOD void StartStakeoutTimers()
+   {
+      linkset SPlinkx=Link.GetAll("ScriptParams",self);
+
+      while(SPlinkx.AnyLinksLeft())
+      {
+         link thislink=SPlinkx.Link();
+         integer timing=thislink.GetData();
+         SetOneShotTimer(thislink.To(),"TurnOn",float(timing)/1000.0);
+         SPlinkx.NextLink();
+      }
+   }
+MESSAGES:
+   OnMessage()
+   {
+      if(MessageIs("Stakeout"))
+      {
+         StartStakeoutTimers();
+         Reply(TRUE);
+      }
+      DefaultOnMessage();
+   }
+  OnAIModeChange()
+  {
+     if(message.mode==kAIM_Combat || message.mode==kAIM_Dead)
+     {
+        if(TheNote()!=NULLOBJ)
+           Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+     }
+     DefaultOnAIModeChange();
+  }
+  OnHighAlert()
+  {
+     if(TheNote()!=NULLOBJ)
+           Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+     DefaultOnHighAlert();
+  }
+END_SCRIPT(Moseley)
+
+// Script specially for the pagan agent.
+BEGIN_SCRIPT(ThePagan, Conspirator)
+METHODS:
+  METHOD void Bleed(void)
+  {
+     if(!IsDataSet("Bleeding"))
+     {
+        object mawtrol=object("MawPatrol");
+        object conversation=object(0);
+        object note=TheNote();
+
+        SetData("Bleeding",TRUE);
+
+        // Start "bleeding"
+        ActReact.React("tweq_control",1.0,self,0,kTweqTypeEmitter,kTweqDoActivate);
+
+        // Uncle!  Call off the attack!
+        Property.Set(self,"AI_Team",kAIT_Neutral);
+        Link.DestroyMany("~AIAttack",self,AnyObject);
+        Link.DestroyMany("~AIAwareness",self,AnyObject);
+
+        // Clean up state of the attackers.  Get rid of alert cap and high
+        // alertness and such, then start the conversation.
+        if(Link.AnyExist("ScriptParams",self))
+        {
+           linkset myfoes=Link.GetAll("ScriptParams",self);
+           while(myfoes.AnyLinksLeft())
+           {
+              object Foe=myfoes.Link().To();
+
+              Object.RemoveMetaProperty(Foe,"M-AlertCapHigh");
+              Object.RemoveMetaProperty(Foe,"M-M8NonHostile");
+              // Alertness should shortly bounce back up if they have high awareness
+              // of the player.  So, we'll try this the easy way. -TJS
+              Property.Set(Foe,"AI_Alertness","Level",kNoAlert);
+              Property.Set(Foe,"AI_Alertness","Peak",kNoAlert);
+
+              if(Link.AnyExist("~AIConversationActor",Foe))
+                 conversation=Link.GetOne("~AIConversationActor",Foe).To();
+              
+              // When we're done with conversation, certain characters want to
+              // take up posts and certain characters want to go on patrols.
+              // These are indicated by Route links.
+              if(Link.AnyExist("Route",Foe))
+              {
+                 object marker=Link.GetOne("Route",Foe).To();
+                 if(Link.AnyExist("AIPatrol",marker))
+                 {
+                    Link.DestroyMany("AICurrentPatrol",Foe,AnyObject);
+                    Link.Create("AICurrentPatrol",Foe,marker);
+                    Property.Set(Foe,"AI_Patrol",TRUE);
+                 }
+                 else
+                 {
+                    Property.Set(Foe,"AI_IdleOrgn","Original Location",Object.Position(marker));
+                    Property.Set(Foe,"AI_IdleOrgn","Original Facing",Object.Facing(marker).z);
+                    Property.Set(Foe,"AI_IdlRetOrg",TRUE);
+                 }
+              }
+              myfoes.NextLink();
+           }
+        }
+
+        if(conversation!=object(0))
+        {
+           // Okay, at least some mechanist is set up for some conversation.  We support
+           // exactly the one that we have planned on having, by firing off the one we
+           // found the link to above.
+           AI.StartConversation(conversation);
+        }
+     
+        // Relax distance restriction on the note.  Easier than removing it entirely,
+        // and we'll be gone soon enough.
+        if(note!=object(0) && Property.Possessed(note,"ScriptTiming"))
+        {
+           integer thresh=Property.Get(note,"ScriptTiming");
+           Property.Set(note,"ScriptTiming",400+thresh);
+        }
+
+        // Start fleeing at this point.  Luckily, we claim we just got
+        // damaged anyway, so we can be ham-fisted about it.
+        Property.CopyFrom(self,"AI_FleeConds","M-OnlyFlee");
+        Link.DestroyMany("AIFleeTo",self,AnyObject);
+        Link.DestroyMany("AICurrentPatrol",self,AnyObject);
+        if(Object.Exists(mawtrol))
+        {
+           Link.Create("AIFleeTo",self,mawtrol);
+           Link.Create("AICurrentPatrol",self,mawtrol);
+        }
+        Damage.Damage(self,self,1,object("WeaponStim"));
+     }
+  }
+
+MESSAGES:
+  OnAIModeChange()
+  {
+     object note=TheNote();
+     switch(message.mode)
+     {
+        case kAIM_Dead:
+           // Dead or KO'd.  Can't finish the mission like that.
+           Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+           break;
+        case kAIM_Combat:
+           // Player loses the mission? Would really like to just flee if
+           // we have the note.
+           if(note!=NULLOBJ)
+              Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+           break;
+     } 
+     DefaultOnAIModeChange();
+  }
+  OnHighAlert()
+  {
+     if(!IsDataSet("AttackStarted"))
+        Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+     DefaultOnHighAlert();
+  }
+  OnMessage()
+  {
+     boolean eek=FALSE;
+
+     // I want to get the note.  May I?
+     if(MessageIs("WantNote"))
+     {
+        object note=object("TheNote");
+        if(Object.Exists(note))
+        {
+           eek=TRUE;
+           if(Link.AnyExist("~Contains",note))
+           {
+              Reply(FALSE);
+           }
+           else
+           {
+              eek=FALSE;
+              Reply(TRUE);
+              // A failsafe.  If the pagan doesn't have the note a short
+              // time from now, he ain't gonna get it, and it's probably because
+              // the player interfered.  End the mission.
+              SetOneShotTimer(self,"CheckGotNote",30.0);
+           }
+        }
+        else
+           Reply(FALSE);
+     }
+     else if(MessageIs("PortalFade"))
+     {
+        Object.AddMetaProperty(self,"M-AI-Stasis");
+        Object.RemoveMetaProperty(self,"M-DoesPatrol");
+        Property.Set(self,"RenderAlpha",1.0);
+        PostMessage(self,"PhantomEnd");
+        SetOneShotTimer(self,"TPort",2.0);
+     }
+     else if(MessageIs("NoteGone"))
+     {
+        eek=TRUE;
+     }
+     else if(MessageIs("JigUp"))
+     {
+        // We've found something that should alarm us, but it's not the note
+        // being gone (which should probably alarm us even if the player ran
+        // 99 feet away after doing it, since our hope of getting the note and
+        // acting reasonably for the rest of the mission is gone).
+        // 
+        // In such a case, act out the appropriate shock and alarm, but only if
+        // we're in the player's zone of encounter.  Our heuristic for what
+        // constitutes that zone is thus:
+        if(Object.RenderedThisFrame(self) ||
+           (Object.Position(self)-Object.Position("Player")).Magnitude()<40.0)
+           eek=TRUE;
+     }
+     else if(MessageIs("StartAttack"))
+     {
+        SetData("AttackStarted",TRUE);
+        // Change in team will help precipitate attack
+        Property.Set(self,"AI_Team",kAIT_Bad2);
+
+        Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+        // signal the mechanists
+        if(Link.AnyExist("ScriptParams",self))
+        {
+           linkset myfoes=Link.GetAll("ScriptParams",self);
+           while(myfoes.AnyLinksLeft())
+           {
+              AI.Signal(myfoes.Link().To(),"StartAttack");
+              myfoes.NextLink();
+           }
+        }
+
+        SetOneShotTimer(self,"Bleed",15.0);
+        Reply(TRUE);
+     }
+     else if(MessageIs("HaveIGotNote"))
+     {
+        Reply(Object.Exists(TheNote()));
+     }
+
+     if(eek)
+     {
+        // Give us enough time to see the pagan's little drama.
+        Quest.Set("EndingTime",8);
+        Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+        // If we're in a pseudoscript, keep running.
+        Reply(TRUE);
+     }
+
+     DefaultOnMessage();
+  }
+  OnDamage()
+  {
+     object culprit=message.culprit;
+     if(Object.Exists(culprit))
+     {
+        if(Link.AnyExist("~CulpableFor",culprit))
+           culprit=Link.GetOne("~CulpableFor",culprit).To();
+        if(Object.InheritsFrom(culprit,"Mechanist"))
+        {
+           Bleed();
+        }
+     }
+     DefaultOnDamage();
+  }
+  OnContainer()
+  {
+     if(object(message.containee)==object("TheNote") && 
+        message.event==kContainAdd)
+     {
+        // Debug.MPrint("Pagan picking up note.");
+        if(Quest.Get(GoalStateVarName(READ_NOTE_GOAL))==kGoalIncomplete)
+           Quest.Set(GoalStateVarName(READ_NOTE_GOAL),kGoalFailed);
+        if(Object.Exists(object("CemGateLookback")))
+           Link.Create("AIWatchObj",self,object("CemGateLookback"));
+     }
+     DefaultOnContainer();
+  }
+  OnTimer()
+  {
+     if(message.name=="TPort")
+     {
+        object note=TheNote();
+        // make sure to destroy note, just to be safe.  This will stop the note
+        // from checking for the player getting too far away.
+        if(note!=object(0))
+        {
+           Object.Destroy(note);
+           if(Quest.Get(GoalStateVarName(READ_NOTE_GOAL))==kGoalIncomplete)
+              Quest.Set(GoalStateVarName(READ_NOTE_GOAL),kGoalFailed);
+        }
+        Object.Destroy(self);
+     }
+     else if(message.name=="CheckGotNote")
+     {
+        if(TheNote()==object(0))
+        {
+           // It's a good while after we decided we wanted the note and we haven't
+           // got it.  Rather than stay in what is likely to be a broken mission state,
+           // bail.  HOWEVER, it's just possible that we'll succeed in getting the note
+           // between now and when the mission ends, and we _really_ don't want that, 
+           // because that would be even more idiotic.  So, end the mission right away.
+           Quest.Set("EndingTime",0);
+           Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalFailed);
+        }
+     }
+     else if(message.name=="Bleed")
+     {
+        Bleed();
+     }
+
+     DefaultOnTimer();
+  }
+END_SCRIPT(ThePagan)
+
+
+/* The portal at the end of the mission.  Gets rid of the pagan if he runs into it.
+   Ends the mission if the player runs into it.  Maybe the player even wins.  Maybe not.
+   Either way, the mission end should be instantaneous, not delayed.
+   */
+BEGIN_SCRIPT(MawPortal, Physics)
+   OnBeginScript()
+   {
+      Physics.SubscribeMsg(self, kEnterExitMsg);
+      DefaultOnBeginScript();
+   }
+   OnEndScript()
+   {
+      Physics.UnsubscribeMsg(self, kEnterExitMsg);
+      DefaultOnEndScript();
+   }
+   OnPhysEnter()
+   {
+      object critter=message.transObj;
+
+      if(Object.InheritsFrom(critter,"Avatar"))
+      {
+         integer goal=0;
+         // Make mission end instantaneous
+         // Mission should end in the quest var callbacks that are caused by
+         // setting FOLLOW_NOTE_GOAL complete and any other incomplete goals
+         // failed.
+         Quest.Set("EndingTime",0);
+
+         if(Quest.Get(GoalStateVarName(FOLLOW_NOTE_GOAL))==kGoalIncomplete)
+            Quest.Set(GoalStateVarName(FOLLOW_NOTE_GOAL),kGoalComplete);
+         for(goal=0;Quest.Exists(GoalStateVarName(goal));goal++)
+         {
+            // Any other goal that we needed to complete that we haven't yet,
+            // well, we've run out of time.
+            if(!(Quest.Get("GOAL_REVERSE_"+string(goal)) ||
+                 Quest.Get("GOAL_OPTIONAL_"+string(goal))))
+            {
+               if(Quest.Get(GoalStateVarName(goal))==kGoalIncomplete)
+                  Quest.Set(GoalStateVarName(goal),kGoalFailed);
+            }
+         }
+      }
+      else if(Object.InheritsFrom(critter,"Creature"))
+      {
+         PostMessage(critter,"PortalFade");
+      }
+      DefaultOnPhysEnter();
+   }
+
+END_SCRIPT(MawPortal)
+
+
+/* Script used on the pagan's lookback point just before getting back to the
+   cemetary.  Unless the player is nearby enough to see our impending puppet
+   show, the pagan should stick to this lookback point like a fly in amber.
+   We expect to know the player's location by getting trigger messages.  ON
+   means he's positioned acceptibly.
+   */
+BEGIN_SCRIPT(StickingPoint, RootScript)
+MESSAGES:
+   OnMessage()
+   {
+      object pagan=object("ThePagan");
+
+      if(MessageIs("TurnOff") && Object.Exists(pagan) &&
+         !Link.AnyExist("AIWatchObj",pagan,self))
+         Link.Create("AIWatchObj",pagan,self);
+      else if(MessageIs("TurnOn") && Object.Exists(pagan))
+         Link.DestroyMany("AIWatchObj",pagan,self);
+      DefaultOnMessage();
+   }
+            
+END_SCRIPT(StickingPoint)
+
+BEGIN_SCRIPT(PickPocketGoalScript, RootScript)
+
+METHODS:
+   
+   METHOD integer PickPocketTarget()
+   {
+      return (Quest.Get("QPickPocketTarget"+(string)GetData("DiffLevel")));
+   }
+
+   METHOD integer PocketsPicked()
+   {
+      return (Quest.Get("DrSPocketOk"));
+   }
+
+   METHOD boolean IsValidObject(object which)
+   {
+      if ((integer)which <= 0)
+         return FALSE;
+      link contlink = Link.GetOne("~Contains",which);
+      if (((integer)contlink.GetData() != kContainTypeAlt) &&
+          ((integer)contlink.GetData() != kContainTypeBelt))
+         return FALSE;
+      integer propval = 0;
+      propval = ((integer)Property.Get(which,"FrobInfo","World Action"));
+      if (!(propval & kFrobMove))
+      {
+         Debug.MPrint(which," is not frobbable.  Has propval ",propval);
+         return FALSE;
+      }
+      object dstobj = contlink.To();
+      if ((integer)Property.Get(dstobj,"AI_Mode")==kAIM_Dead)
+      {
+         Debug.MPrint(which," was held by knocked out or dead AI ",dstobj);
+         return FALSE;
+      }
+      Debug.MPrint(which," was a valid pickpocket target");
+      return TRUE;
+   }
+
+   METHOD integer PocketsLeft()
+   {
+      integer numleft = 0;
+      linkset contlinks = Link.GetAll("Contains");
+      while (contlinks.AnyLinksLeft())
+      {
+	 if (IsValidObject(contlinks.Link().To()))
+            numleft++;
+         contlinks.NextLink();
+      }
+      return numleft;
+   }
+
+   METHOD void VerifyPickPocket()
+   {
+      integer targ = PickPocketTarget();
+      integer curval = PocketsPicked();
+      integer numleft = PocketsLeft();
+  
+      Debug.MPrint("Currently picked ",curval," pockets.  Want ",targ,".  Have ",numleft," left.");
+      if (curval + numleft < targ)
+      {
+         Debug.MPrint("Ooopsie.  You can't win the pick pocket anymore.\n");
+         Quest.Set("pickpockstat",-1);
+      }
+      if (curval>=targ)
+      {
+         Debug.MPrint("Yay! You're successful\n");
+         Quest.Set("pickpockstat",1);
+      }
+   }
+
+MESSAGES:
+
+   OnDifficulty()
+   {
+      SetData("DiffLevel",message.difficulty);
+      Debug.MPrint("Setting Diff Level to ",message.difficulty);
+      DefaultOnDifficulty();
+   }
+
+   OnSim()
+   {
+      if (message.starting)
+         SetOneShotTimer(self,"verifypockets",5.0);
+      DefaultOnSim();
+   }
+
+   OnBeginScript()
+   {
+      if (!IsDataSet("DiffLevel"))
+      {
+         SetData("DiffLevel",(integer)Quest.Get("difficulty"));
+         Debug.MPrint("No diff level found, setting to ",(integer)Quest.Get("difficulty"));
+      }
+      if (!IsDataSet("AllowedCheck"))
+      {
+         SetData("AllowedCheck",0);
+      }
+      DefaultOnBeginScript();
+   }
+
+   OnContainer()
+   {
+      if ((integer)GetData("AllowedCheck")==1)
+         VerifyPickPocket();
+      DefaultOnContainer();
+   }
+
+   OnTimer()
+   {
+      if (message.name=="verifypockets")
+      {
+         VerifyPickPocket();
+         SetData("AllowedCheck",1);
+         SetOneShotTimer(self,"verifypockets",5.0);
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(PickPocketGoalScript)
+

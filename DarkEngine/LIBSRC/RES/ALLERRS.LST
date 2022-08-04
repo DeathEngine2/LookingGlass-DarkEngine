@@ -1,0 +1,8 @@
+All errors (04-08-97, 14:50:22):
+
+Errors in resmisc.err (04-08-97, 14:50):
+
+p:\w106\h\stdio.h(1): Error! E101: (col 0) keyboard interrupt detected 
+x:\prj\tech\h\datapath.h(53): Error! E077: (col 9) missing matching #endif directive 
+.\res.h(145): Error! E077: (col 9) missing matching #endif directive 
+.\res.h(133): Error! E077: (col 9) missing matching #endif directive 

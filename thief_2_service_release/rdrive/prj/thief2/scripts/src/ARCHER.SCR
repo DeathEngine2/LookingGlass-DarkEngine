@@ -1,0 +1,273 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+///////////////////////////////////////////////////////////////////////////////
+// $Header: r:/prj/thief2/scripts/src/RCS/archer.scr 1.1 1999/11/10 17:25:58 rsmith Exp $
+//
+
+
+//////////////////////
+//////////////////////
+//  SCRIPT FILE:  ARCHER.SCR
+//////////////////////
+//////////////////////
+
+//  To be used in the rooftops demo of Thief 2.
+
+//  2 scripts that go on the archer that together, in short,
+//  reset their alertness after the fight if and only if they
+//  have not had FirstHand contact with Garrett of alertness >= 2.
+
+//////////////////////
+//////////////////////
+
+// Script:	GarrettSighter
+
+// Keeps track of GarrettSightings - whether the AI
+// the script is on has observed the player first hand with
+// a Peak Alertness level >= 2 (moderate).
+
+// This is done by pinging the AI every GetInterval() seconds.
+// Every time the AI is pinged, he checks for an AIAwareness link
+// from himself to Player and checks the data on the link,
+// specifically, the Flags bitfield (FirstHand is the 8th bit of
+// 8 - bit #7) and the Peak Level enum (0-3 corresponding to the 
+// alertness levels).
+
+// Data = (whether the AI has ever observed Garrett first 
+// hand) is stored as either "GarSighting:1" or "GarSighting:0" on a 
+// ScriptParams link from the AI to himself.  Other scripts are 
+// assumed to interpret this data.
+
+BEGIN_SCRIPT (GarrettSighter, AI)
+
+METHODS:
+
+float GetInterval()
+{
+	return 1.0;
+}
+
+void UpdateSightings()
+{
+	int flags=0;
+	int peak_level=0;
+
+	if (Link.AnyExist("AIAwareness", self, Object.Named("Player")))
+	{
+		flags = Link.GetOne("AIAwareness", self, Object.Named("Player")).GetData("Flags");
+		peak_level = Link.GetOne("AIAwareness", self, Object.Named("Player")).GetData("Peak Level");
+//		Debug.MPrint ("AIAwareness link detected, Flags = ", flags, ".  Peak Level = ",peak_level,".");
+
+		// 0x080 = hex for 128 = bit #7 is the only one on
+		if (	( (flags & 0x080) == (0x080 ) ) &&
+				(peak_level >= 2)  )
+		{
+			Link.GetOne("ScriptParams",self,self).SetData("GarSighting:1");
+		}
+	}
+}
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		if (Link.AnyExist("ScriptParams", self, self))
+		{
+			Debug.MPrint(" *** WARNING: GarrettSighter script needs a dedicated ScriptParams link from AI ",self," to itself - such a link already exists!");
+		}
+		else
+		{
+			Link.Create("ScriptParams",self,self);
+		}
+		Link.GetOne("ScriptParams",self,self).SetData("GarSighting:0");
+
+		SetOneShotTimer("Ping_GarSight",GetInterval());
+	}
+
+	DefaultOnSim();
+}
+
+
+OnTimer()
+{
+	if (message.name == "Ping_GarSight")
+	{
+		UpdateSightings();
+
+		if ( (Link.GetOne("ScriptParams",self,self).GetData()) != "GarSighting:1" )
+			SetOneShotTimer("Ping_GarSight",GetInterval());
+//		else
+//			Debug.MPrint(" ScriptParams data is set, not re-setting timer.");
+	}
+	
+	DefaultOnTimer();
+}
+
+
+END_SCRIPT (GarrettSighter)
+
+
+
+
+// Script:	PostFightAlertResetter
+
+// Detects the end of a fight with other AIs and then resets alertness to 0.
+
+// To detect the end of a fight, you must first detect the onset of the fight.
+// To detect the onset of the fight, you ping yourself periodically and look
+// for AIAttack links.  When you detect one, you cite the onset of the fight.
+
+// To detect the end of the fight, you continue to ping yourself and look for
+// AIAttack links.  When no AIAttack links exist anymore, you cite the end of
+// the fight.
+
+// Upon the end of the fight, before reseting alertness, check to make sure the
+// AI doesn't have a reason to be alert about the player,  Answering this question
+// is complicated, and is handled by the "GarrettSighter" script, above.
+// All this script has to check for is the side-effect of that script, which is
+// a ScriptParams link from this AI to itself, upon which the data is either
+// "GarSighting:0" or "GarSighting:1"
+
+// When you detect the end of the fight and you have no reason to be alert about 
+// the player, reset alertness to 0.  The resetting alertness part is annoyingly 
+// tricky, since it goes against the grain of the AI.  You have to ClearAlertness(),
+// ClearGoals(), add an AlertCap, and snap a bunch of alertness-related links
+// before removing the AlertCap.  It sucks but it seems to work pretty well.
+
+BEGIN_SCRIPT (PostFightAlertResetter, AI)
+
+METHODS:
+
+float GetInterval()
+{
+	return 0.5;
+}
+
+float GetPostFightCapDuration()
+{
+	return 5.0;
+}
+
+// set the script data "FightStatus" to be the proper one
+// of "InProgress" or "Post" (or don't change it at all),
+// depending on the current "FightStatus" and existence of
+// "AIAttack" links
+void UpdateFightStatus()
+{
+	if (GetData("FightStatus") == "Prior")
+	{
+		if (Link.AnyExist("AIAttack", self))
+		{
+			SetData("FightStatus","InProgress");
+		}
+	}
+	else if (GetData("FightStatus") == "InProgress")
+	{
+		if (!Link.AnyExist("AIAttack", self))
+		{
+			SetData("FightStatus","Post");
+		}
+	}
+}
+
+// Stage one of AlertReset: ClearAlertness() and ClearGoals(), 
+// cap alertness at level 0 for GetPostFightCapDuration() amount
+// of time.
+void AlertReset()
+{
+	AI.ClearAlertness (self);
+	AI.ClearGoals (self);
+
+	// force the AI to stay at alertness 0 for GetPostFightCapDuration()
+	Property.Set(self,"AI_AlertCap","Max level",0);
+	SetOneShotTimer ("PostFightCapRemove",GetPostFightCapDuration());
+}
+
+
+// if the AI has a ScriptParams link from himself to himself, and the data on the
+// link is "GarSighting:1", return TRUE, otherwise return FALSE
+boolean IHaveSeenPlayer ()
+{
+	if (Link.AnyExist("ScriptParams",self,self))
+		return ((Link.GetOne("ScriptParams",self,self).GetData()) == "GarSighting:1");
+
+	else
+		return FALSE;
+}
+
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		// FightStatus = {Prior, InProgress, Post}
+		SetData("FightStatus","Prior");
+
+		SetOneShotTimer("Ping_PostFight",GetInterval());
+	}
+
+	DefaultOnSim();
+}
+
+
+OnTimer()
+{
+	if (message.name == "Ping_PostFight")
+	{
+//		Debug.MPrint ("Ping_PostFight!, FightStatus: ",GetData("FightStatus"));
+		UpdateFightStatus();
+
+		if ( GetData("FightStatus") != "Post" )
+		{
+			SetOneShotTimer("Ping_PostFight",GetInterval());
+		}
+		else
+		// The fight is over.
+		{
+			if (!IHaveSeenPlayer())
+			{
+//				Debug.MPrint("Clearing alertness on ",self);
+				AlertReset ();
+			}
+			else
+			{
+//				Debug.MPrint("AI ",self," has seen player, not resetting alertness.");
+			}
+		}
+	}
+
+	else if (message.name == "PostFightCapRemove")
+	{
+		// first delete all straggling Awareness and AIWatchObj links
+		linkset BloodAndBodies = Link.GetAll("AIWatchObj",self);
+		while (BloodAndBodies.AnyLinksLeft())
+		{
+			Link.Destroy(BloodAndBodies.Link());
+			BloodAndBodies.NextLink();
+		}
+
+		linkset AwareLinks = Link.GetAll("AIAwareness",self);
+		while (AwareLinks.AnyLinksLeft())
+		{
+			Link.Destroy(AwareLinks.Link());
+			AwareLinks.NextLink();
+		}
+
+		// now remove the alert cap
+//		Debug.MPrint(" Removing post-fight alert cap from ",self);
+		Property.Set(self,"AI_AlertCap","Max level",3);
+	}
+	
+	DefaultOnTimer();
+}
+
+
+END_SCRIPT (PostFightAlertResetter)
+

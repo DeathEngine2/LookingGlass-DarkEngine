@@ -1,0 +1,3 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+memtest.obj: allocapi.h allocovr.h comtools.h mallocdb.h types.h

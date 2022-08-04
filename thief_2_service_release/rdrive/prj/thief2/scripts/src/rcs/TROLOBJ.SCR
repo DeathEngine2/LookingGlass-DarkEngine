@@ -1,0 +1,70 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 1999.12.30.19.27.01;  author lbaldwin;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@patrol object for multiplayer
+@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@// Okay.  We think this is going to make dropping the patrol-object
+// cause the guy delete all his AICurrentPatrol links and then create
+// a link to the patrol-object.  We'll see.
+
+BEGIN_SCRIPT(TrolToMe, RootScript)
+
+MESSAGES:
+OnContained() 
+{
+   if(message.event==kContainRemove)
+   {    
+      //      Debug.MPrint("Hey Laura!  We dropped it!");
+      Link.BroadcastOnAllLinks(self,"GetOverHere","ControlDevice");
+   }
+}
+
+END_SCRIPT(TrolToMe)
+
+
+BEGIN_SCRIPT(ObjectTroller, RootScript)
+
+MESSAGES:
+OnMessage()
+{       
+   if(MessageIs("GetOverHere"))
+   {      
+      Debug.MPrint("AI ",self," told to go to TrolObj ",message.from); 
+      // Kill all current AICurrentPatrol links.  Stolen code from Ramirez.
+      if (Link.AnyExist("AICurrentPatrol",self))
+      {       
+         linkset PatrolLinks=Link.GetAll("AICurrentPatrol",self);
+         while(PatrolLinks.AnyLinksLeft())
+         {
+            Debug.MPrint(" Deleting old link from ",self," to ",PatrolLinks.Link().To());
+            Link.Destroy(PatrolLinks.Link());
+            PatrolLinks.NextLink();
+         }
+      }
+      Link.Create("AICurrentPatrol",self,message.from);          
+      Property.Set(self,"AI_Patrol",true);
+   }
+}
+END_SCRIPT(ObjectTroller)
+
+@

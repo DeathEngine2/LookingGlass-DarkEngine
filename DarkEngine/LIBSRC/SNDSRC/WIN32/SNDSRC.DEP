@@ -1,0 +1,34 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+sndsrc.obj: comtools.h fix.h lgassert.h lglog.h lgsndid.h lgsound.h \
+	 playlist.h sndseg.h sndsrc.h sndsrci.h sndsrcid.h thrdtool.h \
+	 timelog.h timer.h types.h
+
+playlist.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h playlist.h prikind.h res.h restypes.h sndseg.h \
+	 sndsegi.h sndsrc.h sndsrci.h sndsrcid.h thrdtool.h timelog.h \
+	 timer.h types.h
+
+refill.obj: comtools.h fix.h lgassert.h lglog.h lgsndid.h lgsound.h \
+	 mprintf.h playlist.h sndseg.h sndsrc.h sndsrci.h sndsrcid.h \
+	 thrdtool.h timelog.h timer.h types.h
+
+sndsrcid.obj: comtools.h types.h
+
+sndseg.obj: comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h lgsndid.h lgsound.h memall.h memmacro.h sndseg.h types.h
+
+rezseg.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h memmacro.h \
+	 prikind.h res.h restypes.h sndseg.h sndsegi.h types.h
+
+fileseg.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h memmacro.h \
+	 mprintf.h prikind.h res.h restypes.h sndseg.h sndsegi.h types.h
+
+memseg.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h memmacro.h \
+	 prikind.h res.h restypes.h sndseg.h sndsegi.h types.h
+
+imaadpcm.obj: imaadpcm.h

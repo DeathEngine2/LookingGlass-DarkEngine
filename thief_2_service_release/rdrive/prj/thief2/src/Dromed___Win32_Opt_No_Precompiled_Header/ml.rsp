@@ -1,0 +1,1 @@
+/c /Cp /Zd /X /Ddbg_on /Dwarn_on /Dspew_on /DDBG_ON /DWARN_ON /DSPEW_ON /DCDECL_ASM=1 /D_MSC_VER=800 /D_WIN32=1 /DWIN32=1 /Fo.\Dromed___Win32_Opt_No_Precompiled_Header\Ptsurf.obj /Ix:\prj\tech\inc /Ip:\a611\include /Ip:\v50\src\inc .\portal\Ptsurf.asm 

@@ -1,0 +1,45 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+delmlist.obj: dbg.h dbgmacro.h delmlist.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h str.h types.h
+
+dynfunc.obj: dynfunc.h
+
+filepath.obj: dbg.h dbgmacro.h filekind.h filepath.h filespec.h fnamutil.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h \
+	 splitpat.h str.h types.h
+
+filespec.obj: dbg.h dbgmacro.h filekind.h filepath.h filespec.h fnamutil.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h \
+	 splitpat.h str.h types.h
+
+fnamutil.obj: dbg.h dbgmacro.h dbmem.h fnamutil.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h str.h types.h
+
+splitpat.obj: dbg.h dbgmacro.h filekind.h filepath.h fnamutil.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h splitpat.h str.h \
+	 types.h
+
+str.obj: dbg.h dbgmacro.h dbmem.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h str.h types.h
+
+hashset.obj: dbg.h dbgmacro.h dbmem.h hashfns.h hashfunc.h hashset.h \
+	 hshstimp.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h pool.h types.h
+
+dlist.obj: dbg.h dbgmacro.h dlist.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h templexp.h types.h
+
+dynarray.obj: dbg.h dbgmacro.h dbmem.h dynarray.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+relocptr.obj: dbg.h dbgmacro.h dbmem.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mprintf.h relocptr.h types.h
+
+pdynarr.obj: dbg.h dbgmacro.h dynarray.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pdynarr.h prikind.h types.h
+
+hashpp.obj: dbg.h dbgmacro.h error.h hashfns.h hashfunc.h hashpp.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+packflag.obj: packflag.h

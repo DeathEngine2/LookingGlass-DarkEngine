@@ -1,0 +1,1722 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "dmgprop.h" //kslaynormal
+#include "aiaware.h"
+#include "aiteams.h"
+#include "drkgoalt.h"
+#include "invtype.h"
+#include "aitype.h"
+
+/* Causes damage done by "HolyStim" (holy water) stimulus to affect
+   zombies permanently, while other types of damage will just put the
+   zombie down for a limited period of time.
+   */
+BEGIN_SCRIPT(ZombieRegen, Physics)
+
+METHODS:
+   METHOD void Resurrect()
+   {
+      Object.RemoveMetaProperty(self,"M-ZombiePossum");
+      Link.DestroyMany("AIWatchObj",self,self);
+   }
+
+MESSAGES:
+
+   // Zombies should get up if you actually bump into them.
+   // in fact, it quite causes problems if they don't.
+   OnBeginScript()
+   {
+      Physics.SubscribeMsg(self, kCollisionMsg);
+      DefaultOnBeginScript();
+   }
+   OnEndScript()
+   {
+      Physics.UnsubscribeMsg(self, kCollisionMsg);
+      DefaultOnEndScript();
+   }
+
+   // Problem: will this resurrect the zombie as soon as it dies,
+   // due to hitting the player's sword?  Probably ok.
+   OnPhysCollision()
+   {
+      object WhatIHit=message.collObj;
+
+      if(WhatIHit!=object("Player"))
+         return;
+      // Debug.MPrint("Resurrecting ",self," due to collision with ",WhatIHit);
+      Resurrect();
+   }
+
+   /* Zombies have a NULL slay result, so we can catch the slain event 
+      here and decide what to do.  If we _really_ want to slay them, we
+      can always resurrect them, set their slay result to terminate, and
+      slay them all over again.
+   */
+   OnSlain()
+   {
+      integer slay=Property.Get(self,"SlayResult");
+
+      // Debug.MPrint(self," slain.");
+      Property.Remove(self,"AI_IdleOrgn");
+      if(Property.Possessed(self,"MAX_HP"))
+      {
+         integer max=Property.Get(self,"MAX_HP");
+         if(max<=0)
+         {
+            // set me up to explode
+            object parts=Object.Named("M-ZombieParts");
+            if(Object.InheritsFrom(self,Object.Named("HammerZombie")))
+               parts=Object.Named("M-HamZombieParts");
+            Object.AddMetaProperty(self,parts);
+            Property.Set(self,"SlayResult",kSlayNormal);
+            Sound.HaltSpeech(self);
+            // Debug.MPrint(self," Really Dead");
+         }
+         else if(slay!=kSlayNormal)
+         {
+            boolean possum=GetData("Possum");
+
+            Damage.Resurrect(self);
+            if(!possum)
+            {
+               AI.Signal(self,"Possum");
+               // Debug.MPrint(self," Playing Possum");
+            }
+         }
+      }
+   }
+
+   OnDamage()
+   {
+      integer damage=message.damage;
+      integer max, hp=Property.Get(self,"HitPoints");
+      object stim=message.kind;
+      object culprit=message.culprit;
+      real permanent=0.0;
+      
+      if(culprit!=object(0) && Link.AnyExist("~CulpableFor",culprit))
+         culprit=Link.GetOne("~CulpableFor",culprit).To();
+
+      if(stim==object("HolyStim") ||
+         stim==object("FireStim"))
+         permanent=1.0;
+      else if(stim==object("LightBright"))
+         permanent=0.5;
+
+      if(culprit!=object(0) &&
+         Object.InheritsFrom(culprit,"Mechanist"))
+         permanent=1.0;
+       
+      if(Property.Possessed(self,"MAX_HP"))
+      {
+         max=Property.Get(self,"MAX_HP");
+         max-=(damage*permanent);
+         Property.Set(self,"MAX_HP",max);
+      }
+
+      // Okay, the only way we're going to get damaged by WaterStim
+      // is drowning.  If we drown, best to just lie down and stop
+      // embarrassing us.
+      if(stim==object("WaterStim") && hp<=0)
+      {
+         Property.Set(self,"SlayResult",kSlayNormal);
+      }
+      DefaultOnDamage();
+   }
+   OnMessage()
+   {
+      if(MessageIs("Resurrect"))
+      {
+         // Debug.MPrint("Resurrecting ",self," due to message request.");
+         Resurrect();
+      }
+      if(MessageIs("Possum?"))
+      {
+         // pseudoscript wanting to know if it should add the possum
+         // metaproperty/link.  Don't do it if they're already there.
+         Reply(!Object.HasMetaProperty(self,"M-ZombiePossum"));
+      }
+      DefaultOnMessage();
+   }
+END_SCRIPT(ZombieRegen)
+      
+
+BEGIN_SCRIPT(AllAIScript, RootScript)
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting)
+      {
+         if(Property.Possessed(self,"Creature"))
+         {
+            /* Down with the iron cross.  Pose creature at sim start so you never
+               see iron-cross posed creatures, even if they've never come out of
+               efficiency.
+               */
+            // Don't interfere with existing pose, if any
+            if(!Property.Possessed(self,"CretPose"))
+            {
+               Property.CopyFrom(self,"CretPose","M-StandPose");
+            }
+            Property.Remove(self,"CretPose"); //DAMN YOU!
+         }
+      }
+      DefaultOnSim();
+   }
+   OnMessage()
+   {
+      // For use in pseudoscripts that want to randomly continue or not. 
+      if (MessageIs("Randomize"))
+      {
+         int continue_chance = (int)message.data;
+         int r = Data.RandInt(0,100);
+
+         Reply(r <= continue_chance);
+      }
+      DefaultOnMessage();
+   }
+
+END_SCRIPT(AllAIScript)
+
+
+BEGIN_SCRIPT(CorpseFrobHack, AI)
+
+METHODS:
+   METHOD void MakeFrobbable(boolean frobbable)
+   {
+      // Debug.MPrint("Call ",self," MakeFrobbable, ",frobbable);
+      if(frobbable)
+         Object.RemoveMetaProperty(self,"FrobInert");
+      else if(!Object.HasMetaProperty(self,"FrobInert"))
+         Object.AddMetaProperty(self,"FrobInert");
+
+      // Frobbable creatures are not responsible for their own actions or safety.
+      Property.Set(self,"Culpable",!frobbable);
+   }
+
+
+   METHOD void CheckFrobbable()
+   {
+      if(Property.Possessed(self,"AI"))
+      {
+         string set=Property.Get(self,"AI","Behavior Set");
+      
+         if(set=="null")
+            MakeFrobbable(TRUE);
+         else if(Property.Possessed(self,"AI_Mode"))
+         {
+            integer mode=Property.Get(self,"AI_Mode");
+
+            MakeFrobbable(mode==kAIM_Dead);
+         }
+         else
+            MakeFrobbable(FALSE); // Can't tell AI mode; no frob
+      }
+      else
+         MakeFrobbable(TRUE); // No AI, assume it's okay
+   }
+
+   METHOD object GetCarriedObj(object myself)
+   {
+       object candidate = myself;
+       linkset contlinks = Link.GetAll("Contains",myself);
+       while (contlinks.AnyLinksLeft())
+       {
+           link curlink = contlinks.Link();
+           if ((integer)curlink.GetData() < 0)  //external carry
+               candidate = curlink.To();
+           contlinks.NextLink();
+       }
+       return candidate;       
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      CheckFrobbable();
+      DefaultOnBeginScript();
+   }
+
+
+   OnAIModeChange()
+   {
+      if (message.mode == kAIM_Dead)
+      {
+         MakeFrobbable(TRUE); 
+      }
+      else if (message.previous_mode == kAIM_Dead)
+         MakeFrobbable(FALSE); 
+      
+      // Otherwise, stay how you were 
+         
+      DefaultOnAIModeChange(); 
+   }
+
+   OnFrobWorldEnd()
+   {
+      if (DarkGame.BindingGetFloat("auto_search") != 0.0)
+      {
+         Debug.MPrint("Performing Loot And Lug");
+         object carriedobj = GetCarriedObj(self);
+         if (carriedobj != object(self))
+         {
+            Container.Add(carriedobj,message.Frobber);
+            Reply(FALSE);
+         }       
+      }
+      DefaultOnFrobWorldEnd();
+   }
+
+   OnSlain()
+   {
+      // we're no longer knocked out.
+      object ko = object("M-KnockedOut"); 
+      if (ko != object(0))
+//next line was causing a hang
+//         while (Object.HasMetaProperty(self,ko))
+            Object.RemoveMetaProperty(self,ko); 
+      // de-physicalize
+      if (Property.Possessed(self,"PhysType"))
+         Property.Set(self,"PhysType","Remove On Sleep",TRUE); 
+      DefaultOnSlain(); 
+   }
+
+
+END_SCRIPT(CorpseFrobHack)
+
+
+
+BEGIN_SCRIPT(Corpsed, Physics)
+MESSAGES:
+   OnBeginScript()
+   {
+      /* If we have a non-zero death stage, instantiate down.
+         Fixes bug with damage system killing pre-placed corpses.
+         */
+      integer stage=0;
+      
+      // Seems as though Property.Possessed is returning FALSE if this is on a metaprop.
+      // but it should still default to an interesting non-zero value in that case if
+      // we just add it.
+      // Of course, if Property.Possessed returns TRUE against our expectations, we
+      // should still make sure the property is instantiated.
+      Property.Add(self,"DeathStage");
+      stage=Property.Get(self,"DeathStage");
+      if(stage==0)
+         Property.Remove(self,"DeathStage");
+
+      DefaultOnBeginScript();
+   }
+   OnContained()
+   {
+      if(Object.InheritsFrom(message.container,"Avatar"))
+      {
+         if(message.event==kContainAdd)
+         {
+            PlayerLimbs.Equip(self);
+            Property.Set(self, "NonPhysCreature", FALSE);
+         }
+         else if(message.event==kContainRemove)
+         {
+            // If not unconscious, de-physicalize on sleep
+            if (!Object.InheritsFrom(self,"M-KnockedOut"))
+            {
+//just set it anyway.
+//               if (Property.Possessed(self,"PhysType"))
+                  Property.Set(self,"PhysType","Remove On Sleep",TRUE); 
+            }
+            PlayerLimbs.UnEquip(self);
+         }
+      }
+      DefaultOnContained();
+   }
+
+// This is re-physicalization code if the body throw code is set up to
+// auto-remove on sleep. 
+#ifdef RE_PHYSICALIZE
+   OnPhysMadeNonPhysical()
+   {
+      if (Object.InheritsFrom(self,"M-KnockedOut"))
+         PostMessage(self,"ReFiz"); 
+      DefaultOnPhysMadeNonPhysical(); 
+   }
+
+   OnMessage()
+   {
+      if (MessageIs("ReFiz"))
+      {
+         // re-add physics
+         Property.Remove(self,"PhysType"); 
+         Property.Add(self,"PhysType"); 
+         Property.Set(self,"PhysType","Remove On Sleep",FALSE); 
+      }
+   } 
+
+#endif // RE_PHYSICALIZE
+
+END_SCRIPT(Corpsed)
+
+
+
+
+/* Cameras send a "TurnOn" when they reach high alertness,
+   and a "TurnOff" when they stand down from high alertness.
+   They also animate their models to reflect alertness,
+   and when slain.  The TweqModels config property is used to
+   parametrize the models used (so, cameras which use TweqModels
+   animation are not supported).  Model number 0 is used for the
+   dead camera, while 1 and up are used for alertness levels.
+   */
+BEGIN_SCRIPT(CameraAlert, AI)
+METHODS:
+   METHOD void SetTweqModel(integer tweqmod)
+   {
+      string model=Property.Get(self,"ModelName");
+
+      if(Property.Possessed(self,"CfgTweqModels"))
+         model=Property.Get(self,"CfgTweqModels",
+                            string("Model ")+string(tweqmod));
+
+      Property.Set(self,"ModelName",(const char*)model);
+   }
+   METHOD void Broadcast(boolean on)
+   {
+      Link.BroadcastOnAllLinks(self,on?"TurnOn":"TurnOff","ControlDevice",NULL);
+      // In the future, turrets will handle this message by acquiring the camera's awareness.
+      Link.BroadcastOnAllLinks(self,"CUSIC","ControlDevice",NULL);
+   }
+   METHOD void Update(void)
+   {
+      // Well, this is hard-coded in the AI, so let's hard-code it here...
+      integer AttentionSpan=20; // seconds
+      boolean update=FALSE;
+
+      if(Property.Possessed(self,"AI_Alertness") &&
+         integer(Property.Get(self,"AI_Alertness","Level"))==kHighAlert)
+      {
+         integer time=GetTime();
+         integer contact=time;
+         boolean seeplayer=FALSE;
+
+
+         if(Link.AnyExist("AIAwareness",self))
+         {
+            linkset awarelinks=Link.GetAll("AIAwareness",self);
+
+            while(awarelinks.AnyLinksLeft())
+            {
+               link awarelink=awarelinks.Link();
+
+               if(Object.InheritsFrom(awarelink.To(),"Avatar"))
+               {
+                  contact=awarelink.GetData("Time Last Contact");
+                  // GetTime() is in seconds, while the time here is in milliseconds.
+                  // So, round it down.
+                  contact/=1000;
+
+                  // Oh, what the heck
+                  if(Property.Possessed(self,"ScriptTiming"))
+                  {
+                     AttentionSpan=Property.Get(self,"ScriptTiming");
+                     AttentionSpan=(AttentionSpan+500)/1000;
+                  }
+
+                  // Debug.MPrint("Aware of ",awarelink.To()," at time ",contact,"; currently ",time);
+
+                  if((time-contact)>AttentionSpan)
+                  {
+                     // in an ordinary AI this would lose us a lot of data we
+                     // wanted to keep, but in a dumb camera it's probably OK.
+                     Link.Destroy(awarelink);
+                  }
+                  else
+                     update=TRUE; // still aware of a player.  Check back.
+               }
+               awarelinks.NextLink();
+            }
+         }
+      }
+      if(update)
+         SetOneShotTimer("Update",self,2.0);
+   }
+
+   METHOD void SleepMode(boolean asleep)
+   {
+      integer mode=Property.Get(self,"AI_Mode");
+
+      if(asleep)
+      {
+         Property.Set(self,"AI_Alertness","Level",kNoAlert);
+         Link.DestroyMany("AIAwareness",self,AnyObject);
+         Broadcast(FALSE);
+         mode=kAIM_Asleep;
+      }
+      else if(mode==kAIM_Asleep)
+         mode=kAIM_Normal;
+
+      Property.Set(self,"AI_Mode",mode);
+   }
+
+MESSAGES:
+   OnAlertness()
+   {
+      if(message.level==kHighAlert)
+      {
+         Broadcast(TRUE);
+         Update();
+      }
+      else if(message.oldLevel==kHighAlert)
+      {
+         Broadcast(FALSE);
+      }
+      if(!Object.HasMetaProperty(self,"M-AI-Stasis"))
+         SetTweqModel(message.level+1);
+
+      DefaultOnAlertness();
+   }
+   /* Note that if a camera is slain while at Alertness 3, it can
+      never send the all-clear "TurnOff".  This is intentional. */
+   OnSlain()
+   {
+      SetTweqModel(0);
+      Broadcast(FALSE);
+      DefaultOnSlain();
+   }
+   OnMessage()
+   {
+      if(MessageIs("TurnOn"))
+      {
+         if(Object.HasMetaProperty(self,"M-AI-Stasis"))
+         {
+            SleepMode(FALSE);
+            SetTweqModel(1); // as per 0 alertness, since we know we're alert-capped when off
+            Object.RemoveMetaProperty(self,"M-AI-Stasis");
+         }
+      }
+      else if(MessageIs("TurnOff"))
+      {
+         SleepMode(TRUE);
+         if(!Object.HasMetaProperty(self,"M-AI-Stasis"))
+            Object.AddMetaProperty(self,"M-AI-Stasis");
+         SetTweqModel(5);
+      }
+      DefaultOnMessage();
+   }
+   OnTimer()
+   {
+      if(message.name=="Update")
+         Update();
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(CameraAlert)
+
+
+// Script: CameraAlert2
+// This poorly-named script derives from CameraAlert and overrides the behavior
+// whereby Cameras send "TurnOff" OnSlain.  Otherwise identical.
+BEGIN_SCRIPT (CameraAlert2, CameraAlert)
+   OnSlain()
+   {
+      SetTweqModel(0);
+//      Broadcast(FALSE);
+//      DefaultOnSlain();
+   }
+END_SCRIPT (CameraAlert2)
+
+
+/* QuaffHeal:
+Prompt AI to use a healing potion, if he has one and has lost
+hit points.
+*/
+BEGIN_SCRIPT(QuaffHeal, AI)
+METHODS:
+   METHOD object MyPotion()
+   {
+      boolean gotpotion=FALSE;
+      object potion, item;
+      linkset inventlinks=Link.GetAll("Contains",self);
+      object healing=Object.Named("HealingPotion");
+      
+      for(;!gotpotion && inventlinks.AnyLinksLeft();inventlinks.NextLink())
+      {
+         item=inventlinks.Link().To();
+         //only allow belt or alt potions (ones the player can SEE)
+         if (Object.InheritsFrom(item,healing) && 
+            (((integer)inventlinks.Link().GetData()==kContainTypeAlt) ||
+             ((integer)inventlinks.Link().GetData()==kContainTypeBelt)))
+         {
+            gotpotion=TRUE;
+            potion=item;
+         }
+      }
+      if(gotpotion)
+         return potion;
+      else
+         return object(0);
+   }
+   METHOD void ConsiderPotion()
+   {
+      if ((integer)GetData("IgnorePotion")==1)
+         return; //we're ignoring potions.
+      if(Property.Possessed(self,"AI_Mode") &&
+         integer(Property.Get(self,"AI_Mode"))==kAIM_Normal &&
+         Property.Possessed(self,"HitPoints") &&
+         Property.Possessed(self,"MAX_HP"))
+      {
+         integer hp=Property.Get(self,"HitPoints");
+         integer max=Property.Get(self,"MAX_HP");
+
+         if(hp<max)
+         {
+            object potion=MyPotion();
+            if(potion!=object(0))
+            {
+               // Play drinking motion
+               // @TODO: Attach potion to hand?
+               if ((integer)Link.GetOne("Contains",self,potion).GetData()==kContainTypeAlt)
+                  Object.AddMetaProperty(self,"M-LeftHandAlt");
+               else //assumes Belt is other type
+                  Object.AddMetaProperty(self,"M-LeftHandBelt");
+               //don't change the contain type anymore
+               SetData("Drinking",TRUE);
+               Puppet.PlayMotion(self,"humgulp");
+            }
+         }
+      }
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      if (!IsDataSet("IgnorePotion"))
+         SetData("IgnorePotion",0);
+      DefaultOnBeginScript();
+   }
+   OnAIModeChange()
+   {
+      SetOneShotTimer(self,"ConsiderPotion",0.2);
+      DefaultOnAIModeChange();
+   }
+   OnDamage()
+   {
+      SetOneShotTimer(self,"ConsiderPotion",0.2);
+      DefaultOnDamage();
+   }
+   OnMotionEnd()
+   {
+      if(message.MotionName=="humgulp" && IsDataSet("Drinking"))
+      {
+         object potion=MyPotion();
+         if(potion!=object(0)) FrobObj(potion,kHighPriorityAction);
+         ClearData("Drinking");
+         Object.RemoveMetaProperty(self,"M-LeftHandAlt");
+         Object.RemoveMetaProperty(self,"M-LeftHandBelt");
+      }
+      DefaultOnMotionEnd();
+   }
+   OnMessage()
+   {
+      if (MessageIs("IgnorePotion"))
+         SetData("IgnorePotion",1);
+      DefaultOnMessage();
+   }
+   OnTimer()
+   {
+      if (message.name == "ConsiderPotion")
+         ConsiderPotion();
+      DefaultOnTimer();
+   }
+END_SCRIPT(QuaffHeal)
+
+
+
+/* WorkerRobot:
+
+	===WorkerBot metaprops===
+  
+	 "searching"  - alert cap: max = 3, min = 2; don't fidget; don't return-to-origin, vision = average,
+                   shape = model of robot with camera out.  Notices bodies.
+	 "camera out" - alert cap: max = 3, min = 1; vision = average, notices bodies.  Shape = model of robot
+                   with camera out.
+
+
+	===WorkerBot pseudoscripts===
+
+	Alert response 2: 
+	  * ScriptMessage "DoISearch?" to make sure I'm not already searching
+	  * If that passes, add "searching" metaprop
+	  * ScriptMessage "DoSearch" to trigger script-controlled search behavior
+	  * Some cosmetic stuff, too
+
+	Signal Response "TurnAround":
+	  * Play a "TurnAround" motion
+	  * Call back to this script with a "DoneATurnAround" msg
+
+	===WorkerBot scripted behavior===
+
+  -> Upon receiving "DoISearch?" msg, it returns F if the robot already has either of
+     the metaprops "M-WorkBot-Searching" or "M-WorkBot-CameraOut" or T otherwise.
+
+  -> When prompted by msg "DoSearch" from AlertResponse pseudoscript, the robot
+	  plays searching motions (by sending itself "TurnAround" signals) for 
+	  GetSearchDuration() seconds.  It also gives itself the "searching"
+	  metaprop (which it should already have anyway, but just to be safe) 
+
+  -> If the robot achieves high alertness, it removes the "searching" metaprop.
+     It gains the "camera out" metaprop.  The default AI fleeing behavior
+	  is assumed to take over.
+
+  -> If the robot ramps down to low alertness, it removes the "camera out" metaprop.  
+	  Since the robot cannot ramp down below moderate alert while it has the "searching" 
+	  metaprop, we know that since the robot has just ramped down it is not "searching".
+
+*/
+BEGIN_SCRIPT (WorkerRobot, AI)
+
+METHODS:
+// Start a chain of "TurnAround" events that lasts
+// for GetSearchDuration() seconds and terminates with a "DoneSearching" timer.
+void DoSearch ()
+{
+	// I should already have these metaprop, but just in case I don't
+	while (!Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching")))
+		Object.AddMetaProperty(self,Object.Named("M-WorkBot-Searching"));
+
+   //AMSD removed since we only have Searching XOR Camera
+   //while (!Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+	//	Object.AddMetaProperty(self,Object.Named("M-WorkBot-CameraOut"));
+
+	AI.Signal(self,"TurnAround");
+	SetOneShotTimer("DoneSearching",GetSearchDuration());
+}
+
+// remove the "searching" metaprop
+void StopSearching ()
+{
+	Debug.MPrint(" Stop searching");
+	while (Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching")))
+		Object.RemoveMetaProperty(self,Object.Named("M-WorkBot-Searching"));
+}
+
+// add the "camera out" metaprop
+void PullCameraOut ()
+{   
+   Debug.MPrint(" Pull camera out");
+   while (!Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+      Object.AddMetaProperty(self,Object.Named("M-WorkBot-CameraOut"));
+}
+
+// remove the "camera out" metaprop
+void PutCameraAway()
+{
+	Debug.MPrint(" Put camera away");
+	while (Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+		Object.RemoveMetaProperty(self,Object.Named("M-WorkBot-CameraOut"));
+}
+
+// return search duration in seconds (see DoSearch, above)
+float GetSearchDuration ()
+{
+	return 17.0;
+}
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("DoISearch?"))
+	{
+		// reply F if I have either of these metaprops and T otherwise
+		Reply (	!(	(Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching"))) ||
+					(Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))	)	);
+	}
+	else if (MessageIs("DoSearch"))
+	{
+		// I get this message at the end of my alert response 
+		// pseudoscript (after it passes "DoISearch?", above)
+		DoSearch();
+	}
+	else if (MessageIs("DoneATurnAround"))
+	{
+		// call back from pseudoscript at the termination of one "TurnAround" event
+		// if we are still "searching", then start another
+		if (Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching")))
+			AI.Signal(self,"TurnAround");
+	}
+	else if (MessageIs("test"))
+	{
+		// spew which metaprops I have
+		if (Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching")))
+			Debug.MPrint(self," has metaprop Searching");
+		if (Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+			Debug.MPrint(self," has metaprop CameraOut");
+	}
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	// "DoneSearching"
+	if (	(message.name == "DoneSearching") && 
+			(Object.HasMetaProperty(self,Object.Named("M-WorkBot-Searching"))) )
+	{
+		StopSearching ();
+
+		// @NOTE: uncomment the below to force the robot to put his camera away 
+		// when he gets done searching.
+		// (consider the case when, while searching, the robot doesn't find enough evidence of the
+		// player to go to alert 3, but does find enough evidence to keep him at alert 1 or 2 
+		// uncommenting this code makes him put his camera away anyway, commenting it 
+		// out makes him wait til he ramps down to put it away.
+/*		if (Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+			PutCameraAway ();*/
+	}
+
+	DefaultOnTimer();
+}
+OnAlertness()
+{
+	if (message.level == kHighAlert)
+	{
+		// since the "searching" metaprop is about not idling and being capped at 2, remove this 
+		// and let the natural AI take over and flee - 
+      // but don't make sure the robot can still see, add his "camera out" metaprop
+		StopSearching();
+      PullCameraOut();
+	}
+	// if you ramp down to or below level 1, when you had been at a higher than 1 alert,
+	// you can put your camera away now
+	else if ( (message.level <= kLowAlert) && (message.oldLevel > kLowAlert) )
+	{
+		if (Object.HasMetaProperty(self,Object.Named("M-WorkBot-CameraOut")))
+		{
+			PutCameraAway ();
+		}
+	}
+	DefaultOnAlertness();
+}
+
+END_SCRIPT (WorkerRobot)
+
+
+
+
+
+const float kTransluceFreq=0.1;
+const float kTransluceTime=1.0; // total time to fade in/out
+const float MAX_TLUC=0.5;
+
+/* Handles fading the phantom in and out and moving it to its mark.  Also, phantom is
+   set to be always efficient unless needed.
+   */
+BEGIN_SCRIPT(Phantom, RootScript)
+
+METHODS:
+   METHOD void KillAnyTimer()
+   {
+      if(IsDataSet("Timer"))
+      {
+         timer_handle timr=GetData("Timer");
+         KillTimer(timr);
+      }
+   }
+
+MESSAGES:
+/*
+   OnSim()
+   {
+      if(message.starting && !Object.HasMetaProperty(self,"M-EasilyEfficient"))
+         Object.AddMetaProperty(self,"M-EasilyEfficient");
+      DefaultOnSim();
+   }
+   */
+   OnMessage()
+   {
+      if(MessageIs("PhantomBegin"))
+      {
+         // Move us to our mark
+         if(Link.AnyExist("Route",self))
+         {
+            object mark=Link.GetOne("Route",self).To();
+            
+            Object.Teleport(self,vector(0,0,0),vector(0,0,0),mark);
+         }
+         else if(Property.Possessed(self,"AI_IdleOrgn"))
+         {
+            vector pos=Property.Get(self,"AI_IdleOrgn","Original Location");
+            float fac=Property.Get(self,"AI_IdleOrgn","Original Facing");
+            vector orient=vector(0,0,fac);
+
+            Object.Teleport(self,pos,orient);
+         }
+
+         // Start fade-in
+         Property.Set(self,"HasRefs",TRUE);
+         Property.Set(self, "RenderAlpha", 0);
+         KillAnyTimer();
+         SetData("Timer",SetOneShotTimer("In",0));
+         // Object.RemoveMetaProperty(self,"M-EasilyEfficient");
+      }
+      else if(MessageIs("PhantomEnd"))
+      {
+         KillAnyTimer();
+         SetData("Timer",SetOneShotTimer("Out",0));
+         // halt all schemas on object
+         Sound.HaltSchema(self);
+      }
+      Reply(TRUE);
+      DefaultOnMessage();
+   }
+   OnTimer()
+   {
+      const float TransluceRate=MAX_TLUC/(kTransluceTime/kTransluceFreq);
+      ClearData("Timer");
+      
+      // It's still stupid that we don't have TweqAlpha, but this will do.
+      float trans = Property.Get(self, "RenderAlpha");
+      if (message.name == "Out")
+      {
+         if (trans>0)
+         {
+            Property.Set(self, "RenderAlpha", max(trans-TransluceRate, 0));
+            SetData("Timer",SetOneShotTimer("Out",kTransluceFreq));
+         }
+         else
+         {
+            Property.Set(self,"HasRefs",FALSE);
+         }
+      }
+      else if (message.name == "In")
+      {
+         if (trans<MAX_TLUC)
+         {
+            Property.Set(self, "RenderAlpha", min(trans+TransluceRate, MAX_TLUC));
+            SetData("Timer",SetOneShotTimer("In", kTransluceFreq));
+         }
+      }
+   }
+
+END_SCRIPT(Phantom)
+
+BEGIN_SCRIPT(ReactsNoisemakers, AI)
+METHODS:
+
+METHOD object GetNoisemakerID(string testsignal)
+{
+    cAnsiStr tempstr = (cAnsiStr)testsignal;
+    integer result;
+    
+    result = tempstr.Find("noisemaker");
+    if (result == -1)
+        return 0;
+    tempstr.Remove(result,strlen("noisemaker"));
+    return (atoi(tempstr));
+}
+
+MESSAGES:
+
+OnBeginScript()
+{
+    if (!IsDataSet("NoiseTrack"))
+        SetData("NoiseTrack",0);
+    DefaultOnBeginScript();
+}
+
+OnSignalAI()
+{
+    object noiseid = GetNoisemakerID(message.signal);
+    if (((integer)noiseid > 0) && ((integer)noiseid != (integer)GetData("NoiseTrack")))
+      {
+	SetData("NoiseTrack",(integer)noiseid);
+	GotoObjLoc(noiseid);
+      }
+    DefaultOnSignalAI();
+}
+
+END_SCRIPT(ReactsNoisemakers)
+
+
+// Script: NoticesPlayerBumps
+
+// The Plan: If the player collides with me and if I don't already have an
+// alertness cap, give myself one for a second - long enough to get to alert 2.
+// Also, stuff the AIAwarenessLink to the player with data about where the player is, so
+// I can logically look in basically the right place for what bumped into me.
+// The Reality: In practice, this script is not effective.  The AI only turns to investigate
+// the player's former location occasionally for some reason known only the underlying AI.  
+// Therefore this script is being used only by WorkerBots at present (1/29/00).  
+// For them, they just go to alert 2 temporarily when bumped into if they are not already alert.
+
+BEGIN_SCRIPT(NoticesPlayerBumps ,Physics)
+
+METHODS:
+// stuff my info about where I last contacted the player with the
+// player's current position
+void StuffLinkInfo()
+{
+	if (!Link.AnyExist("AIAwareness",self,Object.Named("Player")))
+	{
+		Link.Create("AIAwareness",self,Object.Named("Player"));
+	}
+
+	vector player_pos = Object.Position(Object.Named("Player"));
+	Link.GetOne("AIAwareness",self,Object.Named("Player")).SetData("Pos last contact",player_pos);
+}
+
+MESSAGES:
+OnBeginScript()
+{
+	Physics.SubscribeMsg(self, kCollisionMsg);
+	DefaultOnBeginScript();
+}
+OnEndScript()
+{
+	Physics.UnsubscribeMsg(self, kCollisionMsg);
+	DefaultOnEndScript();
+}
+OnPhysCollision()
+{
+	//@NOTE: bad multiplayer assumption
+	// If I collided with the player
+	if ((object)message.collObj == Object.Named("Player"))
+	{
+		// if my alertness < 2
+		if ((int)Property.Get(self,"AI_Alertness","Level") < 2)
+		{
+			// if I have standard Alert Cap properties
+/*			if ( (Property.Get(self,"AI_AlertCap","Max level") == 3) &&
+				(Property.Get(self,"AI_AlertCap","Min level") == 0) &&
+				(Property.Get(self,"AI_AlertCap","Min relax after peak") == 1) ) */
+			{
+				// stuff my info about where I last contacted the player with the
+				// player's current position
+//				StuffLinkInfo();
+
+				// cap my alert then upcap it 1 second later
+				Property.Set (self,"AI_AlertCap","Min level",2);
+				SetOneShotTimer("Uncap",1.0);
+			}
+		}
+	}
+	DefaultOnPhysCollision();
+}
+
+OnTimer()
+{
+	if (message.name == "Uncap")
+	{
+//		Property.Set (self,"AI_AlertCap","Min level",0);
+		Property.Remove (self,"AI_AlertCap");
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT(NoticesPlayerBumps)
+
+BEGIN_SCRIPT(ShutUpYerDead, RootScript)
+
+MESSAGES:
+
+  OnBeginScript()
+  {
+    if (!IsDataSet("Snapped"))
+      SetData("Snapped",0);
+
+    if (GetData("Snapped")==0)
+    {
+      Debug.MPrint("Snapping awareness links on ",self);
+      linkset awlinks = Link.GetAll("AIAwareness",self);
+      while (awlinks.AnyLinksLeft())
+      {
+        Debug.MPrint("Lowering link to ",awlinks.Link().To());
+        awlinks.Link().SetData("flags",kAIAL_Lowest);
+        awlinks.NextLink();
+      }
+    }
+    
+    //don't drink any more potions.
+    PostMessage(self,"IgnorePotion");
+
+    SetData("Snapped",1);
+    DefaultOnBeginScript();
+  }
+
+END_SCRIPT(ShutUpYerDead)
+
+BEGIN_SCRIPT(SuspiciousReactions, AI)
+
+//ugh, this is getting ugly.  Sigh.  AMSD
+
+METHODS:
+
+   METHOD BOOL ShouldILight()
+   {
+      integer should = Data.RandInt(1,6);
+      return (should == 1);
+   }
+  
+   //We have a semaphore "DoingSuspicious" for not stomping over ourselves,
+   //but new suspicious objects can grab our attention if they are high
+   //priority.
+
+   //RunOtherLinked is really the heart of the ugliness.
+
+   //Basically, we look through our suspicious links for others of the 
+   //same type.  Why, I don't know if there's a good reason anymore, but
+   //it originally had the faint hope of extensibility.  Anyway.
+   //So we go through links of the same type.  If they are still suspicious,
+   //we act on them.  If we don't find any such objects, we check the queue,
+   //which holds one other type (door or gaslight), and clear the queue and
+   //check that type.   So we should be able to basically react to all
+   //things that require more complex reactions (gaslights, doors).  If 
+   //a third things needs a more complex reaction, this function is probably
+   //better scrapped and rewritten.
+
+ 
+   METHOD void RunOtherLinked(ObjID suspobj,string susptype)
+   {
+     linkset susplinks = Link.GetAll("AISuspiciousLink",self);
+ 
+     Debug.MPrint("Running Other Linked");  
+
+     if (AI.GetAlertLevel(self) >= kAIAL_Moderate)
+     {
+        Debug.MPrint("Alert 2 or higher.  Aborting RunOtherLinked");
+        return; //abort.
+     }
+
+     while ((susplinks.AnyLinksLeft()) && (GetData("DoingSuspicious")==0))
+     { //links left, and semaphore not blocking us.
+       link cursusplink = susplinks.Link();
+       if (cursusplink.To()!=(object)suspobj) //don't do ourselves again
+       {
+         if (Property.Possessed(cursusplink.To(),"SuspObj")) //make sure
+         {
+           if (((string)Property.Get(cursusplink.To(),"SuspObj","Suspicious Type")==susptype) && //verify same type
+               ((boolean)Property.Get(cursusplink.To(),"SuspObj","Is Suspicious")==TRUE))
+           {
+             Debug.MPrint("Found another.  Object: ",cursusplink.To());
+             TypeParser(cursusplink.To(),susptype); //it is the same type
+           }
+	   else
+             if ((((string)Property.Get(cursusplink.To(),"SuspObj","Suspicious Type"))!=susptype) &&
+                 ((boolean)Property.Get(cursusplink.To(),"SuspObj","Is Suspicious")==TRUE))  //different type, queue it up
+		if ((string)GetData("SuspiciousQueueType")=="NULL")
+                {
+                  if ((string)Property.Get(cursusplink.To(),"SuspObj","Suspicious Type")==(string)"door")
+		    SetData("SuspiciousQueueType","door");
+                  if ((string)Property.Get(cursusplink.To(),"SuspObj","Suspicious Type")==(string)"gaslight")
+                    SetData("SuspiciousQueueType","gaslight");
+                }
+         }
+       }
+       susplinks.NextLink();
+     } //end while
+
+     if ((string)GetData("SuspiciousQueueType")!="NULL")
+     {
+       string thedata = (string)GetData("SuspiciousQueueType");
+       SetData("SuspiciousQueueType","NULL");
+       RunOtherLinked(suspobj,thedata);  //suspobj isn't quite right but ok.
+     }
+
+   }
+
+   METHOD void TypeParser(ObjID suspobj, string susptype)
+   {
+     Debug.MPrint("Type Parsers parsing ",suspobj,", ",susptype,".");
+     if (susptype=="torch")
+       TorchCall(suspobj);
+     if (susptype=="gaslight")
+       GasLightCall(suspobj);
+     if (susptype=="missingloot")
+       LootCall(suspobj);
+     if (susptype=="door")
+       DoorCall(suspobj);
+     if (susptype=="blood")
+       BloodCall(suspobj);
+     if (susptype=="Generic")
+       GenericParser(suspobj);
+   }
+
+   METHOD void GenericParser(ObjID suspobj)
+   {
+     Debug.MPrint("Generic parser called");
+     //HACK: We know they are called windows.  So sue me.
+     if (Object.InheritsFrom((object)suspobj,Object.Named("Windows")))
+       GlassCall(suspobj);
+     if (Object.InheritsFrom((object)suspobj,Object.Named("ExBanner")))
+       BannerCall(suspobj);
+     if (Object.InheritsFrom((object)suspobj,Object.Named("RopeArrowRope")))
+       RopeCall(suspobj);
+   }
+
+   METHOD void TorchCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running torch reaction");
+     //All we do here is say something.  And the pseudoscript has
+     //handled that.  So we're done.  Also, the torch is low priority,
+     //so we have a semaphore check to abort early.  Not that aborting
+     //early currently means anything, but we should check.
+//taking check out so that we can search for gas lights or doors
+ //    if ((integer)GetData("DoingSuspicious")!=0)
+       RunOtherLinked(suspobj,"gaslight");
+ 
+   }
+
+   METHOD void GasLightCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running gas light reaction");
+     if (!ShouldILight())
+        return;
+     if ((integer)GetData("DoingSuspicious")!=0)
+     {
+       if ((integer)GetData("DoingSuspicious")!=1) //not currently doing gaslight
+	 SetData("SuspiciousQueueType","gaslight");
+       return;
+     }
+     SetData("DoingSuspicious",1);  //semaphore for a gaslight
+     SetData("CurrentObj",suspobj);//BAD BAD WRONG WRONG save/load problems
+                                   //but unlikely to save/load at just
+                                   //wrong time AND screw up... and we
+                                  //don't delete these or anything
+                                   //so live for now.  AMSD
+     //Our plan here is to walk over to the light, then frob it, then
+     //unset our semaphore, and look for the next suspicious thing.
+     if (!GotoObjLoc(suspobj,kNormalSpeed,kNormalPriorityAction,"gogaslight"))
+     {
+        Debug.MPrint(self," failed suspicious Goto reaction to ",suspobj," (gaslight?)");
+	SetData("DoingSuspicious",0);
+        SetData("CurrentObj",0);
+	//don't runotherlinked, because we don't want to loop back and
+	//forth.  Let this just be a failure case.
+     }
+   }
+
+   METHOD void ContinueGasLight(ObjID suspobj)
+   {
+     Debug.MPrint(self," continuing Gas Light check on ",suspobj);
+     //ok, now we went to it.  Frob it.
+     FrobObj(suspobj);
+     SetData("DoingSuspicious",0);
+     SetData("CurrentObj",0);
+     RunOtherLinked(suspobj,"gaslight");
+   }
+
+   METHOD void RopeCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running rope reaction");
+     //Our plan here is just to say something.  So we're done.  
+     //The rope is low priority, so we have a semaphore check to abort
+     //early.  Not that aborting early currently means anything, but we
+     //should check anyway.
+       RunOtherLinked(suspobj,"gaslight");
+//     if ((integer)GetData("DoingSuspicious")!=0)
+//       return;
+   }
+
+   METHOD void DoorCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running door reaction");
+     if ((integer)GetData("DoingSuspicious")!=0)
+     {
+       if ((integer)GetData("DoingSuspicious")!=2) //not currently doing door
+	 SetData("SuspiciousQueueType","door");
+       return;
+     }
+     if (!Link.AnyExist("AIDoor",self,suspobj)) //we opened it
+     {  
+        SetData("DoingSuspicious",2);  //semaphore for doing a door 
+        SetData("CurrentObj",suspobj);
+     //Our plan here is to walk over to the door and frob it to open/close
+     //it.  If we can lock it(we have the key), we will.  Then we reset
+     //our semaphore and look for more.
+     //Of course we have a semaphore problem here.  How do I decide between
+     //the gaslights and the doors?  If I'm doing one and I start doing
+     //the other, I lose the fact that I was working on gaslights...
+        if (!GotoObjLoc(suspobj,kNormalSpeed,kNormalPriorityAction,"godoor"))
+        {
+           Debug.MPrint(self," failed suspicious Goto reaction to ",suspobj," (door?)");
+	   SetData("DoingSuspicious",0);
+           SetData("CurrentObj",0);
+	   //don't runotherlinked, because we don't want to loop back and
+	   //forth.  Let this just be a failure case.
+        }
+     }
+     else
+     {
+        return; //we opened the door we weren't supposed to, something
+                //important must be up, abort this suspicious stuff.
+     }
+   }
+
+   METHOD void ContinueDoor(ObjID suspobj)
+   {
+     Debug.MPrint(self," continuing Door check on ",suspobj);
+     //ok, now we went to it.  Frob it.
+     FrobObj(suspobj);
+     SetData("DoingSuspicious",0);
+     SetData("CurrentObj",0);
+     RunOtherLinked(suspobj,"door");
+   }
+
+
+   METHOD void GlassCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running glass reaction");
+     //We've already said something, now we need to go to Alert 2.
+     SetMinimumAlert(kModerateAlert); //go to alert 2
+     SetOneShotTimer(self,"removeminimum",5.0);
+     RunOtherLinked(suspobj,"gaslight");
+   }
+
+   METHOD void BannerCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running banner reaction");
+     //We've already said something, now we need to go to Alert 2.
+     SetMinimumAlert(kModerateAlert); //go to alert 2
+     SetOneShotTimer(self,"removeminimum",5.0);
+     RunOtherLinked(suspobj,"gaslight");
+   }
+
+   METHOD void BloodCall(ObjID suspobj)
+   {
+     Debug.MPrint("Running blood reaction");
+     //We've already said something, now we need to go to Alert 3.
+     SetMinimumAlert(kHighAlert); //go to alert 3
+     SetOneShotTimer(self,"removeminimum",10.0);
+     //at alert 3... ignore other stuff, don't run other linked.
+   }
+
+
+   METHOD void LootCall(ObjID suspobj)
+   {     
+     Debug.MPrint("Running loot reaction");
+     //We've already said something, now we need to go to Alert 2.
+     SetMinimumAlert(kModerateAlert); //go to alert 2
+     SetOneShotTimer(self,"removeminimum",5.0);
+     RunOtherLinked(suspobj,"gaslight");
+   }
+
+MESSAGES:
+
+   OnSim()
+   {
+     if (message.starting)
+     {
+       SetData("DoingSuspicious",0);
+       SetData("CurrentObj",0);
+       SetData("SuspiciousQueueType","NULL"); //assumes only 2 semaphore types
+     }
+     DefaultOnSim();
+   }
+
+   OnMessage()
+   {
+     if (MessageIs("Suspicious"))
+     {
+       Debug.MPrint(self," got suspicious message ",message.data,", ",message.data2,".");
+       if (AI.GetAlertLevel(self) < kAIAL_Moderate)
+          TypeParser((ObjID)message.data,(string)message.data2);
+       else
+          Debug.MPrint("Alert 2, aborting suspicious reaction.");
+     }
+     DefaultOnMessage();
+   }
+
+   OnObjActResult()
+   {
+     if (((string)message.data == "gogaslight") && 
+         ((integer)GetData("DoingSuspicious")==1) &&
+         ((integer)GetData("CurrentObj")!=0))  //make sure 
+     {
+       ContinueGasLight((ObjID)GetData("CurrentObj"));
+     }
+
+     if (((string)message.data == "godoor") && 
+         ((integer)GetData("DoingSuspicious")==2) &&
+         ((integer)GetData("CurrentObj")!=0))  //make sure 
+     {
+       ContinueDoor((ObjID)GetData("CurrentObj"));
+     }
+
+     DefaultOnObjActResult();
+   }
+
+   OnTimer()
+   {
+     if (message.name=="removeminimum")
+       SetMinimumAlert(kLowAlert); //not zero again
+     DefaultOnTimer();
+   }
+
+END_SCRIPT(SuspiciousReactions)
+
+
+BEGIN_SCRIPT(SummonMeBoiler, AI)
+
+METHODS:
+
+   METHOD void BringBoiler()
+   {
+     SetData("MyBoiler",0);
+     Debug.MPrint("Summoning boiler for ",self);
+     //hack, know name of boiler
+     object myboiler = Object.BeginCreate(Object.Named("RobotBoiler"));
+
+     Object.Teleport(myboiler,Object.Position(self),Object.Facing(self));
+	
+     Object.EndCreate(myboiler);
+
+     link altclink = Link.Create("Contains",self,myboiler);
+     altclink.SetData(kContainTypeAlt); //make it alternate
+
+     Property.Add(myboiler,"PhysAttr"); //reinstantiate physics
+     Property.Add(myboiler,"PhysType");
+     Property.Set(myboiler,"HasRefs",TRUE); //reref ourselves.
+     SetData("MyBoiler",(integer)myboiler);
+   }
+
+   METHOD object FindBoiler()
+   {
+     object toreturn = self;  //failure case
+     linkset contlinks = Link.GetAll("Contains",self);
+     while (contlinks.AnyLinksLeft())
+     {
+       Debug.MPrint("Searching for Boiler for ",self);
+       if ((integer)contlinks.Link().GetData()==kContainTypeAlt)
+         toreturn = contlinks.Link().To();
+       contlinks.NextLink();
+     }
+     return toreturn;
+   }
+
+MESSAGES:
+
+   OnSim()
+   {
+     if (message.starting)
+       BringBoiler();
+     DefaultOnSim();
+   }
+
+   OnAIModeChange()
+   {
+     if (message.mode==kAIM_Dead)   
+     {
+       Debug.MPrint(self," destroying boiler.");
+       object myboiler = FindBoiler();
+       Debug.MPrint("Found boiler ",myboiler);
+       if ((object)myboiler!=(object)self)
+           Object.Destroy(myboiler);
+       else
+           Debug.MPrint("No boiler to destroy, really.");
+     }
+     DefaultOnAIModeChange();
+   }
+
+END_SCRIPT(SummonMeBoiler)
+
+//ContainWaterProp is not really an AI script, but its only used for robots
+//since it's specific to water
+
+BEGIN_SCRIPT(ContainWaterProp, RootScript)
+
+METHODS:
+  
+   METHOD void ContainPropagate(stimulus_kind thestim, real theintensity)
+   {
+     linkset clinks = Link.GetAll("~Contains",self);
+     while (clinks.AnyLinksLeft())
+     {
+       ActReact.Stimulate(clinks.Link().To(),thestim,theintensity);
+       clinks.NextLink();
+     }
+   }
+
+MESSAGES:
+ 
+   OnBeginScript()
+   {
+     ActReact.SubscribeToStimulus(self,"WaterStim");
+     DefaultOnBeginScript();
+   }
+   
+   OnStimulus(WaterStim)
+   {
+     ContainPropagate(message.stimulus,message.intensity);
+     //no base class
+   }
+
+//to get the stim message
+
+   SCRIPT_BEGIN_MESSAGE_MAP()
+     STIMULUS_MESSAGE_MAP_ENTRY(WaterStim)
+   SCRIPT_END_MESSAGE_MAP()
+
+END_SCRIPT(ContainWaterProp)
+
+
+
+/* We don't want dead AIs to ping back mines.  This takes care of that.
+ */
+BEGIN_SCRIPT(NoPingBack, AI)
+
+   OnAIModeChange()
+   {
+      if (message.mode == kAIM_Dead && !Object.HasMetaProperty(self,"NoPingBack"))
+         Object.AddMetaProperty(self,"NoPingBack");
+      DefaultOnAIModeChange();
+   }
+END_SCRIPT(NoPingBack)
+
+/* Script so that turret cannonballs don't need to arc to work properly
+*/
+
+BEGIN_SCRIPT(ReGravitize, Physics)
+
+   OnBeginScript()
+   {
+     if (!IsDataSet("Gravitized"))
+       SetData("Gravitized",0);
+     if ((integer)GetData("Gravitized")==0)
+       SetOneShotTimer("GiveMeGravity",0.3);
+     Physics.SubscribeMsg(self,kCollisionMsg);
+     DefaultOnBeginScript();
+   }
+
+   OnEndScript()
+   {
+     Physics.UnsubscribeMsg(self,kCollisionMsg);
+     DefaultOnEndScript();
+   }
+
+   OnPhysCollision()
+   {
+     Property.Set(self,"PhysAttr","Gravity %",66.0); 
+     SetData("Gravitized",1);
+     DefaultOnPhysCollision();
+   }
+
+   OnTimer()
+   {
+     if (message.name == "GiveMeGravity")
+       Property.Set(self,"PhysAttr","Gravity %",66.0);
+     DefaultOnTimer();
+   }
+
+END_SCRIPT(ReGravitize);
+
+//knockedout robots should still corpse swap.  We already have a corpse link
+//so just do the real slay.  We must be our own culprit so that the player
+//gets the appropriate blame stats (deactivate/destroy).
+BEGIN_SCRIPT(RobotSlayScript, AI)
+
+MESSAGES:
+
+   OnAIModeChange()
+   {
+      if (message.mode == kAIM_Dead)
+      {
+         if ((integer)Property.Get(self,"HitPoints")>0)
+            Damage.Slay(self,self); //really just kill me.
+      }
+      DefaultOnAIModeChange();
+   }
+
+END_SCRIPT(RobotSlayScript)
+
+
+/* Controls alertness-dependent smokestack steam effect on combat bots.
+ */
+BEGIN_SCRIPT(RoboSteam, AI)
+METHODS:
+   METHOD object MySteam()
+   {
+      object archi=object("RoboSteam");
+      if(!Object.Exists(archi))
+         return object(0);
+      if(Link.AnyExist("~ParticleAttachement",self))
+      {
+         linkset particles=Link.GetAll("~ParticleAttachement",self);
+         while(particles.AnyLinksLeft())
+         {
+            if(Object.InheritsFrom(particles.Link().To(),archi))
+               return particles.Link().To();
+            particles.NextLink();
+         }
+      }
+      return object(0);
+   }
+MESSAGES:
+   OnTweqComplete()
+   {
+      if(message.Type==kTweqTypeFlicker &&
+         message.Op==kTweqOpFrameEvent)
+      {
+         integer rate=Property.Get(self,"CfgTweqBlink","Rate");
+         integer turnoff=250;
+         object effect=MySteam();
+         if(effect!=object(0))
+         {
+            if(Property.Possessed(effect,"ScriptTiming"))
+               turnoff=Property.Get(effect,"ScriptTiming");
+            // turn off shouldn't come after next expected tweq.  In fact, limit it to 50%
+            // of that time.
+            if(turnoff*2>rate)
+               turnoff=rate/2;
+            PGroup.SetActive(effect,TRUE);
+            if(IsDataSet("SteamTimer"))
+            {
+               timer_handle steamt=GetData("SteamTimer");
+               KillTimer(steamt);
+            }
+            SetData("SteamTimer",SetOneShotTimer(self,"SteamOff",float(turnoff)/1000.0));
+         }
+      }
+      DefaultOnTweqComplete();
+   }
+   OnTimer()
+   {
+      if(message.name=="SteamOff")
+      {
+         object effect=MySteam();
+         ClearData("SteamTimer");
+         if(effect!=object(0))
+         {
+            PGroup.SetActive(effect,FALSE);
+         }
+      }
+      DefaultOnTimer();
+   }
+   OnAlertness()
+   {
+      integer divisor=message.level+1;
+      if(divisor!=0 && Property.Possessed(self,"CfgTweqBlink"))
+      {
+         integer newrate=2000/divisor;
+         Property.Set(self,"CfgTweqBlink","Rate",newrate);
+         Property.Set(self,"StTweqBlink","Cur Time",newrate-1);
+      }
+      DefaultOnAlertness();
+   }
+
+
+END_SCRIPT(RoboSteam)
+
+BEGIN_SCRIPT(CleanUpAttack, AI)
+
+MESSAGES:
+  
+   OnAIModeChange()
+   {
+      if (message.mode == kAIM_Dead)
+         PostMessage(self,"AbortAttack");
+      DefaultOnAIModeChange();
+   }
+
+END_SCRIPT(CleanUpAttack)
+
+BEGIN_SCRIPT(SlayHaltSpeech, AI)
+
+MESSAGES:
+
+   OnSlain()
+   {
+      Sound.HaltSpeech(self);
+      DefaultOnSlain();
+   }
+END_SCRIPT(SlayHaltSpeech)
+
+BEGIN_SCRIPT(AICheatScript, AI)
+
+METHODS:
+  METHOD void Catch(string whatdata)
+  {
+     if ((integer)GetData(whatdata)==0)
+        return;
+     Debug.MPrint(self," Catching Garrett");
+     integer i;
+     for (i = 0; i<20; i++)
+     {
+       if (Quest.Get(GoalVisibleVarName(i)))
+          Quest.Set(GoalStateVarName(i),kGoalFailed);
+     }
+  }
+
+MESSAGES:
+
+  OnSim()
+  {
+     if (message.starting)
+     {
+        //FailOnSee logic.
+        if (DarkGame.ConfigIsDefined("FailOnSee"))
+           SetData("FailOnSee",1);
+        else
+           SetData("FailOnSee",0);
+        if (DarkGame.ConfigIsDefined("FailOnKO"))
+           SetData("FailOnKO",1);
+        else
+           SetData("FailOnKO",0);
+        if (Object.InheritsFrom(self,Object.Named("Rat")))
+           SetData("FailOnSee",0);
+        if (Object.InheritsFrom(self,Object.Named("EyeballPlant")))
+           SetData("FailOnSee",0);
+        if (Property.Possessed(self,"AI_Team"))
+        {
+           integer myteam = (integer)Property.Get(self,"AI_Team");
+           if (myteam<=kAIT_Neutral)
+           {
+              SetData("FailOnSee",0);
+           }              
+        }
+        else
+        {
+           Property.Add(self,"AI_Team");
+           integer myteam = (integer)Property.Get(self,"AI_Team");
+           if (myteam<=kAIT_Neutral)
+           {
+              SetData("FailOnSee",0);
+           }
+           Property.Remove(self,"AI_Team");
+        }
+        if ((integer)GetData("FailOnSee")==1)
+           Debug.MPrint(self," is looking for Garrett.");
+        if ((integer)GetData("FailOnKO")==1)
+           Debug.MPrint(self," should not get KO'd by Garrett.");
+     }
+     DefaultOnSim();
+  }
+
+  OnAIModeChange()
+  {
+     if (message.mode==kAIM_Dead)
+     {
+           integer hp = 99;
+      
+           if (Property.Possessed(self,"HitPoints"))
+              hp=Property.Get(self,"HitPoints");
+           if (hp>0)
+              Catch("FailOnKO");
+     }
+     DefaultOnAIModeChange();
+  }
+
+  OnHighAlert()
+  {
+     int hp = 99;
+     if (Property.Possessed(self,"HitPoints"))
+        hp = Property.Get(self,"HitPoints");
+
+     if ((!Object.HasMetaProperty(self,Object.Named("M-KnockedOut"))) &&
+         (hp>0))
+        Catch("FailOnSee");
+     DefaultOnHighAlert();
+  }
+
+END_SCRIPT(AICheatScript)
+

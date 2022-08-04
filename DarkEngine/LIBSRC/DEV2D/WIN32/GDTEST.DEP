@@ -1,0 +1,3 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+gdtest.obj: dev2d.h fix.h matrixs.h mprintf.h mxang.h types.h

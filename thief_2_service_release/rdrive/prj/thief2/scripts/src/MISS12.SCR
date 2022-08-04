@@ -1,0 +1,731 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "drkgoalt.h"
+#include "drkstats.h"
+#include "m1213vic.h"
+#include "gen.scr" // oh, yes.
+
+BEGIN_SCRIPT(SpecialGoals, RootScript)
+
+METHODS:
+
+   METHOD void TallyCombine(object obj)
+   {
+      string combine="";
+      integer count=0;
+
+      if(Property.Possessed(obj,"CombineType"))
+         combine=Property.Get(obj,"CombineType");
+      else
+         return;
+
+      if(Property.Possessed(obj,"StackCount"))
+         count=Property.Get(obj,"StackCount");
+      else
+         // InvCache takes care of not actually giving a stack count to anything
+         // that shouldn't have one.
+         count=1;
+      
+      if(count!=0)
+         Quest.Set(string("CarryInv")+combine,count,kQuestDataCampaign);
+   }
+
+MESSAGES:
+   // Tally keys and such in the player's inventory, at the end of the mission.
+   OnSim()
+   {
+      if(!message.starting)
+      {
+         linkset contains=Link.GetAll("Contains",self);
+
+         while(contains.AnyLinksLeft())
+         {
+            object obj=contains.Link().To();
+            if(Property.Possessed(obj,"KeySrc"))
+            {
+               // a key.  Use combine type encoding (hashed from keysrc info
+               // into a string in StdKey when we were contained) for quest var.
+               TallyCombine(obj);
+            }
+            else 
+               // Hmm, how _really_ to decide whether to tally?
+               // if(boolean(SendMessage(obj,"Tally?")))
+               TallyCombine(obj);
+            contains.NextLink();
+         }
+      }
+      DefaultOnSim();
+   }
+
+END_SCRIPT(SpecialGoals)
+
+
+BEGIN_SCRIPT(SetupCampaignQVars, RootScript)
+METHODS:
+   // gets rid of existing mission quest variable and
+   // substitutes a campaign quest variable.
+   METHOD void MakeCampaignVar(string varname)
+   {
+      integer val=Quest.Get(varname);
+
+      // Axing this variable could will invalidate subscriptions.
+      // We should message back to ourselves (knowing that both this script
+      // and the victory conditions script are supposed to go on the player
+      // object) to make the victory conditions script re-do its subscriptions.
+      Quest.Delete(varname);
+      Quest.Set(varname,val,kQuestDataCampaign);
+   }
+   OnDifficulty()
+   {
+      // Initialize all of the campaign quest variables we'll use to coordinate
+      // state with "Masks."
+      integer books=Quest.Get("LibBooks");
+      
+      Debug.MPrint("Setting books to ",books);
+      // State of library quest (mask of books read)
+      Quest.Set("LibBooks", books, kQuestDataCampaign);
+      
+      MakeCampaignVar(GoalStateVarName(M13_LETTER_GOAL));
+      MakeCampaignVar(GoalVisibleVarName(M13_CULTIVATOR_GOAL));
+
+      DefaultOnDifficulty();
+   }
+   OnSim()
+   {
+      if(!message.starting)
+      {
+         // If we didn't read the letter from Karras, get rid of M13_CULTIVATOR_GOAL
+         // visibility quest var.  Since Miss 13 will have no mission quest var for
+         // it set, it will start off invisible.
+         if(Quest.Get(GoalStateVarName(M12_LETTER_GOAL))!=kGoalComplete)
+         {
+            string varname=GoalVisibleVarName(M13_CULTIVATOR_GOAL);
+            boolean vis=Quest.Get(varname);
+            Quest.Delete(varname);
+            // still need the visibility varname around locally for our own objective
+            // displays.
+            Quest.Set(varname,vis,kQuestDataMission);
+         }
+      }
+      DefaultOnSim();
+   }
+         
+END_SCRIPT(SetupCampaignQVars)
+
+
+// Handles all the quest item goals, 'cause why not?
+BEGIN_SCRIPT(M13Goals, RootScript)
+MESSAGES:
+   OnContainer()
+   {
+      // Might as well do victory here, since we're catching this anyway.
+      object inv=message.containee;
+
+      if(message.event!=kContainRemove && Property.Possessed(inv,"CombineType"))
+      {
+         string combine=Property.Get(inv,"CombineType");
+
+         if(combine==string("LCMask"))
+         {
+            integer count=0, diff=0;
+
+            if(Property.Possessed(inv,"StackCount"))
+               count=Property.Get(inv,"StackCount");
+            // Normal goal: get a mask
+            Quest.Set(GoalStateVarName(M13_MASK_GOAL_0),kGoalComplete);
+            // Expert goal: get all masks
+            if(count>=M13_MASK_TOTAL)
+               Quest.Set(GoalStateVarName(M13_MASK_GOAL_2),kGoalComplete);
+         }
+         else if(combine==string("LCMaskSpecial"))
+         {
+            // Okay, we want the stack to have the model of the special mask.
+            // So, remove the existing masks (if any) and then stuff them back
+            // in, after munging combine types appropriately.
+            linkset invlinks=Link.GetAll("Contains",self);
+            object masks;
+            boolean found=FALSE;
+
+            while(invlinks.AnyLinksLeft() && !found)
+            {
+               object thisone=invlinks.Link().To();
+               if(Property.Possessed(thisone,"CombineType") &&
+                  string(Property.Get(thisone,"CombineType"))==string("LCMask"))
+               {
+                  found=TRUE;
+                  masks=thisone;
+               }
+               invlinks.NextLink();
+            }
+            if(found)
+               Container.Remove(masks);
+            Property.Set(inv,"CombineType","LCMask");
+            // Note that this will cause a combine event, thus implicitly recursing.
+            // That should be okay because it will recurse into the above LCMask
+            // combine type case, not the LCMaskSpecial case.  This recursive case
+            // will handle the Expert goal to get all the masks if the special one
+            // is last.
+            if(found)
+               Container.Add(masks,self);
+            // Normal goal: get a mask
+            Quest.Set(GoalStateVarName(M13_MASK_GOAL_0),kGoalComplete);
+            // Got special mask, the Hard goal
+            Quest.Set(GoalStateVarName(M13_MASK_GOAL_1),kGoalComplete);
+         }
+         else if(combine==string("Cultivator"))
+         {
+            Quest.Set(GoalStateVarName(M13_CULTIVATOR_GOAL),kGoalComplete);
+            // @TODO: Explanatory VO from Garrett if this goal was not already complete.
+            Quest.Set(GoalStateVarName(M13_LETTER_GOAL),kGoalComplete);
+         }
+      }
+      DefaultOnContainer();
+   }
+
+
+END_SCRIPT(M13Goals)
+
+
+/* Give the player whatever keys and such the quest vars say he got in previous mission. */
+
+BEGIN_SCRIPT(InvCache, LoadoutCache)
+METHODS:
+   METHOD boolean Clear(object obj)
+   {
+      // Note that we don't just clear the object or not, but can mutate the
+      // objects we clear.  Woo hoo.
+      
+      // Note keys should have had its CombineType set appropriately when it
+      // got Contained in the Cache, due to the OnContained handler in the StdKey
+      // script.  Don't try this at home.
+      string combine="";
+      integer count=0;
+
+      Debug.MPrint(self," clearing ",obj);
+
+      if(!Property.Possessed(obj,"CombineType"))
+      {
+         Debug.MPrint("It's out of here.");
+         Object.Destroy(obj);
+         return FALSE;
+      }
+
+      combine=Property.Get(obj,"CombineType");
+      count=Quest.Get(string("CarryInv")+combine);
+
+      if(count>0)
+      {
+         // we have the item.  Make sure counts match
+         // if we didn't have a stack count already, though, don't give one.
+         if(Property.Possessed(obj,"StackCount"))
+            Property.Set(obj,"StackCount",count);
+         Quest.Set(string("CarryInv")+combine,0);
+         return TRUE;
+      }
+      else
+      {
+         Debug.MPrint("It's out of here.");
+         Object.Destroy(obj);
+         return FALSE;
+      }
+   }
+   METHOD void CleanUp(object obj)
+                                  {
+      // Can set Slay Result to determine whether you really want this.
+      Damage.Slay(obj,self);
+   }
+MESSAGES:
+   OnDifficulty()
+   {
+      Unload();
+   }
+   // Default behavior for OnSim is okay, since really OnDifficulty will have
+   // cleared it out anyway.  But KeyCache wants the default OnSim.
+   OnSim()
+   {
+      if(message.starting)
+      {
+         // We may have been unloading to the starting point.  If the OnDifficulty case
+         // doesn't get called (as when going in from editor mode)  we'll end up in the 
+         // OnSim case, where we want to be sure to unload to the player object.
+         // This will be the LoadoutCache behavior if we aren't contained.
+         Container.Remove(self);
+         DefaultOnSim();
+      }
+   }
+
+END_SCRIPT(InvCache)
+
+// Check whether it can Clear anything OnDifficulty, and delete self if not.
+// Otherwise a normal LoadoutCache, pretty much
+BEGIN_SCRIPT(KeyCache, InvCache)
+MESSAGES:
+   OnDifficulty()
+   {
+      linkset MyContents=Link.GetAll("Contents",self);
+      boolean clear=FALSE;
+
+      while(MyContents.AnyLinksLeft())
+      {
+         clear=Clear(MyContents.Link().To())||clear;
+            
+         MyContents.NextLink();
+      }
+      // Did _anything_ survive being cleared?
+      if(!clear)
+         Object.Destroy(self);
+      // And _don't_ do default on difficulty.
+   }
+END_SCRIPT(KeyCache)
+
+
+/* Two goals states can carry over from mission to mission.
+   
+   First, if the player reads the letter in _this_ mission,
+   the goal to read it in the next mission starts off complete
+   (but still visible).  We do this by choosing a goal we
+   require to be invisible in _this_ mission, and changing
+   its state, after making it a campaign quest variable.
+   The next mission will use this campaign variable instead of
+   a mission variable.
+   
+   Also, if the goal to read the letter is done, next mission  
+   starts with a goal visible that would not be otherwise.  We
+   do that by requiring that goal to have the number of a goal
+   in this mission which we know to be _visible_, and giving it
+   no mission quest variable for visibility next mission.  That
+   way, it will ordinarily be invisible (since nonexistent quest
+   variables are treated as 0).  But, if we want to make it visible
+   from this mission we can make a campaign quest variable to make
+   it visible with no chance of unwanted side effects on this
+   mission.
+   
+   All of these things, of course, are admitted hacks.
+   
+   -TJS 1/2/00
+   */
+
+BEGIN_SCRIPT(BarkLetter, RootScript)
+METHODS:
+   METHOD object LetterBark(void)
+   {
+      if(Link.AnyExist("SoundDescription",self))
+         return(Link.GetOne("SoundDescription",self).To());
+      return(object(0));
+   }
+MESSAGES:
+   OnFrobInvEnd()
+   {
+      // We get a voice-over at this point.  Delay until we get back from book mode.
+      SetOneShotTimer(self,"LetterBark",0.25);
+      DefaultOnFrobInvEnd();
+   }
+
+   OnTimer()
+   {
+      if(message.name=="LetterBark")
+      {
+         object bark=LetterBark();
+         if(bark!=object(0))
+            Sound.PlayVoiceOver(self,bark);
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(BarkLetter)
+
+BEGIN_SCRIPT(KarrasLetter, BarkLetter)
+
+MESSAGES:
+   OnContained()
+   {
+      if(Object.InheritsFrom(message.container,"Avatar"))
+      {
+         boolean got=TRUE;
+         // player picked up (or dropped) scroll
+         if(message.event==kContainRemove) got=FALSE;
+         Quest.Set("GotLetter",got);
+      }
+      DefaultOnContained();
+   }
+   OnFrobInvEnd()
+   {
+      // other scripts handle the actual book action.  We just
+      // do quest variables.  Oh, and the bark.
+      string LetterStateVar=GoalStateVarName(M13_LETTER_GOAL);
+      string CultiVisVar=GoalVisibleVarName(M13_CULTIVATOR_GOAL);
+
+      Quest.Set(LetterStateVar, kGoalComplete, kQuestDataCampaign);
+      Quest.Set(CultiVisVar, TRUE);
+      DefaultOnFrobInvEnd();
+   }
+   OnSim()
+   {
+      // Did the player get this scroll already?
+      if(message.starting && Property.Possessed(self,"CombineType"))
+      {
+         string combine=Property.Get(self,"CombineType");
+         boolean got=Quest.Get(string("CarryInv")+combine);
+         object player=object("Player");
+
+         if(got && player!=object(0))
+         {
+            Container.Remove(self); // just in case.
+            Container.Add(self,player);
+         }
+      }
+      DefaultOnSim();
+   }
+      
+END_SCRIPT(KarrasLetter)
+
+
+/* In mission 12, in addition to the stuff above, we want to score our
+   own optional objective.
+   */
+BEGIN_SCRIPT(KarrasLetter12, KarrasLetter)
+MESSAGES:
+   OnFrobInvEnd()
+   {
+      Quest.Set(GoalStateVarName(M12_LETTER_GOAL),kGoalComplete);
+      DefaultOnFrobInvEnd();
+   }
+END_SCRIPT(KarrasLetter12)
+
+
+
+/* Clock controlling secret door doesn't let you set its time until you
+   "unlock" it with the cuckoo.
+   When it gets set to 12:00, send a TurnOn.  Else, send a TurnOff.
+
+   @TODO: If we get cuckoo-peeking behavior into the clock script, this clock
+   shouldn't do it until the cuckoo is inserted.
+   */
+BEGIN_SCRIPT(CrazyClock, Clock)
+
+METHODS:
+   METHOD void SetClockTime(integer minutes)
+   {
+      boolean was12=(GetClockTime()==0);
+
+      Base::SetClockTime(minutes);
+
+      if(was12!=(GetClockTime()==0))
+      {
+         Link.BroadcastOnAllLinks(self,was12?"TurnOff":"TurnOn","ControlDevice",NULL);
+      }
+   }
+
+   METHOD void Tock()
+   {
+      // Only tell time if unlocked.
+      if(!Locked.IsLocked(self))
+         Base::Tock();
+   }
+
+MESSAGES:
+   OnNowUnlocked()
+   {
+      ResetBaseTime();
+      DefaultOnNowUnlocked();
+   }
+   OnFrobWorldEnd()
+   {
+      integer minutes=GetClockTime();
+      integer hours=minutes/60;
+
+      if(Locked.IsLocked(self))
+      {
+         // round minutes to nearest clock number
+         minutes=(((minutes+2)/5))%12;
+
+         // Since 3 and 5 are relatively prime, this allows us to put the
+         // clock on an orbit (algebraically speaking) that will never hit
+         // 12:00.
+         minutes=(minutes+5)%12;
+         hours=(hours+3)%12;
+
+         SetClockTime((hours*60)+(minutes*5));
+         // @TODO: make an incongruous "cuckoo" sound at every frob when locked?
+      }
+      else
+         DefaultOnFrobWorldEnd();
+   }
+
+END_SCRIPT(CrazyClock);
+
+
+/* We want to track which "secrets" the player finds so as to not
+   double-dip.  Each secret should have this script on it to do so,
+   and should have a unique SymName to munge into a quest var name
+   (I'm using ones of the form "Hid1", "Hid2", etc.)
+   */
+BEGIN_SCRIPT(TrackHid, RootScript)
+MESSAGES:
+   OnSim()
+   {
+      // suppose we're going to use the same .osm for miss12 and miss13.
+      // this is the part in miss13 where we would note the previously
+      // found secret.
+      string qvar=string("Hid")+Object.GetName(self);
+
+      if(message.starting)
+      {
+         if(Quest.Get(qvar)!=0)
+         {
+            int statflags=Property.Get(self,"DarkStat");
+
+            statflags=statflags & ~kDarkStatBitHidden;
+            Property.Set(self,"DarkStat",statflags);
+            // we have, I think, already been counted in the count of total
+            // secrets.  So, uncount ourselves.
+            Quest.Set(kDarkStatTotalSecrets,Quest.Get(kDarkStatTotalSecrets)-1);
+         }
+      }
+      DefaultOnSim();
+   }
+   OnEndScript()
+   {
+      if(Property.Possessed(self,"DarkStat"))
+      {
+         int statflags=Property.Get(self,"DarkStat");
+         string qvar=string("Hid")+Object.GetName(self);
+
+         if(Quest.Get(qvar)==0 && !(statflags & kDarkStatBitHidden))
+         {
+            // Look.  We are no longer hidden, but we have not yet noted
+            // that fact in quest variables.
+            Quest.Set(qvar,TRUE,kQuestDataCampaign);
+         }
+      }
+      DefaultOnEndScript();
+   }
+END_SCRIPT(TrackHid)
+
+
+/* If ANY human becomes fully aware of Garrett, or gets knocked out, or gets
+   killed by him, the mission ends.  We handle the kill case using CONVICT.
+   The other two cases are handled here.  This script MUST go on ALL humans
+   in mission 12.
+   */
+BEGIN_SCRIPT(AICatchPlayer, AI)
+METHODS:
+   METHOD void Catch(void)
+   {
+      Quest.Set(GoalStateVarName(M12_CAGEY_GOAL),kGoalFailed);
+   }
+MESSAGES:
+   OnAIModeChange()
+   {
+      if(message.mode==kAIM_Dead)
+      {
+         // It's possible for us to be killed and not to blame Garrett.
+         // CONVICT handles that.  So here we only want to catch the
+         // case where we're KO'd.
+         integer hp=99;
+
+         if(Property.Possessed(self,"HitPoints"))
+            hp=Property.Get(self,"HitPoints");
+         if(hp>0)
+            Catch();
+      }
+      DefaultOnAIModeChange();
+   }
+
+   OnHighAlert()
+   {
+      Catch();
+      DefaultOnHighAlert();
+   }
+#ifdef WRONG_THING
+   // @TODO: Well, this is really the wrong thing, but it will do until the
+   // right thing (above) actually works.
+   OnAlertness()
+   {
+      if(message.level==kHighAlert)
+      {
+         Catch();
+      }
+      DefaultOnAlertness();
+   }
+#endif
+
+END_SCRIPT(AICatchPlayer)
+
+
+
+
+/* For the Phantom appearances in the library.  Pick a random conversation
+   when triggered, to take place at the trigger's location.
+   */
+BEGIN_SCRIPT(ConvJukebox, RootScript)
+MESSAGES:
+   OnMessage()
+   {
+      boolean locked=FALSE;
+
+      if(Property.Possessed(self,"Locked"))
+         locked=Property.Get(self,"Locked");
+      else
+      {
+         Quest.SubscribeMsg(self,"LibBooks");
+         Property.Set(self,"Locked",FALSE);
+      }
+
+      if(!locked && MessageIs("TurnOn") && Link.AnyExist("ControlDevice",self))
+      {
+         object trig=message.from;
+         linkset jukelinx=Link.GetAll("ControlDevice",self);
+         integer jukecount=0, convnumber=0;
+         object conv=object(0);
+
+         while(jukelinx.AnyLinksLeft())
+         {
+            jukecount++;
+            jukelinx.NextLink();
+         }
+         convnumber=Data.RandInt(1,jukecount);
+         linkset jukelinks=Link.GetAll("ControlDevice",self);
+         while(jukelinks.AnyLinksLeft())
+         {
+            jukecount--;
+            if(jukecount<=0)
+            {
+               conv=jukelinks.Link().To();
+
+               // only really support one-actor CVs, here.
+               if(Link.AnyExist("AIConversationActor",conv))
+               {
+                  object actor=Link.GetOne("AIConversationActor",conv).To();
+                  vector pos=Object.Position(trig);
+                  vector fac=Object.Facing(trig);
+                  Object.Teleport(actor,pos,fac);
+                  Object.Destroy(trig);
+                  Property.Remove(actor,"AI_IdleOrgn");
+               }
+               AI.StartConversation(conv);
+               break;
+            }
+            jukelinks.NextLink();
+         }
+         if(conv!=object(0))
+            Link.DestroyMany("ControlDevice",self,conv);
+         Property.Set(self,"Locked",TRUE);
+      }
+      DefaultOnMessage();
+   }
+   OnQuestChange()
+   {
+      if(stricmp(message.m_pName,"LibBooks")==0 && 
+         message.m_oldValue!=message.m_newValue)
+      {
+         Property.Set(self,"Locked",FALSE);
+      }
+      DefaultOnQuestChange();
+   }
+
+   OnBeginScript()
+   {
+      Quest.SubscribeMsg(self,"LibBooks");
+      DefaultOnBeginScript();
+   }
+
+END_SCRIPT(ConvJukebox)
+
+
+
+// @TODO: These need to synch between mission 12 and 13.  Use qvar.
+BEGIN_SCRIPT(LibraryBook, RootScript)
+METHODS:
+   METHOD void AmbientHack(boolean on)
+   {
+      if(Property.Possessed(self,"AmbientHacked"))
+      {
+         integer flags=Property.Get(self,"AmbientHacked","Flags");
+         
+         if(!on)
+            flags|=AMBFLG_S_TURNEDOFF;
+         else
+            flags&=(~AMBFLG_S_TURNEDOFF);
+         Property.Set(self,"AmbientHacked","Flags",flags);
+      }
+   }
+   METHOD boolean GetBookBit()
+   {
+      integer books=Quest.Get("LibBooks");
+      integer mask=0;
+    
+      // This case only really applies to the secret door button, which
+      // would have a hard time parsing what it's proper quest flag is.
+      // The books have an easy time, and books use their TrapQVar property
+      // for something different already, so they'd _rather_ do it that way.
+      if(Property.Possessed(self,"TrapQVar"))
+      {
+         string qv=Property.Get(self,"TrapQVar");
+         mask=atoi(qv);
+      }
+      // Otherwise, figure out by looking at the qvar trap we're linked to.
+      else if(Link.AnyExist("ControlDevice",self))
+      {
+         linkset controlled=Link.GetAll("ControlDevice",self);
+         while(controlled.AnyLinksLeft())
+         {
+            object trap=controlled.Link().To();
+            if(Property.Possessed(trap,"TrapQVar"))
+            {
+               string qv=Property.Get(trap,"TrapQVar");
+               mask=atoi(((const char *)qv)+1);
+            }
+            controlled.NextLink();
+         }
+      }
+      
+      // Debug.MPrint("Book ",self," want flag ",mask);
+
+      return(mask&books);
+   }      
+
+MESSAGES:
+   OnBeginScript()
+   {
+      // @TODO: Can't count on this campaign quest variable existing yet...
+      Quest.SubscribeMsg(self,"LibBooks");
+      AmbientHack(!GetBookBit());
+      DefaultOnBeginScript();
+   }
+   OnQuestChange()
+   {
+      AmbientHack(!GetBookBit());
+      DefaultOnQuestChange();
+   }
+
+END_SCRIPT(LibraryBook)
+
+
+
+BEGIN_SCRIPT(Cultivator, RootScript)
+MESSAGES:
+   OnWorldSelect()
+   {
+      if(Quest.Get(GoalStateVarName(M13_LETTER_GOAL))==kGoalIncomplete)
+      {
+         object vo=object("gar1308");
+         // Gruesome hack to detect whether we're running in English.
+         string blood=Data.GetString("Titles","short_10");
+
+         if(blood!=string("Blood"))
+            vo=object("gar9906");
+
+         if(Object.Exists(vo))
+            Sound.PlayVoiceOver(self,vo);
+         Quest.Set(GoalStateVarName(M13_LETTER_GOAL),kGoalComplete);
+      }
+      DefaultOnWorldSelect();
+   }
+
+END_SCRIPT(Cultivator)
+
+

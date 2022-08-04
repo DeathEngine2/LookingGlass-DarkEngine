@@ -1,0 +1,3804 @@
+    <HTML> 
+	<HEAD> 
+	    <TITLE>POSIX - Perl interface to IEEE Std 1003.1
+
+</TITLE> 
+	</HEAD>
+
+	<BODY>
+
+<!-- INDEX BEGIN -->
+
+<UL>
+
+	<LI><A HREF="#NAME">NAME</A>
+	<LI><A HREF="#SYNOPSIS">SYNOPSIS</A>
+	<LI><A HREF="#DESCRIPTION">DESCRIPTION</A>
+	<LI><A HREF="#NOTE">NOTE</A>
+	<LI><A HREF="#CAVEATS">CAVEATS </A>
+	<LI><A HREF="#FUNCTIONS">FUNCTIONS</A>
+	<LI><A HREF="#CLASSES">CLASSES</A>
+	<UL>
+
+		<LI><A HREF="#POSIX_SigAction">POSIX::SigAction</A>
+		<LI><A HREF="#POSIX_SigSet">POSIX::SigSet</A>
+		<LI><A HREF="#POSIX_Termios">POSIX::Termios</A>
+	</UL>
+
+	<LI><A HREF="#PATHNAME_CONSTANTS">PATHNAME CONSTANTS</A>
+	<LI><A HREF="#POSIX_CONSTANTS">POSIX CONSTANTS</A>
+	<LI><A HREF="#SYSTEM_CONFIGURATION">SYSTEM CONFIGURATION</A>
+	<LI><A HREF="#ERRNO">ERRNO</A>
+	<LI><A HREF="#FCNTL">FCNTL</A>
+	<LI><A HREF="#FLOAT">FLOAT</A>
+	<LI><A HREF="#LIMITS">LIMITS</A>
+	<LI><A HREF="#LOCALE">LOCALE</A>
+	<LI><A HREF="#MATH">MATH</A>
+	<LI><A HREF="#SIGNAL">SIGNAL</A>
+	<LI><A HREF="#STAT">STAT</A>
+	<LI><A HREF="#STDLIB">STDLIB</A>
+	<LI><A HREF="#STDIO">STDIO</A>
+	<LI><A HREF="#TIME">TIME</A>
+	<LI><A HREF="#UNISTD">UNISTD</A>
+	<LI><A HREF="#WAIT">WAIT</A>
+	<LI><A HREF="#CREATION">CREATION</A>
+</UL>
+<!-- INDEX END -->
+
+<HR>
+<P>
+<H1><A NAME="NAME">NAME
+
+</A></H1>
+
+<FONT SIZE=-1>POSIX</FONT> - Perl interface to 
+<FONT SIZE=-1>IEEE</FONT> Std 1003.1
+
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="SYNOPSIS">SYNOPSIS
+
+</A></H1>
+<PRE>    use POSIX;
+    use POSIX qw(setsid);
+    use POSIX qw(:errno_h :fcntl_h);
+</PRE>
+
+<P>
+
+<PRE>    printf &quot;EINTR is %d\n&quot;, EINTR;
+</PRE>
+
+<P>
+
+<PRE>    $sess_id = POSIX::setsid();
+</PRE>
+
+<P>
+
+<PRE>    $fd = POSIX::open($path, O_CREAT|O_EXCL|O_WRONLY, 0644);
+        # note: that's a filedescriptor, *NOT* a filehandle
+</PRE>
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="DESCRIPTION">DESCRIPTION
+
+</A></H1>
+The 
+<FONT SIZE=-1>POSIX</FONT> module permits you to access all (or nearly all) the standard 
+<FONT SIZE=-1>POSIX</FONT> 1003.1 identifiers. Many of these identifiers have been given Perl-ish interfaces. Things which are
+ <CODE>#defines</CODE> in 
+<FONT SIZE=-1>C,</FONT> like 
+<FONT SIZE=-1>EINTR</FONT> or 
+<FONT SIZE=-1>O_NDELAY,</FONT> are automatically exported into your namespace. All functions are only exported if you ask for them explicitly. Most likely people will prefer to use the fully-qualified function names.
+
+
+
+<P>
+
+This document gives a condensed list of the features available in the 
+<FONT SIZE=-1>POSIX</FONT> module. Consult your operating system's manpages
+for general information on most features. Consult <A HREF="//c|\perl5\lib\pod\html/pod/perlfunc.html#">the perlfunc manpage</A> for functions which are noted as being identical to Perl's builtin
+functions.
+
+
+<P>
+
+The first section describes 
+<FONT SIZE=-1>POSIX</FONT> functions from the 1003.1 specification. The second section describes some classes for signal objects, 
+<FONT SIZE=-1>TTY</FONT> objects, and other miscellaneous objects. The remaining sections list various constants and macros in an organization which roughly follows 
+<FONT SIZE=-1>IEEE</FONT> Std 1003.1b-1993.
+
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="NOTE">NOTE
+
+</A></H1>
+The 
+<FONT SIZE=-1>POSIX</FONT> module is probably the most complex Perl module supplied with the standard distribution. It incorporates autoloading, namespace games, and dynamic loading of code that's in Perl, 
+<FONT SIZE=-1>C,</FONT> or both. It's a great source of wisdom.
+
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="CAVEATS">CAVEATS 
+
+</A></H1>
+
+<FONT SIZE=-1>A</FONT> few functions are not implemented because they are 
+<FONT SIZE=-1>C</FONT> specific. If you attempt to call these, they will print a message telling you that they aren't implemented, and suggest using the Perl equivalent should one exist. For example, trying to access the <CODE>setjmp()</CODE> call will elicit the message ``setjmp() is C-specific: use eval {} instead''.
+
+
+
+<P>
+
+Furthermore, some evil vendors will claim 1003.1 compliance, but in fact are not so: they will not pass the 
+<FONT SIZE=-1>PCTS</FONT> 
+<FONT SIZE=-1>(POSIX</FONT> Compliance Test Suites). For example, one vendor may not define 
+<FONT SIZE=-1>EDEADLK,</FONT> or the semantics of the errno values set by <CODE>open(2)</CODE> might not be quite right. Perl does not attempt to verify 
+<FONT SIZE=-1>POSIX</FONT> compliance. That means you can currently successfully say ``use 
+<FONT SIZE=-1>POSIX'',</FONT> and then later in your program you find that your vendor has been lax and there's no usable 
+<FONT SIZE=-1>ICANON</FONT> macro after all. This could be construed to be a bug.
+
+
+
+<P>
+
+<P>
+<HR>
+<H1><A NAME="FUNCTIONS">FUNCTIONS
+
+</A></H1>
+<DL>
+<DT><STRONG><A NAME="item__exit">_exit
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item__exit">_exit()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_abort">abort
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_abort">abort()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_abs">abs
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_abs">abs()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_access">access
+
+</A></STRONG><DD>
+Determines the accessibility of a file.
+
+
+<P>
+
+<PRE>        if( POSIX::access( &quot;/&quot;, &amp;POSIX::R_OK ) ){
+                print &quot;have read permission\n&quot;;
+        }
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_acos">acos
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_acos">acos()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_alarm">alarm
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_alarm">alarm()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_asctime">asctime
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_asctime">asctime()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_asin">asin
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_asin">asin()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_assert">assert
+
+</A></STRONG><DD>
+Unimplemented.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atan">atan
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_atan">atan()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atan2">atan2
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_atan2">atan2()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atexit">atexit
+
+</A></STRONG><DD>
+<CODE>atexit()</CODE> is C-specific: use 
+<FONT SIZE=-1>END</FONT> {} instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atof">atof
+
+</A></STRONG><DD>
+<CODE>atof()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atoi">atoi
+
+</A></STRONG><DD>
+<CODE>atoi()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_atol">atol
+
+</A></STRONG><DD>
+<CODE>atol()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_bsearch">bsearch
+
+</A></STRONG><DD>
+<CODE>bsearch()</CODE> not supplied.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_calloc">calloc
+
+</A></STRONG><DD>
+<CODE>calloc()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ceil">ceil
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_ceil">ceil()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_chdir">chdir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_chdir">chdir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_chmod">chmod
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_chmod">chmod()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_chown">chown
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_chown">chown()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_clearerr">clearerr
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::clearerr()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_clock">clock
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_clock">clock()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_close">close
+
+</A></STRONG><DD>
+Close the file. This uses file descriptors such as those obtained by
+calling
+<CODE>POSIX::open</CODE>.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_RDONLY );
+        POSIX::close( $fd );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_closedir">closedir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_closedir">closedir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_cos">cos
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_cos">cos()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_cosh">cosh
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_cosh">cosh()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_creat">creat
+
+</A></STRONG><DD>
+Create a new file. This returns a file descriptor like the ones returned by
+<CODE>POSIX::open</CODE>. Use <CODE>POSIX::close</CODE> to close the file.
+
+
+<P>
+
+<PRE>        $fd = POSIX::creat( &quot;foo&quot;, 0611 );
+        POSIX::close( $fd );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_ctermid">ctermid
+
+</A></STRONG><DD>
+Generates the path name for the controlling terminal.
+
+
+<P>
+
+<PRE>        $path = POSIX::ctermid();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_ctime">ctime
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_ctime">ctime()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_cuserid">cuserid
+
+</A></STRONG><DD>
+Get the character login name of the user.
+
+
+<P>
+
+<PRE>        $name = POSIX::cuserid();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_difftime">difftime
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_difftime">difftime()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_div">div
+
+</A></STRONG><DD>
+<CODE>div()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_dup">dup
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_dup">dup()</A>.
+
+
+<P>
+
+This uses file descriptors such as those obtained by calling
+<CODE>POSIX::open</CODE>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_dup2">dup2
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_dup2">dup2()</A>.
+
+
+<P>
+
+This uses file descriptors such as those obtained by calling
+<CODE>POSIX::open</CODE>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_errno">errno
+
+</A></STRONG><DD>
+Returns the value of errno.
+
+
+<P>
+
+<PRE>        $errno = POSIX::errno();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_execl">execl
+
+</A></STRONG><DD>
+<CODE>execl()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_execle">execle
+
+</A></STRONG><DD>
+<CODE>execle()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_execlp">execlp
+
+</A></STRONG><DD>
+<CODE>execlp()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_execv">execv
+
+</A></STRONG><DD>
+<CODE>execv()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_execve">execve
+
+</A></STRONG><DD>
+<CODE>execve()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_execvp">execvp
+
+</A></STRONG><DD>
+<CODE>execvp()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_exit">exit
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_exit">exit()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_exp">exp
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_exp">exp()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fabs">fabs
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_abs">abs()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fclose">fclose
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::close()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fcntl">fcntl
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_fcntl">fcntl()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fdopen">fdopen
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::new_from_fd()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_feof">feof
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::eof()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ferror">ferror
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::error()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fflush">fflush
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::flush()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fgetc">fgetc
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::getc()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fgetpos">fgetpos
+
+</A></STRONG><DD>
+Use method <CODE>IO::Seekable::getpos()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fgets">fgets
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::gets()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fileno">fileno
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::fileno()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_floor">floor
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_floor">floor()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fmod">fmod
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_fmod">fmod()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fopen">fopen
+
+</A></STRONG><DD>
+Use method <CODE>IO::File::open()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fork">fork
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_fork">fork()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fpathconf">fpathconf
+
+</A></STRONG><DD>
+Retrieves the value of a configurable limit on a file or directory. This
+uses file descriptors such as those obtained by calling <CODE>POSIX::open</CODE>.
+
+
+<P>
+
+The following will determine the maximum length of the longest allowable
+pathname on the filesystem which holds <CODE>/tmp/foo</CODE>.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;/tmp/foo&quot;, &amp;POSIX::O_RDONLY );
+        $path_max = POSIX::fpathconf( $fd, &amp;POSIX::_PC_PATH_MAX );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fprintf">fprintf
+
+</A></STRONG><DD>
+<CODE>fprintf()</CODE> is C-specific--use printf instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fputc">fputc
+
+</A></STRONG><DD>
+<CODE>fputc()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fputs">fputs
+
+</A></STRONG><DD>
+<CODE>fputs()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fread">fread
+
+</A></STRONG><DD>
+<CODE>fread()</CODE> is C-specific--use read instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_free">free
+
+</A></STRONG><DD>
+<CODE>free()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_freopen">freopen
+
+</A></STRONG><DD>
+<CODE>freopen()</CODE> is C-specific--use open instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_frexp">frexp
+
+</A></STRONG><DD>
+Return the mantissa and exponent of a floating-point number.
+
+
+<P>
+
+<PRE>        ($mantissa, $exponent) = POSIX::frexp( 3.14 );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_fscanf">fscanf
+
+</A></STRONG><DD>
+<CODE>fscanf()</CODE> is C-specific--use &lt;&gt; and regular expressions
+instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fseek">fseek
+
+</A></STRONG><DD>
+Use method <CODE>IO::Seekable::seek()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fsetpos">fsetpos
+
+</A></STRONG><DD>
+Use method <CODE>IO::Seekable::setpos()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fstat">fstat
+
+</A></STRONG><DD>
+Get file status. This uses file descriptors such as those obtained by
+calling <CODE>POSIX::open</CODE>. The data returned is identical to the data from Perl's builtin <A HREF="#item_stat">stat</A> function.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_RDONLY );
+        @stats = POSIX::fstat( $fd );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_ftell">ftell
+
+</A></STRONG><DD>
+Use method <CODE>IO::Seekable::tell()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fwrite">fwrite
+
+</A></STRONG><DD>
+<CODE>fwrite()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getc">getc
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getc">getc()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getchar">getchar
+
+</A></STRONG><DD>
+Returns one character from 
+<FONT SIZE=-1>STDIN.</FONT>
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getcwd">getcwd
+
+</A></STRONG><DD>
+Returns the name of the current working directory.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getegid">getegid
+
+</A></STRONG><DD>
+Returns the effective group id.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getenv">getenv
+
+</A></STRONG><DD>
+Returns the value of the specified enironment variable.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_geteuid">geteuid
+
+</A></STRONG><DD>
+Returns the effective user id.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getgid">getgid
+
+</A></STRONG><DD>
+Returns the user's real group id.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getgrgid">getgrgid
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getgrgid">getgrgid()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getgrnam">getgrnam
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getgrnam">getgrnam()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getgroups">getgroups
+
+</A></STRONG><DD>
+Returns the ids of the user's supplementary groups.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getlogin">getlogin
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getlogin">getlogin()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getpgrp">getpgrp
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getpgrp">getpgrp()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getpid">getpid
+
+</A></STRONG><DD>
+Returns the process's id.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getppid">getppid
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getppid">getppid()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getpwnam">getpwnam
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getpwnam">getpwnam()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getpwuid">getpwuid
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_getpwuid">getpwuid()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_gets">gets
+
+</A></STRONG><DD>
+Returns one line from 
+<FONT SIZE=-1>STDIN.</FONT>
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getuid">getuid
+
+</A></STRONG><DD>
+Returns the user's id.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_gmtime">gmtime
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_gmtime">gmtime()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isalnum">isalnum
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isalpha">isalpha
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isatty">isatty
+
+</A></STRONG><DD>
+Returns a boolean indicating whether the specified filehandle is connected
+to a tty.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_iscntrl">iscntrl
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isdigit">isdigit
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isgraph">isgraph
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_islower">islower
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isprint">isprint
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ispunct">ispunct
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isspace">isspace
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isupper">isupper
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_isxdigit">isxdigit
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function, except that it can apply to a single
+character or to a whole string.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_kill">kill
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_kill">kill()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_labs">labs
+
+</A></STRONG><DD>
+<CODE>labs()</CODE> is C-specific, use abs instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ldexp">ldexp
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_ldexp">ldexp()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ldiv">ldiv
+
+</A></STRONG><DD>
+<CODE>ldiv()</CODE> is C-specific, use / and int instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_link">link
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_link">link()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_localeconv">localeconv
+
+</A></STRONG><DD>
+Get numeric formatting information. Returns a reference to a hash
+containing the current locale formatting values.
+
+
+<P>
+
+The database for the <STRONG>de</STRONG> (Deutsch or German) locale.
+
+
+<P>
+
+<PRE>        $loc = POSIX::setlocale( &amp;POSIX::LC_ALL, &quot;de&quot; );
+        print &quot;Locale = $loc\n&quot;;
+        $lconv = POSIX::localeconv();
+        print &quot;decimal_point    = &quot;, $lconv-&gt;{decimal_point},   &quot;\n&quot;;
+        print &quot;thousands_sep    = &quot;, $lconv-&gt;{thousands_sep},   &quot;\n&quot;;
+        print &quot;grouping = &quot;, $lconv-&gt;{grouping},        &quot;\n&quot;;
+        print &quot;int_curr_symbol  = &quot;, $lconv-&gt;{int_curr_symbol}, &quot;\n&quot;;
+        print &quot;currency_symbol  = &quot;, $lconv-&gt;{currency_symbol}, &quot;\n&quot;;
+        print &quot;mon_decimal_point = &quot;, $lconv-&gt;{mon_decimal_point}, &quot;\n&quot;;
+        print &quot;mon_thousands_sep = &quot;, $lconv-&gt;{mon_thousands_sep}, &quot;\n&quot;;
+        print &quot;mon_grouping     = &quot;, $lconv-&gt;{mon_grouping},    &quot;\n&quot;;
+        print &quot;positive_sign    = &quot;, $lconv-&gt;{positive_sign},   &quot;\n&quot;;
+        print &quot;negative_sign    = &quot;, $lconv-&gt;{negative_sign},   &quot;\n&quot;;
+        print &quot;int_frac_digits  = &quot;, $lconv-&gt;{int_frac_digits}, &quot;\n&quot;;
+        print &quot;frac_digits      = &quot;, $lconv-&gt;{frac_digits},     &quot;\n&quot;;
+        print &quot;p_cs_precedes    = &quot;, $lconv-&gt;{p_cs_precedes},   &quot;\n&quot;;
+        print &quot;p_sep_by_space   = &quot;, $lconv-&gt;{p_sep_by_space},  &quot;\n&quot;;
+        print &quot;n_cs_precedes    = &quot;, $lconv-&gt;{n_cs_precedes},   &quot;\n&quot;;
+        print &quot;n_sep_by_space   = &quot;, $lconv-&gt;{n_sep_by_space},  &quot;\n&quot;;
+        print &quot;p_sign_posn      = &quot;, $lconv-&gt;{p_sign_posn},     &quot;\n&quot;;
+        print &quot;n_sign_posn      = &quot;, $lconv-&gt;{n_sign_posn},     &quot;\n&quot;;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_localtime">localtime
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_localtime">localtime()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_log">log
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_log">log()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_log10">log10
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_log10">log10()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_longjmp">longjmp
+
+</A></STRONG><DD>
+<CODE>longjmp()</CODE> is C-specific: use die instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_lseek">lseek
+
+</A></STRONG><DD>
+Move the file's read/write position. This uses file descriptors such as
+those obtained by calling <CODE>POSIX::open</CODE>.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_RDONLY );
+        $off_t = POSIX::lseek( $fd, 0, &amp;POSIX::SEEK_SET );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_malloc">malloc
+
+</A></STRONG><DD>
+<CODE>malloc()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mblen">mblen
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_mblen">mblen()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mbstowcs">mbstowcs
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_mbstowcs">mbstowcs()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mbtowc">mbtowc
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_mbtowc">mbtowc()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_memchr">memchr
+
+</A></STRONG><DD>
+<CODE>memchr()</CODE> is C-specific, use <CODE>index()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_memcmp">memcmp
+
+</A></STRONG><DD>
+<CODE>memcmp()</CODE> is C-specific, use eq instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_memcpy">memcpy
+
+</A></STRONG><DD>
+<CODE>memcpy()</CODE> is C-specific, use = instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_memmove">memmove
+
+</A></STRONG><DD>
+<CODE>memmove()</CODE> is C-specific, use = instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_memset">memset
+
+</A></STRONG><DD>
+<CODE>memset()</CODE> is C-specific, use x instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mkdir">mkdir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_mkdir">mkdir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mkfifo">mkfifo
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_mkfifo">mkfifo()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_mktime">mktime
+
+</A></STRONG><DD>
+Convert date/time info to a calendar time.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        mktime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = 0)
+</PRE>
+
+<P>
+
+The month (<CODE>mon</CODE>), weekday (<CODE>wday</CODE>), and yearday (<CODE>yday</CODE>) begin at zero. I.e. January is 0, not 1; Sunday is 0, not 1; January 1st
+is 0, not 1. The year (<CODE>year</CODE>) is given in years since 1900. I.e. The year 1995 is 95; the year 2001 is
+101. Consult your system's <A HREF="#item_mktime">mktime()</A> manpage for details about these and the other arguments.
+
+
+<P>
+
+Calendar time for December 12, 1995, at 10:30 am.
+
+
+<P>
+
+<PRE>        $time_t = POSIX::mktime( 0, 30, 10, 12, 11, 95 );
+        print &quot;Date = &quot;, POSIX::ctime($time_t);
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_modf">modf
+
+</A></STRONG><DD>
+Return the integral and fractional parts of a floating-point number.
+
+
+<P>
+
+<PRE>        ($fractional, $integral) = POSIX::modf( 3.14 );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_nice">nice
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_nice">nice()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_offsetof">offsetof
+
+</A></STRONG><DD>
+<CODE>offsetof()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_open">open
+
+</A></STRONG><DD>
+Open a file for reading for writing. This returns file descriptors, not
+Perl filehandles. Use <CODE>POSIX::close</CODE> to close the file.
+
+
+<P>
+
+Open a file read-only with mode 0666.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot; );
+</PRE>
+
+<P>
+
+Open a file for read and write.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_RDWR );
+</PRE>
+
+<P>
+
+Open a file for write, with truncation.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_WRONLY | &amp;POSIX::O_TRUNC );
+</PRE>
+
+<P>
+
+Create a new file with mode 0640. Set up the file for writing.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_CREAT | &amp;POSIX::O_WRONLY, 0640 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_opendir">opendir
+
+</A></STRONG><DD>
+Open a directory for reading.
+
+
+<P>
+
+<PRE>        $dir = POSIX::opendir( &quot;/tmp&quot; );
+        @files = POSIX::readdir( $dir );
+        POSIX::closedir( $dir );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_pathconf">pathconf
+
+</A></STRONG><DD>
+Retrieves the value of a configurable limit on a file or directory.
+
+
+<P>
+
+The following will determine the maximum length of the longest allowable
+pathname on the filesystem which holds <CODE>/tmp</CODE>.
+
+
+<P>
+
+<PRE>        $path_max = POSIX::pathconf( &quot;/tmp&quot;, &amp;POSIX::_PC_PATH_MAX );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_pause">pause
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_pause">pause()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_perror">perror
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_perror">perror()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_pipe">pipe
+
+</A></STRONG><DD>
+Create an interprocess channel. This returns file descriptors like those
+returned by <CODE>POSIX::open</CODE>.
+
+
+<P>
+
+<PRE>        ($fd0, $fd1) = POSIX::pipe();
+        POSIX::write( $fd0, &quot;hello&quot;, 5 );
+        POSIX::read( $fd1, $buf, 5 );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_pow">pow
+
+</A></STRONG><DD>
+Computes <A HREF="#item__x">$x</A> raised to the power $exponent.
+
+
+<P>
+
+<PRE>        $ret = POSIX::pow( $x, $exponent );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_printf">printf
+
+</A></STRONG><DD>
+Prints the specified arguments to 
+<FONT SIZE=-1>STDOUT.</FONT>
+
+
+<P>
+
+<DT><STRONG><A NAME="item_putc">putc
+
+</A></STRONG><DD>
+<CODE>putc()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_putchar">putchar
+
+</A></STRONG><DD>
+<CODE>putchar()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_puts">puts
+
+</A></STRONG><DD>
+<CODE>puts()</CODE> is C-specific--use print instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_qsort">qsort
+
+</A></STRONG><DD>
+<CODE>qsort()</CODE> is C-specific, use sort instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_raise">raise
+
+</A></STRONG><DD>
+Sends the specified signal to the current process.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_rand">rand
+
+</A></STRONG><DD>
+<CODE>rand()</CODE> is non-portable, use Perl's rand instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_read">read
+
+</A></STRONG><DD>
+Read from a file. This uses file descriptors such as those obtained by
+calling <CODE>POSIX::open</CODE>. If the buffer <CODE>$buf</CODE> is not large enough for the read then Perl will extend it to make room for
+the request.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_RDONLY );
+        $bytes = POSIX::read( $fd, $buf, 3 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_readdir">readdir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_readdir">readdir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_realloc">realloc
+
+</A></STRONG><DD>
+<CODE>realloc()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_remove">remove
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_unlink">unlink()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_rename">rename
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_rename">rename()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_rewind">rewind
+
+</A></STRONG><DD>
+Seeks to the beginning of the file.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_rewinddir">rewinddir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_rewinddir">rewinddir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_rmdir">rmdir
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_rmdir">rmdir()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_scanf">scanf
+
+</A></STRONG><DD>
+<CODE>scanf()</CODE> is C-specific--use &lt;&gt; and regular expressions
+instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setgid">setgid
+
+</A></STRONG><DD>
+Sets the real group id for this process.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setjmp">setjmp
+
+</A></STRONG><DD>
+<CODE>setjmp()</CODE> is C-specific: use eval {} instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setlocale">setlocale
+
+</A></STRONG><DD>
+Modifies and queries program's locale.
+
+
+<P>
+
+The following will set the traditional 
+<FONT SIZE=-1>UNIX</FONT> system locale behavior (the second argument <A HREF="#item__C_">"C"</A>).
+
+
+<P>
+
+<PRE>        $loc = POSIX::setlocale( &amp;POSIX::LC_ALL, &quot;C&quot; );
+</PRE>
+
+<P>
+
+The following will query (the missing second argument) the current 
+<FONT SIZE=-1>LC_CTYPE</FONT> category.
+
+
+<P>
+
+<PRE>        $loc = POSIX::setlocale( &amp;POSIX::LC_CTYPE);
+</PRE>
+
+<P>
+
+The following will set the 
+<FONT SIZE=-1>LC_CTYPE</FONT> behaviour according to the locale environment
+variables (the second argument <CODE>""</CODE>). Please see your systems <EM>setlocale(3)</EM> documentation for the locale environment variables' meaning or consult <A HREF="//c|\perl5\lib\pod\html/pod/perllocale.html#">the perllocale manpage</A>.
+
+
+<P>
+
+<PRE>        $loc = POSIX::setlocale( &amp;POSIX::LC_CTYPE, &quot;&quot;);
+</PRE>
+
+<P>
+
+The following will set the 
+<FONT SIZE=-1>LC_COLLATE</FONT> behaviour to Argentinian Spanish. <STRONG>NOTE</STRONG>: The naming and availability of locales depends on your operating system.
+Please consult <A HREF="//c|\perl5\lib\pod\html/pod/perllocale.html#">the perllocale manpage</A> for how to find out which locales are available in your system.
+
+
+<P>
+
+<PRE>        $loc = POSIX::setlocale( &amp;POSIX::LC_ALL, &quot;es_AR.ISO8859-1&quot; );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setpgid">setpgid
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_setpgid">setpgid()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setsid">setsid
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_setsid">setsid()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setuid">setuid
+
+</A></STRONG><DD>
+Sets the real user id for this process.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sigaction">sigaction
+
+</A></STRONG><DD>
+Detailed signal management. This uses <CODE>POSIX::SigAction</CODE> objects for the
+<CODE>action</CODE> and <CODE>oldaction</CODE> arguments. Consult your system's <A HREF="#item_sigaction">sigaction</A>
+manpage for details.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        sigaction(sig, action, oldaction = 0)
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_siglongjmp">siglongjmp
+
+</A></STRONG><DD>
+<CODE>siglongjmp()</CODE> is C-specific: use die instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sigpending">sigpending
+
+</A></STRONG><DD>
+Examine signals that are blocked and pending. This uses <CODE>POSIX::SigSet</CODE>
+objects for the <CODE>sigset</CODE> argument. Consult your system's <A HREF="#item_sigpending">sigpending</A>
+manpage for details.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        sigpending(sigset)
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sigprocmask">sigprocmask
+
+</A></STRONG><DD>
+Change and/or examine calling process's signal mask. This uses
+<CODE>POSIX::SigSet</CODE> objects for the <CODE>sigset</CODE> and <CODE>oldsigset</CODE> arguments. Consult your system's <A HREF="#item_sigprocmask">sigprocmask</A> manpage for details.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        sigprocmask(how, sigset, oldsigset = 0)
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sigsetjmp">sigsetjmp
+
+</A></STRONG><DD>
+<CODE>sigsetjmp()</CODE> is C-specific: use eval {} instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sigsuspend">sigsuspend
+
+</A></STRONG><DD>
+Install a signal mask and suspend process until signal arrives. This uses
+<CODE>POSIX::SigSet</CODE> objects for the <CODE>signal_mask</CODE> argument. Consult your system's <A HREF="#item_sigsuspend">sigsuspend</A> manpage for details.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        sigsuspend(signal_mask)
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sin">sin
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_sin">sin()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sinh">sinh
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_sinh">sinh()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sleep">sleep
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_sleep">sleep()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sprintf">sprintf
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_sprintf">sprintf()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sqrt">sqrt
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_sqrt">sqrt()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_srand">srand
+
+</A></STRONG><DD>
+<CODE>srand().</CODE>
+
+
+<P>
+
+<DT><STRONG><A NAME="item_sscanf">sscanf
+
+</A></STRONG><DD>
+<CODE>sscanf()</CODE> is C-specific--use regular expressions instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_stat">stat
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_stat">stat()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strcat">strcat
+
+</A></STRONG><DD>
+<CODE>strcat()</CODE> is C-specific, use .= instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strchr">strchr
+
+</A></STRONG><DD>
+<CODE>strchr()</CODE> is C-specific, use <CODE>index()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strcmp">strcmp
+
+</A></STRONG><DD>
+<CODE>strcmp()</CODE> is C-specific, use eq instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strcoll">strcoll
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_strcoll">strcoll()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strcpy">strcpy
+
+</A></STRONG><DD>
+<CODE>strcpy()</CODE> is C-specific, use = instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strcspn">strcspn
+
+</A></STRONG><DD>
+<CODE>strcspn()</CODE> is C-specific, use regular expressions instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strerror">strerror
+
+</A></STRONG><DD>
+Returns the error string for the specified errno.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strftime">strftime
+
+</A></STRONG><DD>
+Convert date and time information to string. Returns the string.
+
+
+<P>
+
+Synopsis:
+
+
+<P>
+
+<PRE>        strftime(fmt, sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = 0)
+</PRE>
+
+<P>
+
+The month (<CODE>mon</CODE>), weekday (<CODE>wday</CODE>), and yearday (<CODE>yday</CODE>) begin at zero. I.e. January is 0, not 1; Sunday is 0, not 1; January 1st
+is 0, not 1. The year (<CODE>year</CODE>) is given in years since 1900. I.e. The year 1995 is 95; the year 2001 is
+101. Consult your system's <A HREF="#item_strftime">strftime()</A> manpage for details about these and the other arguments.
+
+
+<P>
+
+The string for Tuesday, December 12, 1995.
+
+
+<P>
+
+<PRE>        $str = POSIX::strftime( &quot;%A, %B %d, %Y&quot;, 0, 0, 0, 12, 11, 95, 2 );
+        print &quot;$str\n&quot;;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_strlen">strlen
+
+</A></STRONG><DD>
+<CODE>strlen()</CODE> is C-specific, use length instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strncat">strncat
+
+</A></STRONG><DD>
+<CODE>strncat()</CODE> is C-specific, use .= instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strncmp">strncmp
+
+</A></STRONG><DD>
+<CODE>strncmp()</CODE> is C-specific, use eq instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strncpy">strncpy
+
+</A></STRONG><DD>
+<CODE>strncpy()</CODE> is C-specific, use = instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_stroul">stroul
+
+</A></STRONG><DD>
+<CODE>stroul()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strpbrk">strpbrk
+
+</A></STRONG><DD>
+<CODE>strpbrk()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strrchr">strrchr
+
+</A></STRONG><DD>
+<CODE>strrchr()</CODE> is C-specific, use <CODE>rindex()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strspn">strspn
+
+</A></STRONG><DD>
+<CODE>strspn()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strstr">strstr
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_index">index()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strtod">strtod
+
+</A></STRONG><DD>
+String to double translation. Returns the parsed number and the number of characters in the unparsed portion of the string. Truly POSIX-compliant systems set $! 
+<FONT SIZE=-1>($ERRNO)</FONT> to indicate a translation error, so clear $! before calling strtod. However, non-POSIX systems may not check for overflow, and therefore will never set $!.
+
+
+
+<P>
+
+strtod should respect any 
+<FONT SIZE=-1>POSIX</FONT> <EM>setlocale()</EM> settings.
+
+
+<P>
+
+To parse a string <CODE>$str</CODE> as a floating point number use
+
+
+<P>
+
+<PRE>    $! = 0;
+    ($num, $n_unparsed) = POSIX::strtod($str);
+</PRE>
+
+<P>
+
+The second returned item and $! can be used to check for valid input:
+
+
+<P>
+
+<PRE>    if (($str eq '') || ($n_unparsed != 0) || !$!) {
+        die &quot;Non-numeric input $str&quot; . $! ? &quot;: $!\n&quot; : &quot;\n&quot;;
+    }
+</PRE>
+
+<P>
+
+When called in a scalar context strtod returns the parsed number.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strtok">strtok
+
+</A></STRONG><DD>
+<CODE>strtok()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strtol">strtol
+
+</A></STRONG><DD>
+String to (long) integer translation. Returns the parsed number and the number of characters in the unparsed portion of the string. Truly POSIX-compliant systems set $! 
+<FONT SIZE=-1>($ERRNO)</FONT> to indicate a translation error, so clear $! before calling strtol. However, non-POSIX systems may not check for overflow, and therefore will never set $!.
+
+
+
+<P>
+
+strtol should respect any 
+<FONT SIZE=-1>POSIX</FONT> <EM>setlocale()</EM> settings.
+
+
+<P>
+
+To parse a string <CODE>$str</CODE> as a number in some base
+<CODE>$base</CODE> use
+
+
+<P>
+
+<PRE>    $! = 0;
+    ($num, $n_unparsed) = POSIX::strtol($str, $base);
+</PRE>
+
+<P>
+
+The base should be zero or between 2 and 36, inclusive. When the base is zero or omitted strtol will use the string itself to determine the base: a leading ``0x'' or 
+<FONT SIZE=-1>``0X''</FONT> means hexadecimal; a leading ``0'' means octal; any other leading characters mean decimal. Thus, ``1234'' is parsed as a decimal number, ``01234'' as an octal number, and ``0x1234'' as a hexadecimal number.
+
+
+
+<P>
+
+The second returned item and $! can be used to check for valid input:
+
+
+<P>
+
+<PRE>    if (($str eq '') || ($n_unparsed != 0) || !$!) {
+        die &quot;Non-numeric input $str&quot; . $! ? &quot;: $!\n&quot; : &quot;\n&quot;;
+    }
+</PRE>
+
+<P>
+
+When called in a scalar context strtol returns the parsed number.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strtoul">strtoul
+
+</A></STRONG><DD>
+String to unsigned (long) integer translation. strtoul is identical to
+strtol except that strtoul only parses unsigned integers. See
+<EM>strtol</EM> for details.
+
+
+<P>
+
+Note: Some vendors supply strtod and strtol but not strtoul. Other vendors
+that do suply strtoul parse ``-1'' as a valid value.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_strxfrm">strxfrm
+
+</A></STRONG><DD>
+String transformation. Returns the transformed string.
+
+
+<P>
+
+<PRE>        $dst = POSIX::strxfrm( $src );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_sysconf">sysconf
+
+</A></STRONG><DD>
+Retrieves values of system configurable variables.
+
+
+<P>
+
+The following will get the machine's clock speed.
+
+
+<P>
+
+<PRE>        $clock_ticks = POSIX::sysconf( &amp;POSIX::_SC_CLK_TCK );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_system">system
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_system">system()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tan">tan
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tan">tan()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tanh">tanh
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tanh">tanh()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcdrain">tcdrain
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcdrain">tcdrain()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcflow">tcflow
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcflow">tcflow()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcflush">tcflush
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcflush">tcflush()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcgetpgrp">tcgetpgrp
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcgetpgrp">tcgetpgrp()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcsendbreak">tcsendbreak
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcsendbreak">tcsendbreak()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tcsetpgrp">tcsetpgrp
+
+</A></STRONG><DD>
+This is similar to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tcsetpgrp">tcsetpgrp()</A>.
+
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_time">time
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_time">time()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_times">times
+
+</A></STRONG><DD>
+The <CODE>times()</CODE> function returns elapsed realtime since some point
+in the past (such as system startup), user and system times for this
+process, and user and system times used by child processes. All times are
+returned in clock ticks.
+
+
+<P>
+
+<PRE>    ($realtime, $user, $system, $cuser, $csystem) = POSIX::times();
+</PRE>
+
+<P>
+
+Note: Perl's builtin <A HREF="#item_times">times()</A> function returns four values, measured in seconds.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tmpfile">tmpfile
+
+</A></STRONG><DD>
+Use method <CODE>IO::File::new_tmpfile()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tmpnam">tmpnam
+
+</A></STRONG><DD>
+Returns a name for a temporary file.
+
+
+<P>
+
+<PRE>        $tmpfile = POSIX::tmpnam();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_tolower">tolower
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_lc">lc()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_toupper">toupper
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_uc">uc()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ttyname">ttyname
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_ttyname">ttyname()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_tzname">tzname
+
+</A></STRONG><DD>
+Retrieves the time conversion information from the <A HREF="#item_tzname">tzname</A> variable.
+
+
+<P>
+
+<PRE>        POSIX::tzset();
+        ($std, $dst) = POSIX::tzname();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_tzset">tzset
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_tzset">tzset()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_umask">umask
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_umask">umask()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_uname">uname
+
+</A></STRONG><DD>
+Get name of current operating system.
+
+
+<P>
+
+<PRE>        ($sysname, $nodename, $release, $version, $machine ) = POSIX::uname();
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_ungetc">ungetc
+
+</A></STRONG><DD>
+Use method <CODE>IO::Handle::ungetc()</CODE> instead.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_unlink">unlink
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_unlink">unlink()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_utime">utime
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_utime">utime()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_vfprintf">vfprintf
+
+</A></STRONG><DD>
+<CODE>vfprintf()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_vprintf">vprintf
+
+</A></STRONG><DD>
+<CODE>vprintf()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_vsprintf">vsprintf
+
+</A></STRONG><DD>
+<CODE>vsprintf()</CODE> is C-specific.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_wait">wait
+
+</A></STRONG><DD>
+This is identical to Perl's builtin <A HREF="#item_wait">wait()</A> function.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_waitpid">waitpid
+
+</A></STRONG><DD>
+Wait for a child process to change state. This is identical to Perl's
+builtin <A HREF="#item_waitpid">waitpid()</A> function.
+
+
+<P>
+
+<PRE>        $pid = POSIX::waitpid( -1, &amp;POSIX::WNOHANG );
+        print &quot;status = &quot;, ($? / 256), &quot;\n&quot;;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_wcstombs">wcstombs
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_wcstombs">wcstombs()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_wctomb">wctomb
+
+</A></STRONG><DD>
+This is identical to the 
+<FONT SIZE=-1>C</FONT> function <A HREF="#item_wctomb">wctomb()</A>.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_write">write
+
+</A></STRONG><DD>
+Write to a file. This uses file descriptors such as those obtained by
+calling <CODE>POSIX::open</CODE>.
+
+
+<P>
+
+<PRE>        $fd = POSIX::open( &quot;foo&quot;, &amp;POSIX::O_WRONLY );
+        $buf = &quot;hello&quot;;
+        $bytes = POSIX::write( $b, $buf, 5 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="CLASSES">CLASSES
+
+</A></H1>
+<P>
+<HR>
+<H2><A NAME="POSIX_SigAction">POSIX::SigAction
+
+</A></H2>
+<DL>
+<DT><STRONG><A NAME="item_new">new
+
+</A></STRONG><DD>
+Creates a new <CODE>POSIX::SigAction</CODE> object which corresponds to the 
+<FONT SIZE=-1>C</FONT>
+<CODE>struct sigaction</CODE>. This object will be destroyed automatically when it is no longer needed.
+The first parameter is the fully-qualified name of a sub which is a
+signal-handler. The second parameter is a <CODE>POSIX::SigSet</CODE>
+object, it defaults to the empty set. The third parameter contains the
+<CODE>sa_flags</CODE>, it defaults to 0.
+
+
+<P>
+
+<PRE>        $sigset = POSIX::SigSet-&gt;new(SIGINT, SIGQUIT);
+        $sigaction = POSIX::SigAction-&gt;new( 'main::handler', $sigset, &amp;POSIX::SA_NOCLDSTOP );
+</PRE>
+
+<P>
+
+This <CODE>POSIX::SigAction</CODE> object should be used with the <CODE>POSIX::sigaction()</CODE>
+function.
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H2><A NAME="POSIX_SigSet">POSIX::SigSet
+
+</A></H2>
+<DL>
+<DT><STRONG>new
+
+</A></STRONG><DD>
+Create a new SigSet object. This object will be destroyed automatically
+when it is no longer needed. Arguments may be supplied to initialize the
+set.
+
+
+<P>
+
+Create an empty set.
+
+
+<P>
+
+<PRE>        $sigset = POSIX::SigSet-&gt;new;
+</PRE>
+
+<P>
+
+Create a set with 
+<FONT SIZE=-1>SIGUSR1.</FONT>
+
+
+<P>
+
+<PRE>        $sigset = POSIX::SigSet-&gt;new( &amp;POSIX::SIGUSR1 );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_addset">addset
+
+</A></STRONG><DD>
+Add a signal to a SigSet object.
+
+
+<P>
+
+<PRE>        $sigset-&gt;addset( &amp;POSIX::SIGUSR2 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_delset">delset
+
+</A></STRONG><DD>
+Remove a signal from the SigSet object.
+
+
+<P>
+
+<PRE>        $sigset-&gt;delset( &amp;POSIX::SIGUSR2 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_emptyset">emptyset
+
+</A></STRONG><DD>
+Initialize the SigSet object to be empty.
+
+
+<P>
+
+<PRE>        $sigset-&gt;emptyset();
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_fillset">fillset
+
+</A></STRONG><DD>
+Initialize the SigSet object to include all signals.
+
+
+<P>
+
+<PRE>        $sigset-&gt;fillset();
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_ismember">ismember
+
+</A></STRONG><DD>
+Tests the SigSet object to see if it contains a specific signal.
+
+
+<P>
+
+<PRE>        if( $sigset-&gt;ismember( &amp;POSIX::SIGUSR1 ) ){
+                print &quot;contains SIGUSR1\n&quot;;
+        }
+</PRE>
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H2><A NAME="POSIX_Termios">POSIX::Termios
+
+</A></H2>
+<DL>
+<DT><STRONG>new
+
+</A></STRONG><DD>
+Create a new Termios object. This object will be destroyed automatically
+when it is no longer needed.
+
+
+<P>
+
+<PRE>        $termios = POSIX::Termios-&gt;new;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getattr">getattr
+
+</A></STRONG><DD>
+Get terminal control attributes.
+
+
+<P>
+
+Obtain the attributes for stdin.
+
+
+<P>
+
+<PRE>        $termios-&gt;getattr()
+</PRE>
+
+<P>
+
+Obtain the attributes for stdout.
+
+
+<P>
+
+<PRE>        $termios-&gt;getattr( 1 )
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_getcc">getcc
+
+</A></STRONG><DD>
+Retrieve a value from the c_cc field of a termios object. The c_cc field is
+an array so an index must be specified.
+
+
+<P>
+
+<PRE>        $c_cc[1] = $termios-&gt;getcc(1);
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getcflag">getcflag
+
+</A></STRONG><DD>
+Retrieve the c_cflag field of a termios object.
+
+
+<P>
+
+<PRE>        $c_cflag = $termios-&gt;getcflag;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getiflag">getiflag
+
+</A></STRONG><DD>
+Retrieve the c_iflag field of a termios object.
+
+
+<P>
+
+<PRE>        $c_iflag = $termios-&gt;getiflag;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getispeed">getispeed
+
+</A></STRONG><DD>
+Retrieve the input baud rate.
+
+
+<P>
+
+<PRE>        $ispeed = $termios-&gt;getispeed;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getlflag">getlflag
+
+</A></STRONG><DD>
+Retrieve the c_lflag field of a termios object.
+
+
+<P>
+
+<PRE>        $c_lflag = $termios-&gt;getlflag;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getoflag">getoflag
+
+</A></STRONG><DD>
+Retrieve the c_oflag field of a termios object.
+
+
+<P>
+
+<PRE>        $c_oflag = $termios-&gt;getoflag;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_getospeed">getospeed
+
+</A></STRONG><DD>
+Retrieve the output baud rate.
+
+
+<P>
+
+<PRE>        $ospeed = $termios-&gt;getospeed;
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setattr">setattr
+
+</A></STRONG><DD>
+Set terminal control attributes.
+
+
+<P>
+
+Set attributes immediately for stdout.
+
+
+<P>
+
+<PRE>        $termios-&gt;setattr( 1, &amp;POSIX::TCSANOW );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setcc">setcc
+
+</A></STRONG><DD>
+Set a value in the c_cc field of a termios object. The c_cc field is an
+array so an index must be specified.
+
+
+<P>
+
+<PRE>        $termios-&gt;setcc( &amp;POSIX::VEOF, 1 );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setcflag">setcflag
+
+</A></STRONG><DD>
+Set the c_cflag field of a termios object.
+
+
+<P>
+
+<PRE>        $termios-&gt;setcflag( &amp;POSIX::CLOCAL );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setiflag">setiflag
+
+</A></STRONG><DD>
+Set the c_iflag field of a termios object.
+
+
+<P>
+
+<PRE>        $termios-&gt;setiflag( &amp;POSIX::BRKINT );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setispeed">setispeed
+
+</A></STRONG><DD>
+Set the input baud rate.
+
+
+<P>
+
+<PRE>        $termios-&gt;setispeed( &amp;POSIX::B9600 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_setlflag">setlflag
+
+</A></STRONG><DD>
+Set the c_lflag field of a termios object.
+
+
+<P>
+
+<PRE>        $termios-&gt;setlflag( &amp;POSIX::ECHO );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setoflag">setoflag
+
+</A></STRONG><DD>
+Set the c_oflag field of a termios object.
+
+
+<P>
+
+<PRE>        $termios-&gt;setoflag( &amp;POSIX::OPOST );
+</PRE>
+
+<P>
+
+<DT><STRONG><A NAME="item_setospeed">setospeed
+
+</A></STRONG><DD>
+Set the output baud rate.
+
+
+<P>
+
+<PRE>        $termios-&gt;setospeed( &amp;POSIX::B9600 );
+</PRE>
+
+<P>
+
+Returns <A HREF="#item_undef">undef</A> on failure.
+
+
+<P>
+
+<DT><STRONG><A NAME="item_Baud">Baud rate values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>B38400</FONT> 
+<FONT SIZE=-1>B75</FONT> 
+<FONT SIZE=-1>B200</FONT> 
+<FONT SIZE=-1>B134</FONT> 
+<FONT SIZE=-1>B300</FONT> 
+<FONT SIZE=-1>B1800</FONT> 
+<FONT SIZE=-1>B150</FONT> 
+<FONT SIZE=-1>B0</FONT> 
+<FONT SIZE=-1>B19200</FONT> 
+<FONT SIZE=-1>B1200</FONT> 
+<FONT SIZE=-1>B9600</FONT> 
+<FONT SIZE=-1>B600</FONT> 
+<FONT SIZE=-1>B4800</FONT> 
+<FONT SIZE=-1>B50</FONT> 
+<FONT SIZE=-1>B2400</FONT> 
+<FONT SIZE=-1>B110</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_Terminal">Terminal interface values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>TCSADRAIN</FONT> 
+<FONT SIZE=-1>TCSANOW</FONT> 
+<FONT SIZE=-1>TCOON</FONT> 
+<FONT SIZE=-1>TCIOFLUSH</FONT> 
+<FONT SIZE=-1>TCOFLUSH</FONT> 
+<FONT SIZE=-1>TCION</FONT> 
+<FONT SIZE=-1>TCIFLUSH</FONT> 
+<FONT SIZE=-1>TCSAFLUSH</FONT> 
+<FONT SIZE=-1>TCIOFF</FONT> 
+<FONT SIZE=-1>TCOOFF</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_c_cc">c_cc field values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>VEOF</FONT> 
+<FONT SIZE=-1>VEOL</FONT> 
+<FONT SIZE=-1>VERASE</FONT> 
+<FONT SIZE=-1>VINTR</FONT> 
+<FONT SIZE=-1>VKILL</FONT> 
+<FONT SIZE=-1>VQUIT</FONT> 
+<FONT SIZE=-1>VSUSP</FONT> 
+<FONT SIZE=-1>VSTART</FONT> 
+<FONT SIZE=-1>VSTOP</FONT> 
+<FONT SIZE=-1>VMIN</FONT> 
+<FONT SIZE=-1>VTIME</FONT> 
+<FONT SIZE=-1>NCCS</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_c_cflag">c_cflag field values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>CLOCAL</FONT> 
+<FONT SIZE=-1>CREAD</FONT> 
+<FONT SIZE=-1>CSIZE</FONT> 
+<FONT SIZE=-1>CS5</FONT> 
+<FONT SIZE=-1>CS6</FONT> 
+<FONT SIZE=-1>CS7</FONT> 
+<FONT SIZE=-1>CS8</FONT> 
+<FONT SIZE=-1>CSTOPB</FONT> 
+<FONT SIZE=-1>HUPCL</FONT> 
+<FONT SIZE=-1>PARENB</FONT> 
+<FONT SIZE=-1>PARODD</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_c_iflag">c_iflag field values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>BRKINT</FONT> 
+<FONT SIZE=-1>ICRNL</FONT> 
+<FONT SIZE=-1>IGNBRK</FONT> 
+<FONT SIZE=-1>IGNCR</FONT> 
+<FONT SIZE=-1>IGNPAR</FONT> 
+<FONT SIZE=-1>INLCR</FONT> 
+<FONT SIZE=-1>INPCK</FONT> 
+<FONT SIZE=-1>ISTRIP</FONT> 
+<FONT SIZE=-1>IXOFF</FONT> 
+<FONT SIZE=-1>IXON</FONT> 
+<FONT SIZE=-1>PARMRK</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_c_lflag">c_lflag field values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>ECHO</FONT> 
+<FONT SIZE=-1>ECHOE</FONT> 
+<FONT SIZE=-1>ECHOK</FONT> 
+<FONT SIZE=-1>ECHONL</FONT> 
+<FONT SIZE=-1>ICANON</FONT> 
+<FONT SIZE=-1>IEXTEN</FONT> 
+<FONT SIZE=-1>ISIG</FONT> 
+<FONT SIZE=-1>NOFLSH</FONT> 
+<FONT SIZE=-1>TOSTOP</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_c_oflag">c_oflag field values
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>OPOST</FONT>
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="PATHNAME_CONSTANTS">PATHNAME CONSTANTS
+
+</A></H1>
+<DL>
+<DT><STRONG><A NAME="item_Constants">Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>_PC_CHOWN_RESTRICTED</FONT> 
+<FONT SIZE=-1>_PC_LINK_MAX</FONT> 
+<FONT SIZE=-1>_PC_MAX_CANON</FONT> 
+<FONT SIZE=-1>_PC_MAX_INPUT</FONT> 
+<FONT SIZE=-1>_PC_NAME_MAX</FONT> 
+<FONT SIZE=-1>_PC_NO_TRUNC</FONT> 
+<FONT SIZE=-1>_PC_PATH_MAX</FONT> 
+<FONT SIZE=-1>_PC_PIPE_BUF</FONT> 
+<FONT SIZE=-1>_PC_VDISABLE</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="POSIX_CONSTANTS">POSIX CONSTANTS
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>_POSIX_ARG_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_CHILD_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_CHOWN_RESTRICTED</FONT> 
+<FONT SIZE=-1>_POSIX_JOB_CONTROL</FONT> 
+<FONT SIZE=-1>_POSIX_LINK_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_MAX_CANON</FONT> 
+<FONT SIZE=-1>_POSIX_MAX_INPUT</FONT> 
+<FONT SIZE=-1>_POSIX_NAME_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_NGROUPS_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_NO_TRUNC</FONT> 
+<FONT SIZE=-1>_POSIX_OPEN_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_PATH_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_PIPE_BUF</FONT> 
+<FONT SIZE=-1>_POSIX_SAVED_IDS</FONT> 
+<FONT SIZE=-1>_POSIX_SSIZE_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_STREAM_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_TZNAME_MAX</FONT> 
+<FONT SIZE=-1>_POSIX_VDISABLE</FONT> 
+<FONT SIZE=-1>_POSIX_VERSION</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="SYSTEM_CONFIGURATION">SYSTEM CONFIGURATION
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>_SC_ARG_MAX</FONT> 
+<FONT SIZE=-1>_SC_CHILD_MAX</FONT> 
+<FONT SIZE=-1>_SC_CLK_TCK</FONT> 
+<FONT SIZE=-1>_SC_JOB_CONTROL</FONT> 
+<FONT SIZE=-1>_SC_NGROUPS_MAX</FONT> 
+<FONT SIZE=-1>_SC_OPEN_MAX</FONT> 
+<FONT SIZE=-1>_SC_SAVED_IDS</FONT> 
+<FONT SIZE=-1>_SC_STREAM_MAX</FONT> 
+<FONT SIZE=-1>_SC_TZNAME_MAX</FONT> 
+<FONT SIZE=-1>_SC_VERSION</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="ERRNO">ERRNO
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>E2BIG</FONT> 
+<FONT SIZE=-1>EACCES</FONT> 
+<FONT SIZE=-1>EADDRINUSE</FONT> 
+<FONT SIZE=-1>EADDRNOTAVAIL</FONT> 
+<FONT SIZE=-1>EAFNOSUPPORT</FONT> 
+<FONT SIZE=-1>EAGAIN</FONT> 
+<FONT SIZE=-1>EALREADY</FONT> 
+<FONT SIZE=-1>EBADF</FONT> 
+<FONT SIZE=-1>EBUSY</FONT> 
+<FONT SIZE=-1>ECHILD</FONT> 
+<FONT SIZE=-1>ECONNABORTED</FONT> 
+<FONT SIZE=-1>ECONNREFUSED</FONT> 
+<FONT SIZE=-1>ECONNRESET</FONT> 
+<FONT SIZE=-1>EDEADLK</FONT> 
+<FONT SIZE=-1>EDESTADDRREQ</FONT> 
+<FONT SIZE=-1>EDOM</FONT> 
+<FONT SIZE=-1>EDQUOT</FONT> 
+<FONT SIZE=-1>EEXIST</FONT> 
+<FONT SIZE=-1>EFAULT</FONT> 
+<FONT SIZE=-1>EFBIG</FONT> 
+<FONT SIZE=-1>EHOSTDOWN</FONT> 
+<FONT SIZE=-1>EHOSTUNREACH</FONT> 
+<FONT SIZE=-1>EINPROGRESS</FONT> 
+<FONT SIZE=-1>EINTR</FONT> 
+<FONT SIZE=-1>EINVAL</FONT> 
+<FONT SIZE=-1>EIO</FONT> 
+<FONT SIZE=-1>EISCONN</FONT> 
+<FONT SIZE=-1>EISDIR</FONT> 
+<FONT SIZE=-1>ELOOP</FONT> 
+<FONT SIZE=-1>EMFILE</FONT> 
+<FONT SIZE=-1>EMLINK</FONT> 
+<FONT SIZE=-1>EMSGSIZE</FONT> 
+<FONT SIZE=-1>ENAMETOOLONG</FONT> 
+<FONT SIZE=-1>ENETDOWN</FONT> 
+<FONT SIZE=-1>ENETRESET</FONT> 
+<FONT SIZE=-1>ENETUNREACH</FONT> 
+<FONT SIZE=-1>ENFILE</FONT> 
+<FONT SIZE=-1>ENOBUFS</FONT> 
+<FONT SIZE=-1>ENODEV</FONT> 
+<FONT SIZE=-1>ENOENT</FONT> 
+<FONT SIZE=-1>ENOEXEC</FONT> 
+<FONT SIZE=-1>ENOLCK</FONT> 
+<FONT SIZE=-1>ENOMEM</FONT> 
+<FONT SIZE=-1>ENOPROTOOPT</FONT> 
+<FONT SIZE=-1>ENOSPC</FONT> 
+<FONT SIZE=-1>ENOSYS</FONT> 
+<FONT SIZE=-1>ENOTBLK</FONT> 
+<FONT SIZE=-1>ENOTCONN</FONT> 
+<FONT SIZE=-1>ENOTDIR</FONT> 
+<FONT SIZE=-1>ENOTEMPTY</FONT> 
+<FONT SIZE=-1>ENOTSOCK</FONT> 
+<FONT SIZE=-1>ENOTTY</FONT> 
+<FONT SIZE=-1>ENXIO</FONT> 
+<FONT SIZE=-1>EOPNOTSUPP</FONT> 
+<FONT SIZE=-1>EPERM</FONT> 
+<FONT SIZE=-1>EPFNOSUPPORT</FONT> 
+<FONT SIZE=-1>EPIPE</FONT> 
+<FONT SIZE=-1>EPROCLIM</FONT> 
+<FONT SIZE=-1>EPROTONOSUPPORT</FONT> 
+<FONT SIZE=-1>EPROTOTYPE</FONT> 
+<FONT SIZE=-1>ERANGE</FONT> 
+<FONT SIZE=-1>EREMOTE</FONT> 
+<FONT SIZE=-1>ERESTART</FONT> 
+<FONT SIZE=-1>EROFS</FONT> 
+<FONT SIZE=-1>ESHUTDOWN</FONT> 
+<FONT SIZE=-1>ESOCKTNOSUPPORT</FONT> 
+<FONT SIZE=-1>ESPIPE</FONT> 
+<FONT SIZE=-1>ESRCH</FONT> 
+<FONT SIZE=-1>ESTALE</FONT> 
+<FONT SIZE=-1>ETIMEDOUT</FONT> 
+<FONT SIZE=-1>ETOOMANYREFS</FONT> 
+<FONT SIZE=-1>ETXTBSY</FONT> 
+<FONT SIZE=-1>EUSERS</FONT> 
+<FONT SIZE=-1>EWOULDBLOCK</FONT> 
+<FONT SIZE=-1>EXDEV</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="FCNTL">FCNTL
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>FD_CLOEXEC</FONT> 
+<FONT SIZE=-1>F_DUPFD</FONT> 
+<FONT SIZE=-1>F_GETFD</FONT> 
+<FONT SIZE=-1>F_GETFL</FONT> 
+<FONT SIZE=-1>F_GETLK</FONT> 
+<FONT SIZE=-1>F_OK</FONT> 
+<FONT SIZE=-1>F_RDLCK</FONT> 
+<FONT SIZE=-1>F_SETFD</FONT> 
+<FONT SIZE=-1>F_SETFL</FONT> 
+<FONT SIZE=-1>F_SETLK</FONT> 
+<FONT SIZE=-1>F_SETLKW</FONT> 
+<FONT SIZE=-1>F_UNLCK</FONT> 
+<FONT SIZE=-1>F_WRLCK</FONT> 
+<FONT SIZE=-1>O_ACCMODE</FONT> 
+<FONT SIZE=-1>O_APPEND</FONT> 
+<FONT SIZE=-1>O_CREAT</FONT> 
+<FONT SIZE=-1>O_EXCL</FONT> 
+<FONT SIZE=-1>O_NOCTTY</FONT> 
+<FONT SIZE=-1>O_NONBLOCK</FONT> 
+<FONT SIZE=-1>O_RDONLY</FONT> 
+<FONT SIZE=-1>O_RDWR</FONT> 
+<FONT SIZE=-1>O_TRUNC</FONT> 
+<FONT SIZE=-1>O_WRONLY</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="FLOAT">FLOAT
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>DBL_DIG</FONT> 
+<FONT SIZE=-1>DBL_EPSILON</FONT> 
+<FONT SIZE=-1>DBL_MANT_DIG</FONT> 
+<FONT SIZE=-1>DBL_MAX</FONT> 
+<FONT SIZE=-1>DBL_MAX_10_EXP</FONT> 
+<FONT SIZE=-1>DBL_MAX_EXP</FONT> 
+<FONT SIZE=-1>DBL_MIN</FONT> 
+<FONT SIZE=-1>DBL_MIN_10_EXP</FONT> 
+<FONT SIZE=-1>DBL_MIN_EXP</FONT> 
+<FONT SIZE=-1>FLT_DIG</FONT> 
+<FONT SIZE=-1>FLT_EPSILON</FONT> 
+<FONT SIZE=-1>FLT_MANT_DIG</FONT> 
+<FONT SIZE=-1>FLT_MAX</FONT> 
+<FONT SIZE=-1>FLT_MAX_10_EXP</FONT> 
+<FONT SIZE=-1>FLT_MAX_EXP</FONT> 
+<FONT SIZE=-1>FLT_MIN</FONT> 
+<FONT SIZE=-1>FLT_MIN_10_EXP</FONT> 
+<FONT SIZE=-1>FLT_MIN_EXP</FONT> 
+<FONT SIZE=-1>FLT_RADIX</FONT> 
+<FONT SIZE=-1>FLT_ROUNDS</FONT> 
+<FONT SIZE=-1>LDBL_DIG</FONT> 
+<FONT SIZE=-1>LDBL_EPSILON</FONT> 
+<FONT SIZE=-1>LDBL_MANT_DIG</FONT> 
+<FONT SIZE=-1>LDBL_MAX</FONT> 
+<FONT SIZE=-1>LDBL_MAX_10_EXP</FONT> 
+<FONT SIZE=-1>LDBL_MAX_EXP</FONT> 
+<FONT SIZE=-1>LDBL_MIN</FONT> 
+<FONT SIZE=-1>LDBL_MIN_10_EXP</FONT> 
+<FONT SIZE=-1>LDBL_MIN_EXP</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="LIMITS">LIMITS
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>ARG_MAX</FONT> 
+<FONT SIZE=-1>CHAR_BIT</FONT> 
+<FONT SIZE=-1>CHAR_MAX</FONT> 
+<FONT SIZE=-1>CHAR_MIN</FONT> 
+<FONT SIZE=-1>CHILD_MAX</FONT> 
+<FONT SIZE=-1>INT_MAX</FONT> 
+<FONT SIZE=-1>INT_MIN</FONT> 
+<FONT SIZE=-1>LINK_MAX</FONT> 
+<FONT SIZE=-1>LONG_MAX</FONT> 
+<FONT SIZE=-1>LONG_MIN</FONT> 
+<FONT SIZE=-1>MAX_CANON</FONT> 
+<FONT SIZE=-1>MAX_INPUT</FONT> 
+<FONT SIZE=-1>MB_LEN_MAX</FONT> 
+<FONT SIZE=-1>NAME_MAX</FONT> 
+<FONT SIZE=-1>NGROUPS_MAX</FONT> 
+<FONT SIZE=-1>OPEN_MAX</FONT> 
+<FONT SIZE=-1>PATH_MAX</FONT> 
+<FONT SIZE=-1>PIPE_BUF</FONT> 
+<FONT SIZE=-1>SCHAR_MAX</FONT> 
+<FONT SIZE=-1>SCHAR_MIN</FONT> 
+<FONT SIZE=-1>SHRT_MAX</FONT> 
+<FONT SIZE=-1>SHRT_MIN</FONT> 
+<FONT SIZE=-1>SSIZE_MAX</FONT> 
+<FONT SIZE=-1>STREAM_MAX</FONT> 
+<FONT SIZE=-1>TZNAME_MAX</FONT> 
+<FONT SIZE=-1>UCHAR_MAX</FONT> 
+<FONT SIZE=-1>UINT_MAX</FONT> 
+<FONT SIZE=-1>ULONG_MAX</FONT> 
+<FONT SIZE=-1>USHRT_MAX</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="LOCALE">LOCALE
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>LC_ALL</FONT> 
+<FONT SIZE=-1>LC_COLLATE</FONT> 
+<FONT SIZE=-1>LC_CTYPE</FONT> 
+<FONT SIZE=-1>LC_MONETARY</FONT> 
+<FONT SIZE=-1>LC_NUMERIC</FONT> 
+<FONT SIZE=-1>LC_TIME</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="MATH">MATH
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>HUGE_VAL</FONT>
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="SIGNAL">SIGNAL
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>SA_NOCLDSTOP</FONT> 
+<FONT SIZE=-1>SA_NOCLDWAIT</FONT> 
+<FONT SIZE=-1>SA_NODEFER</FONT> 
+<FONT SIZE=-1>SA_ONSTACK</FONT> 
+<FONT SIZE=-1>SA_RESETHAND</FONT> 
+<FONT SIZE=-1>SA_RESTART</FONT> 
+<FONT SIZE=-1>SA_SIGINFO</FONT> 
+<FONT SIZE=-1>SIGABRT</FONT> 
+<FONT SIZE=-1>SIGALRM</FONT> 
+<FONT SIZE=-1>SIGCHLD</FONT> 
+<FONT SIZE=-1>SIGCONT</FONT> 
+<FONT SIZE=-1>SIGFPE</FONT> 
+<FONT SIZE=-1>SIGHUP</FONT> 
+<FONT SIZE=-1>SIGILL</FONT> 
+<FONT SIZE=-1>SIGINT</FONT> 
+<FONT SIZE=-1>SIGKILL</FONT> 
+<FONT SIZE=-1>SIGPIPE</FONT> 
+<FONT SIZE=-1>SIGQUIT</FONT> 
+<FONT SIZE=-1>SIGSEGV</FONT> 
+<FONT SIZE=-1>SIGSTOP</FONT> 
+<FONT SIZE=-1>SIGTERM</FONT> 
+<FONT SIZE=-1>SIGTSTP</FONT> 
+<FONT SIZE=-1>SIGTTIN</FONT> 
+<FONT SIZE=-1>SIGTTOU</FONT> 
+<FONT SIZE=-1>SIGUSR1</FONT> 
+<FONT SIZE=-1>SIGUSR2</FONT> 
+<FONT SIZE=-1>SIG_BLOCK</FONT> 
+<FONT SIZE=-1>SIG_DFL</FONT> 
+<FONT SIZE=-1>SIG_ERR</FONT> 
+<FONT SIZE=-1>SIG_IGN</FONT> 
+<FONT SIZE=-1>SIG_SETMASK</FONT> 
+<FONT SIZE=-1>SIG_UNBLOCK</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="STAT">STAT
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>S_IRGRP</FONT> 
+<FONT SIZE=-1>S_IROTH</FONT> 
+<FONT SIZE=-1>S_IRUSR</FONT> 
+<FONT SIZE=-1>S_IRWXG</FONT> 
+<FONT SIZE=-1>S_IRWXO</FONT> 
+<FONT SIZE=-1>S_IRWXU</FONT> 
+<FONT SIZE=-1>S_ISGID</FONT> 
+<FONT SIZE=-1>S_ISUID</FONT> 
+<FONT SIZE=-1>S_IWGRP</FONT> 
+<FONT SIZE=-1>S_IWOTH</FONT> 
+<FONT SIZE=-1>S_IWUSR</FONT> 
+<FONT SIZE=-1>S_IXGRP</FONT> 
+<FONT SIZE=-1>S_IXOTH</FONT> 
+<FONT SIZE=-1>S_IXUSR</FONT>
+
+
+
+<P>
+
+<DT><STRONG><A NAME="item_Macros">Macros
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>S_ISBLK</FONT> 
+<FONT SIZE=-1>S_ISCHR</FONT> 
+<FONT SIZE=-1>S_ISDIR</FONT> 
+<FONT SIZE=-1>S_ISFIFO</FONT> 
+<FONT SIZE=-1>S_ISREG</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="STDLIB">STDLIB
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>EXIT_FAILURE</FONT> 
+<FONT SIZE=-1>EXIT_SUCCESS</FONT> 
+<FONT SIZE=-1>MB_CUR_MAX</FONT> 
+<FONT SIZE=-1>RAND_MAX</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="STDIO">STDIO
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>BUFSIZ</FONT> 
+<FONT SIZE=-1>EOF</FONT> 
+<FONT SIZE=-1>FILENAME_MAX</FONT> L_ctermid L_cuserid L_tmpname 
+<FONT SIZE=-1>TMP_MAX</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="TIME">TIME
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>CLK_TCK</FONT> 
+<FONT SIZE=-1>CLOCKS_PER_SEC</FONT>
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="UNISTD">UNISTD
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>R_OK</FONT> 
+<FONT SIZE=-1>SEEK_CUR</FONT> 
+<FONT SIZE=-1>SEEK_END</FONT> 
+<FONT SIZE=-1>SEEK_SET</FONT> 
+<FONT SIZE=-1>STDIN_FILENO</FONT> 
+<FONT SIZE=-1>STDOUT_FILENO</FONT> 
+<FONT SIZE=-1>STRERR_FILENO</FONT> 
+<FONT SIZE=-1>W_OK</FONT> 
+<FONT SIZE=-1>X_OK</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="WAIT">WAIT
+
+</A></H1>
+<DL>
+<DT><STRONG>Constants
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>WNOHANG</FONT> 
+<FONT SIZE=-1>WUNTRACED</FONT>
+
+
+<P>
+
+<DT><STRONG>Macros
+
+</A></STRONG><DD>
+
+<FONT SIZE=-1>WIFEXITED</FONT> 
+<FONT SIZE=-1>WEXITSTATUS</FONT> 
+<FONT SIZE=-1>WIFSIGNALED</FONT> 
+<FONT SIZE=-1>WTERMSIG</FONT> 
+<FONT SIZE=-1>WIFSTOPPED</FONT> 
+<FONT SIZE=-1>WSTOPSIG</FONT>
+
+
+
+<P>
+
+</DL>
+<P>
+<HR>
+<H1><A NAME="CREATION">CREATION
+
+</A></H1>
+This document generated by ./mkposixman.PL version 19960129.
+
+
+<P>
+
+</DL>
+    </BODY>
+
+    </HTML>

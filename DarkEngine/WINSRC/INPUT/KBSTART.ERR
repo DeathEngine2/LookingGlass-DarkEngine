@@ -1,0 +1,2 @@
+x:\prj\tech\winsrc\input\kbstart.cpp(33): Warning! W014: (col 1) no reference to symbol 'init_buf' 
+x:\prj\tech\winsrc\input\kbstart.cpp(33): Note! N392: (col 1) 'void * init_buf' in 'int kb_startup( void * )' defined in: x:\prj\tech\winsrc\input\kbstart.cpp(23) (col 22) 

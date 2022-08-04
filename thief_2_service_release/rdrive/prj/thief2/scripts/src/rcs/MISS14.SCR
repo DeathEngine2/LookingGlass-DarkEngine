@@ -1,0 +1,33 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 2000.02.15.16.26.32;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@"Cargo" scripts.
+@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@#include "tally.scr"
+
+
+
+
+
+
+@

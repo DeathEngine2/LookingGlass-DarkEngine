@@ -1,0 +1,21 @@
+/b /q /n   x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\res.lib 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\lzw.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\lzwfd2bf.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\res.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\restypes.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resfile.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resacc.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\refacc.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resload.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resmem.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\rescum.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resbuild.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resmake.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resexblk.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resmisc.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resarq.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resthred.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resagg.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\resguid.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\rescache.obj 
++x:\prj\tech\obj\win32\w106\a611\libsrc\res\opt\pkzip.obj

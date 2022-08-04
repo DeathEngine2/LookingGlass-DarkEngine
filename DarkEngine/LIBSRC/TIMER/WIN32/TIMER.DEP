@@ -1,0 +1,15 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+tmrt.obj: fix.h types.h win32\timer.h
+
+tmftab.obj: dbg.h dbgmacro.h fix.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h tmdecl.h tmftab.h types.h
+
+tmlibt.obj: fix.h tmdecl.h tmftab.h types.h
+
+tmail.obj: ail.h fix.h tmdecl.h tmftab.h types.h
+
+tmwin32.obj: appagg.h comtools.h dbg.h dbgmacro.h fix.h gshelapi.h \
+	 gshlguid.h inttype.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h pumpenum.h recapi.h recguid.h tmdecl.h tmftab.h \
+	 types.h

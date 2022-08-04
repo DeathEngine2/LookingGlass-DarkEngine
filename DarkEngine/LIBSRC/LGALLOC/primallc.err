@@ -1,0 +1,4 @@
+x:\prj\tech\libsrc\lgalloc\primallc.cpp(51): Warning! W726: col(1) no reference to formal parameter 'needed' 
+x:\prj\tech\libsrc\lgalloc\primallc.cpp(51): Note! N392: col(1) 'unsigned long needed' in 'unsigned long stdcall cPrimaryMalloc::DefPageFunc( unsigned long, sAllocLimits * )' defined in: x:\prj\tech\libsrc\lgalloc\primallc.cpp(48) (col 47) 
+x:\prj\tech\libsrc\lgalloc\primallc.cpp(51): Warning! W726: col(1) no reference to formal parameter 'pLimits' 
+x:\prj\tech\libsrc\lgalloc\primallc.cpp(51): Note! N392: col(1) 'sAllocLimits * pLimits' in 'unsigned long stdcall cPrimaryMalloc::DefPageFunc( unsigned long, sAllocLimits * )' defined in: x:\prj\tech\libsrc\lgalloc\primallc.cpp(48) (col 70) 

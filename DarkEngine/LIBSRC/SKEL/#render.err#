@@ -1,0 +1,17 @@
+render.c
+x:\prj\tech\libsrc\skel\render.c(202) : warning C4047: 'function' : 'struct grs_vertex ** ' differs in levels of indirection from 'struct grs_vertex *(*)[4]'
+x:\prj\tech\libsrc\skel\render.c(202) : warning C4024: 'gr_lin_map' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\skel\render.c(204) : warning C4047: 'function' : 'struct grs_vertex *' differs in levels of indirection from 'struct grs_vertex (*)[4]'
+x:\prj\tech\libsrc\skel\render.c(204) : warning C4024: 'function through pointer' : different types for formal and actual parameter 2
+x:\prj\tech\libsrc\skel\render.c(208) : warning C4047: 'function' : 'struct grs_vertex ** ' differs in levels of indirection from 'struct grs_vertex *(*)[4]'
+x:\prj\tech\libsrc\skel\render.c(208) : warning C4024: 'gr_lin_map' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\skel\render.c(210) : warning C4047: 'function' : 'struct grs_vertex *' differs in levels of indirection from 'struct grs_vertex (*)[4]'
+x:\prj\tech\libsrc\skel\render.c(210) : warning C4024: 'function through pointer' : different types for formal and actual parameter 2
+x:\prj\tech\libsrc\skel\render.c(214) : warning C4047: 'function' : 'struct grs_vertex ** ' differs in levels of indirection from 'struct grs_vertex *(*)[4]'
+x:\prj\tech\libsrc\skel\render.c(214) : warning C4024: 'gr_lin_map' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\skel\render.c(218) : warning C4047: 'function' : 'struct grs_vertex ** ' differs in levels of indirection from 'struct grs_vertex *(*)[4]'
+x:\prj\tech\libsrc\skel\render.c(218) : warning C4024: 'gr_lin_map' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\skel\render.c(220) : warning C4047: 'function' : 'struct grs_vertex *' differs in levels of indirection from 'struct grs_vertex (*)[4]'
+x:\prj\tech\libsrc\skel\render.c(220) : warning C4024: 'function through pointer' : different types for formal and actual parameter 2
+
+

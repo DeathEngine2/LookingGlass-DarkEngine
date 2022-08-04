@@ -1,0 +1,13 @@
+dev_compapis = compapis
+dev_lib_flav = dbg
+dev_obj_flav = dbg
+
+##########################
+#
+# The above defaults can be overridden in flagsloc.mh, which is a local
+# per-person file, unlike flags.mh, which is universal.  You may also
+# want to set MASTER_FLAG in there.
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif

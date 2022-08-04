@@ -1,0 +1,102 @@
+head	 1.2;
+branch   ;
+access   ;
+symbols  ;
+locks    TJS:1.2; strict;
+comment  @@;
+
+
+1.2
+date	 2000.03.19.21.13.48;  author rsmith;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 2000.02.07.16.38.18;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@"Blackmail" scripts.
+@
+
+
+1.2
+log
+@added TheRecording which is indentical to the script
+in miss7.scr
+@
+text
+@// Script file for Thief 2 - Mission 9 - Blackmail
+#include "drkgoalt.h"
+
+#define BLACKMAIL_GOAL 1
+#define INVESTIGATE_GOAL 2
+
+BEGIN_SCRIPT(OhMyGod, RootScript)
+MESSAGES:
+   OnMessage()
+   {
+      if(MessageIs("OhMyGod"))
+      {
+         Quest.Set(GoalVisibleVarName(INVESTIGATE_GOAL),TRUE);
+         Quest.Set(GoalStateVarName(BLACKMAIL_GOAL),kGoalInactive);
+      }
+      DefaultOnMessage();
+   }
+END_SCRIPT(OhMyGod)
+
+// Script:	TheRecording
+
+// Play SoundDescription-linked sound ambiently when object is frobbed
+// identical to script in miss7.scr
+BEGIN_SCRIPT (TheRecording, RootScript)
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("Playing",FALSE);
+	}
+	DefaultOnSim();
+}
+OnFrobInvEnd()
+{
+	if (!(boolean)GetData("Playing"))
+	{
+		if (Link.AnyExist("SoundDescription",self))
+		{
+			object schema = Link.GetOne("SoundDescription",self).To();
+			if (Sound.PlaySchemaAmbient(self,schema))
+				SetData("Playing",TRUE);
+		}
+		else
+			Debug.MPrint(" TheRecording is not SoundDescription linked to anything.");
+	}
+
+	DefaultOnFrobInvEnd();
+}
+OnSchemaDone()
+{
+	object schema;
+
+	if (Link.AnyExist("SoundDescription",self,Object.Named(message.name)))
+	{
+		SetData("Playing",FALSE);
+	}
+
+	DefaultOnSchemaDone();
+}
+
+END_SCRIPT (TheRecording)
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d19 44
+@

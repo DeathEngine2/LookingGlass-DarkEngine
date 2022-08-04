@@ -1,0 +1,31 @@
+; Debug header file x:\prj\tech\h/_sound.__i made from libdbg.dbg by DBGMAKEH
+
+DB_SOUND equ 7
+DS_SOUND_Closures equ 01h
+DSRC_SOUND_Closures equ 038000001h
+DS_SOUND_Xsequences equ 02h
+DSRC_SOUND_Xsequences equ 038000002h
+DS_SOUND_samples equ 04h
+DSRC_SOUND_samples equ 038000004h
+DS_SOUND_tables equ 08h
+DSRC_SOUND_tables equ 038000008h
+DS_SOUND_SndSoundSources equ 010h
+DSRC_SOUND_SndSoundSources equ 038000010h
+DS_SOUND_MIDI equ 020h
+DSRC_SOUND_MIDI equ 038000020h
+DS_SOUND_SndMIDIDevices equ 040h
+DSRC_SOUND_SndMIDIDevices equ 038000040h
+DS_SOUND_SndMIDIChannels equ 080h
+DSRC_SOUND_SndMIDIChannels equ 038000080h
+DS_SOUND_SndSpeechChannels equ 0100h
+DSRC_SOUND_SndSpeechChannels equ 038000100h
+DS_SOUND_asynch_updates equ 0200h
+DSRC_SOUND_asynch_updates equ 038000200h
+DS_SOUND_synch_updates equ 0400h
+DSRC_SOUND_synch_updates equ 038000400h
+DS_SOUND_SoundInit equ 0800h
+DSRC_SOUND_SoundInit equ 038000800h
+DS_SOUND_SndDigi equ 01000h
+DSRC_SOUND_SndDigi equ 038001000h
+DS_SOUND_QSound equ 02000h
+DSRC_SOUND_QSound equ 038002000h

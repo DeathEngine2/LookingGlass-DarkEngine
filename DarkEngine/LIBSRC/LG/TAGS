@@ -1,0 +1,907 @@
+
+BREAKKEY.H,2492
+#define __BREAKKEY_H9,235
+#define BreakKeyActivate(BreakKeyActivate18,384
+#define BreakKeyEnd(BreakKeyEnd19,416
+#define VK_LBUTTON 28,520
+#define VK_RBUTTON 29,552
+#define VK_CANCEL 30,584
+#define VK_MBUTTON 31,616
+#define VK_BACK 33,691
+#define VK_TAB 34,723
+#define VK_CLEAR 36,757
+#define VK_RETURN 37,789
+#define VK_SHIFT 39,823
+#define VK_CONTROL 40,855
+#define VK_MENU 41,887
+#define VK_PAUSE 42,919
+#define VK_CAPITAL 43,951
+#define VK_ESCAPE 45,985
+#define VK_SPACE 47,1019
+#define VK_PRIOR 48,1051
+#define VK_NEXT 49,1083
+#define VK_END 50,1115
+#define VK_HOME 51,1147
+#define VK_LEFT 52,1179
+#define VK_UP 53,1211
+#define VK_RIGHT 54,1243
+#define VK_DOWN 55,1275
+#define VK_SELECT 56,1307
+#define VK_PRINT 57,1339
+#define VK_EXECUTE 58,1371
+#define VK_SNAPSHOT 59,1403
+#define VK_INSERT 60,1435
+#define VK_DELETE 61,1467
+#define VK_HELP 62,1499
+#define VK_LWIN 67,1677
+#define VK_RWIN 68,1709
+#define VK_APPS 69,1741
+#define VK_NUMPAD0 71,1775
+#define VK_NUMPAD1 72,1807
+#define VK_NUMPAD2 73,1839
+#define VK_NUMPAD3 74,1871
+#define VK_NUMPAD4 75,1903
+#define VK_NUMPAD5 76,1935
+#define VK_NUMPAD6 77,1967
+#define VK_NUMPAD7 78,1999
+#define VK_NUMPAD8 79,2031
+#define VK_NUMPAD9 80,2063
+#define VK_MULTIPLY 81,2095
+#define VK_ADD 82,2127
+#define VK_SEPARATOR 83,2159
+#define VK_SUBTRACT 84,2191
+#define VK_DECIMAL 85,2223
+#define VK_DIVIDE 86,2255
+#define VK_F1 87,2287
+#define VK_F2 88,2319
+#define VK_F3 89,2351
+#define VK_F4 90,2383
+#define VK_F5 91,2415
+#define VK_F6 92,2447
+#define VK_F7 93,2479
+#define VK_F8 94,2511
+#define VK_F9 95,2543
+#define VK_F10 96,2575
+#define VK_F11 97,2607
+#define VK_F12 98,2639
+#define VK_F13 99,2671
+#define VK_F14 100,2703
+#define VK_F15 101,2735
+#define VK_F16 102,2767
+#define VK_F17 103,2799
+#define VK_F18 104,2831
+#define VK_F19 105,2863
+#define VK_F20 106,2895
+#define VK_F21 107,2927
+#define VK_F22 108,2959
+#define VK_F23 109,2991
+#define VK_F24 110,3023
+#define VK_NUMLOCK 112,3057
+#define VK_SCROLL 113,3089
+#define VK_LSHIFT 120,3348
+#define VK_RSHIFT 121,3380
+#define VK_LCONTROL 122,3412
+#define VK_RCONTROL 123,3444
+#define VK_LMENU 124,3476
+#define VK_RMENU 125,3508
+#define VK_PROCESSKEY 128,3567
+#define VK_ATTN 131,3634
+#define VK_CRSEL 132,3666
+#define VK_EXSEL 133,3698
+#define VK_EREOF 134,3730
+#define VK_PLAY 135,3762
+#define VK_ZOOM 136,3794
+#define VK_NONAME 137,3826
+#define VK_PA1 138,3858
+#define VK_OEM_CLEAR 139,3890
+
+BUGTRAK.H,120
+#define __BUGTRAK_H2,21
+typedef errtype (*BugFunc)BugFunc46,824
+#define LONG_FUNC 48,861
+#define SHORT_FUNC 49,888
+
+CODEWRIT.H,141
+#define __CODEWRIT_H9,235
+#define MakeAllCodeWritable(MakeAllCodeWritable15,411
+#define MakeFunctionWritable(MakeFunctionWritable16,442
+
+COREMUTX.H,315
+#define __COREMUTX_H12,363
+#define CORE_LOCK(CORE_LOCK23,586
+class cCoreLockcCoreLock26,657
+   cCoreLock(cCoreLock::cCoreLock29,687
+   ~cCoreLock(cCoreLock::~cCoreLock34,742
+#define CoreThreadLock(CoreThreadLock43,821
+#define CoreThreadUnlock(CoreThreadUnlock44,847
+#define CORE_LOCK(CORE_LOCK45,875
+
+CRC32.H,24
+#define __CRC32_H9,229
+
+DATAPATH.H,400
+#define DATAPATH_H66,1962
+#define NUM_DATAPATHS 87,2372
+typedef struct DatapathDatapath89,2524
+} Datapath;Datapath96,2831
+#define DatapathClear(DatapathClear115,3716
+#define DatapathAddEnv(DatapathAddEnv128,4310
+#define DatapathTryCurrent(DatapathTryCurrent129,4380
+#define DatapathNoCurrent(DatapathNoCurrent130,4434
+#define DP_SCREEN_DOT 144,4985
+} DatapathDir;DatapathDir158,5334
+
+DBG.H,2763
+#define DBG_H104,3513
+#define DBG_ERROR 115,3663
+#define DBG_WARNUSER 116,3708
+#define DBG_WARNING 117,3755
+#define DBG_SPEW 118,3797
+#define NUM_DBG_BANKS 124,4050
+#define NUM_DBG_SLOTS 125,4076
+#define DBG_SLOT_MASK 126,4102
+#define DBGSRC(DBGSRC128,4138
+#define DBGBANK(DBGBANK129,4214
+#define MAX_BANKNAMELEN 137,4492
+#define MAX_SLOTNAMELEN 138,4519
+#define DG_DBG 140,4548
+#define DG_MONO 141,4566
+#define DG_FUNC 142,4585
+#define DG_FILE 143,4604
+#define DG_NUM 144,4623
+} DbgBank;DbgBank152,4921
+#define DbgSetDbg(DbgSetDbg161,5181
+#define DbgGetDbg(DbgGetDbg162,5267
+#define DbgSetMono(DbgSetMono163,5321
+#define DbgGetMono(DbgGetMono164,5409
+#define DbgSetFunc(DbgSetFunc165,5465
+#define DbgGetFunc(DbgGetFunc166,5553
+#define DbgSetBankName(DbgSetBankName171,5733
+#define MAX_DBG_LOGFILENAME 181,6188
+} DbgLogFile;DbgLogFile187,6306
+#define NUM_DBG_LOGFILES 189,6323
+#define DBG(DBG197,6600
+#define DoIfDBG(DoIfDBG199,6703
+#define DBGS(DBGS206,6942
+#define DBGS(DBGS208,7002
+#define Error 219,7322
+#define WarnUser 220,7352
+#define Warning(Warning223,7406
+#define Assert(Assert224,7449
+#define Warning(Warning226,7523
+#define Assert(Assert227,7570
+#define Assrt(Assrt230,7627
+#define Spew(Spew233,7742
+#define Spew(Spew235,7826
+#define DbgInstallGetch(DbgInstallGetch250,8299
+typedef void ReportRoutine(ReportRoutine279,9122
+#define DbgSetDbg(DbgSetDbg298,9828
+#define DbgGetDbg(DbgGetDbg299,9859
+#define DbgSetMono(DbgSetMono300,9888
+#define DbgGetMono(DbgGetMono301,9920
+#define DbgSetFunc(DbgSetFunc302,9950
+#define DbgGetFunc(DbgGetFunc303,9982
+#define DbgSetBankName(DbgSetBankName304,10012
+#define DbgSetSlotNames(DbgSetSlotNames305,10047
+#define DbgSetSlotName(DbgSetSlotName306,10088
+#define DbgFindBankName(DbgFindBankName307,10130
+#define DbgFindSlotName(DbgFindSlotName308,10165
+#define DoIfDBG(DoIfDBG309,10206
+#define DBG(DBG310,10230
+#define DBGS(DBGS311,10254
+#define Error 312,10279
+#define WarnUser 313,10309
+#define Warning(Warning314,10345
+#define Assert(Assert315,10367
+#define Assrt(Assrt316,10393
+#define Spew(Spew317,10414
+#define DbgInstallGetch(DbgInstallGetch320,10529
+#define DbgSetLogPath(DbgSetLogPath321,10557
+#define DbgSetLogFile(DbgSetLogFile322,10586
+#define DbgOpenLogFile(DbgOpenLogFile323,10624
+#define DbgCloseLogFiles(DbgCloseLogFiles324,10659
+typedef void ReportRoutine(ReportRoutine326,10729
+#define DbgInit(DbgInit328,10829
+#define DbgMonoConfig(DbgMonoConfig329,10848
+#define DbgAddConfigPath(DbgAddConfigPath330,10873
+#define DbgLoadConfig(DbgLoadConfig331,10909
+#define DbgSaveConfig(DbgSaveConfig332,10943
+#define AtExit(AtExit353,11385
+#define SetExitMsg(SetExitMsg356,11500
+
+DBGPP.H,682
+#define _DBGPP_H20,532
+class dbgostrstream dbgostrstream32,694
+   dbgostrstream(dbgostrstream::dbgostrstream35,747
+   dbgostrstream(dbgostrstream::dbgostrstream37,790
+   ~dbgostrstream(dbgostrstream::~dbgostrstream44,1095
+#define Errorpp(Errorpp52,1215
+#define WarnUserpp(WarnUserpp53,1320
+#define Warningpp(Warningpp56,1450
+#define Assrtpp(Assrtpp57,1559
+#define Warningpp(Warningpp59,1628
+#define Assertpp(Assertpp60,1677
+#define Spewpp(Spewpp64,1752
+#define Spewpp(Spewpp66,1907
+#define Errorpp(Errorpp74,2090
+#define WarnUserpp(WarnUserpp75,2195
+#define Warningpp(Warningpp76,2307
+#define Assertpp(Assertpp77,2331
+#define Spewpp(Spewpp78,2359
+
+FINDFILE.H,371
+#define __FINDFILE_H11,304
+#define MAX_PATH 20,394
+typedef struct _FILETIME _FILETIME22,427
+} FILETIME, *PFILETIME, *LPFILETIME;LPFILETIME25,508
+typedef struct _WIN32_FIND_DATA _WIN32_FIND_DATA27,548
+} WIN32_FIND_DATA, *PWIN32_FIND_DATA, *LPWIN32_FIND_DATA;LPWIN32_FIND_DATA38,926
+__declspec(40,987
+#define FindFirstFile 55,1208
+#define FindNextFile 65,1376
+
+HASHFNS.H,150
+#define __HASHFNS_H11,289
+typedef struct _GUID GUID;GUID26,524
+#define HashLong(HashLong38,702
+#define HashIntegerValue(HashIntegerValue43,781
+
+LG.H,23
+#define LG_HOME17,428
+
+LGALT.H,827
+#define LGALT_H13,318
+#define MemSetAllocator(MemSetAllocator17,369
+#define MemPushAllocator(MemPushAllocator18,401
+#define MemPopAllocator(MemPopAllocator19,434
+#define Malloc(Malloc20,461
+#define Realloc(Realloc21,496
+#define Free(Free22,537
+#define DBGSRC(DBGSRC27,684
+#define DBG(DBG28,715
+#define DBGBANK(DBGBANK29,744
+#define Error(Error30,770
+#define WarnUser(WarnUser31,790
+#define Warning(Warning32,813
+#define Spew(Spew33,835
+#define DbgSetLogPath(DbgSetLogPath34,858
+#define DbgSetLogFile(DbgSetLogFile35,887
+#define DbgMonoConfig(DbgMonoConfig36,921
+#define DbgAddConfigPath(DbgAddConfigPath37,946
+#define DbgLoadConfig(DbgLoadConfig38,978
+#define DbgSaveConfig(DbgSaveConfig39,1008
+#define Exit(Exit41,1040
+#define Exit(Exit42,1081
+#define SetExitMsg(SetExitMsg43,1103
+
+LGASSERT.H,2549
+#define __LGASSERT_H10,297
+#define CriticalMsg(CriticalMsg27,659
+#define CriticalMsg1(CriticalMsg128,773
+#define CriticalMsg2(CriticalMsg229,879
+#define CriticalMsg3(CriticalMsg330,989
+#define CriticalMsg4(CriticalMsg431,1103
+#define CriticalMsg5(CriticalMsg532,1221
+#define CriticalMsg6(CriticalMsg633,1343
+#define CriticalMsg7(CriticalMsg734,1469
+#define CriticalMsg8(CriticalMsg835,1599
+#define CriticalMsg9(CriticalMsg936,1734
+#define CriticalStr(CriticalStr37,1877
+    #define TERSE_ASSERT 40,1967
+    #define _MakeCriticalStr(_MakeCriticalStr44,2026
+    #define _MakeCriticalStr(_MakeCriticalStr46,2068
+    #define AssertMsg(AssertMsg59,2358
+    #define Assert_(Assert_69,2640
+    #define AssertMsg1(AssertMsg170,2729
+    #define AssertMsg2(AssertMsg271,2847
+    #define AssertMsg3(AssertMsg372,2969
+    #define AssertMsg4(AssertMsg473,3095
+    #define AssertMsg5(AssertMsg574,3225
+    #define AssertMsg6(AssertMsg675,3359
+    #define AssertMsg7(AssertMsg776,3497
+    #define AssertMsg8(AssertMsg877,3639
+    #define AssertMsg9(AssertMsg978,3786
+    #define AssertStr(AssertStr79,3941
+    #define Assert_(Assert_83,4039
+    #define AssertMsg(AssertMsg84,4066
+    #define AssertMsg1(AssertMsg185,4100
+    #define AssertMsg2(AssertMsg286,4139
+    #define AssertMsg3(AssertMsg387,4182
+    #define AssertMsg4(AssertMsg488,4229
+    #define AssertMsg5(AssertMsg589,4280
+    #define AssertMsg6(AssertMsg690,4335
+    #define AssertMsg7(AssertMsg791,4394
+    #define AssertMsg8(AssertMsg892,4457
+    #define AssertMsg9(AssertMsg993,4524
+    #define AssertStr(AssertStr94,4595
+        #define Verify(Verify105,4803
+        #define VerifyMsg(VerifyMsg106,4895
+        #define VerifyMsg1(VerifyMsg1107,4985
+        #define VerifyMsg2(VerifyMsg2108,5080
+        #define VerifyMsg3(VerifyMsg3109,5179
+        #define VerifyMsg4(VerifyMsg4110,5282
+        #define VerifyMsg5(VerifyMsg5111,5389
+        #define VerifyMsg6(VerifyMsg6112,5500
+        #define VerifyMsg7(VerifyMsg7113,5615
+        #define Verify(Verify115,5745
+        #define VerifyMsg(VerifyMsg116,5829
+        #define VerifyMsg1(VerifyMsg1117,5913
+        #define VerifyMsg2(VerifyMsg2118,5997
+        #define VerifyMsg3(VerifyMsg3119,6081
+        #define VerifyMsg4(VerifyMsg4120,6165
+        #define VerifyMsg5(VerifyMsg5121,6249
+        #define VerifyMsg6(VerifyMsg6122,6333
+        #define VerifyMsg7(VerifyMsg7123,6417
+enum eCritMsgNotificationeCritMsgNotification138,6844
+
+LGLOCMSG.H,9129
+#define __LGLOCMSG_H18,632
+    #define DEBUG_STRING_PLACEMENT36,1305
+    #define DEBUGEX 44,1480
+    #define DBG_LEVEL_STR(DBG_LEVEL_STR46,1505
+    #define DBG_LEVEL_STR_TRUE(DBG_LEVEL_STR_TRUE47,1581
+    #define DBG_LEVEL_MSG(DBG_LEVEL_MSG48,1668
+    #define DBG_LEVEL_MSG_TRUE(DBG_LEVEL_MSG_TRUE49,1767
+    #define DebugMsg(DebugMsg51,1876
+    #define DebugMsg1(DebugMsg152,1943
+    #define DebugMsg2(DebugMsg253,2015
+    #define DebugMsg3(DebugMsg354,2091
+    #define DebugMsg4(DebugMsg455,2171
+    #define DebugMsg5(DebugMsg556,2255
+    #define DebugMsg6(DebugMsg657,2343
+    #define DebugMsg7(DebugMsg758,2435
+    #define DebugStr(DebugStr59,2531
+    #define DebugMsgTrue(DebugMsgTrue61,2600
+    #define DebugMsgTrue1(DebugMsgTrue162,2707
+    #define DebugMsgTrue2(DebugMsgTrue263,2819
+    #define DebugMsgTrue3(DebugMsgTrue364,2935
+    #define DebugMsgTrue4(DebugMsgTrue465,3055
+    #define DebugMsgTrue5(DebugMsgTrue566,3179
+    #define DebugMsgTrue6(DebugMsgTrue667,3307
+    #define DebugMsgTrue7(DebugMsgTrue768,3439
+    #define DebugStrTrue(DebugStrTrue69,3575
+        #define IncDebugMsg(IncDebugMsg77,3919
+        #define IncDebugMsg1(IncDebugMsg178,4052
+        #define IncDebugMsg2(IncDebugMsg279,4190
+        #define IncDebugMsg3(IncDebugMsg380,4332
+        #define IncDebugMsg4(IncDebugMsg481,4478
+        #define IncDebugMsg5(IncDebugMsg582,4628
+        #define IncDebugMsg6(IncDebugMsg683,4782
+        #define IncDebugMsg7(IncDebugMsg784,4940
+        #define IncDebugStr(IncDebugStr85,5102
+        #define DecDebugMsg(DecDebugMsg87,5233
+        #define DecDebugMsg1(DecDebugMsg188,5366
+        #define DecDebugMsg2(DecDebugMsg289,5505
+        #define DecDebugMsg3(DecDebugMsg390,5647
+        #define DecDebugMsg4(DecDebugMsg491,5793
+        #define DecDebugMsg5(DecDebugMsg592,5943
+        #define DecDebugMsg6(DecDebugMsg693,6098
+        #define DecDebugMsg7(DecDebugMsg794,6257
+        #define DecDebugStr(DecDebugStr95,6419
+        #define IncDebugMsg(IncDebugMsg99,6586
+        #define IncDebugMsg1(IncDebugMsg1100,6659
+        #define IncDebugMsg2(IncDebugMsg2101,6737
+        #define IncDebugMsg3(IncDebugMsg3102,6819
+        #define IncDebugMsg4(IncDebugMsg4103,6905
+        #define IncDebugMsg5(IncDebugMsg5104,6995
+        #define IncDebugMsg6(IncDebugMsg6105,7089
+        #define IncDebugMsg7(IncDebugMsg7106,7187
+        #define IncDebugStr(IncDebugStr107,7289
+        #define DecDebugMsg(DecDebugMsg109,7364
+        #define DecDebugMsg1(DecDebugMsg1110,7437
+        #define DecDebugMsg2(DecDebugMsg2111,7515
+        #define DecDebugMsg3(DecDebugMsg3112,7597
+        #define DecDebugMsg4(DecDebugMsg4113,7683
+        #define DecDebugMsg5(DecDebugMsg5114,7773
+        #define DecDebugMsg6(DecDebugMsg6115,7867
+        #define DecDebugMsg7(DecDebugMsg7116,7965
+        #define DecDebugStr(DecDebugStr117,8067
+    #define LAssertMsg(LAssertMsg121,8156
+    #define LAssertStr(LAssertStr122,8202
+    #define DBG_LEVEL_STR(DBG_LEVEL_STR126,8259
+    #define DBG_LEVEL_STR_TRUE(DBG_LEVEL_STR_TRUE127,8289
+    #define DBG_LEVEL_MSG(DBG_LEVEL_MSG128,8327
+    #define DBG_LEVEL_MSG_TRUE(DBG_LEVEL_MSG_TRUE129,8360
+    #define DebugMsg(DebugMsg131,8403
+    #define DebugStr(DebugStr132,8428
+    #define DebugMsg1(DebugMsg1133,8453
+    #define DebugMsg2(DebugMsg2134,8483
+    #define DebugMsg3(DebugMsg3135,8517
+    #define DebugMsg4(DebugMsg4136,8555
+    #define DebugMsg5(DebugMsg5137,8597
+    #define DebugMsg6(DebugMsg6138,8643
+    #define DebugMsg7(DebugMsg7139,8693
+    #define DebugMsgTrue(DebugMsgTrue141,8749
+    #define DebugStrTrue(DebugStrTrue142,8781
+    #define DebugMsgTrue1(DebugMsgTrue1143,8813
+    #define DebugMsgTrue2(DebugMsgTrue2144,8850
+    #define DebugMsgTrue3(DebugMsgTrue3145,8891
+    #define DebugMsgTrue4(DebugMsgTrue4146,8936
+    #define DebugMsgTrue5(DebugMsgTrue5147,8985
+    #define DebugMsgTrue6(DebugMsgTrue6148,9038
+    #define DebugMsgTrue7(DebugMsgTrue7149,9095
+    #define IncDebugMsg(IncDebugMsg151,9158
+    #define IncDebugMsg1(IncDebugMsg1152,9186
+    #define IncDebugMsg2(IncDebugMsg2153,9219
+    #define IncDebugMsg3(IncDebugMsg3154,9256
+    #define IncDebugMsg4(IncDebugMsg4155,9297
+    #define IncDebugMsg5(IncDebugMsg5156,9342
+    #define IncDebugMsg6(IncDebugMsg6157,9391
+    #define IncDebugMsg7(IncDebugMsg7158,9444
+    #define IncDebugStr(IncDebugStr159,9501
+    #define DecDebugMsg(DecDebugMsg161,9531
+    #define DecDebugMsg1(DecDebugMsg1162,9559
+    #define DecDebugMsg2(DecDebugMsg2163,9592
+    #define DecDebugMsg3(DecDebugMsg3164,9629
+    #define DecDebugMsg4(DecDebugMsg4165,9670
+    #define DecDebugMsg5(DecDebugMsg5166,9715
+    #define DecDebugMsg6(DecDebugMsg6167,9764
+    #define DecDebugMsg7(DecDebugMsg7168,9817
+    #define DecDebugStr(DecDebugStr169,9874
+    #define LAssertMsg(LAssertMsg171,9904
+    #define LAssertStr(LAssertStr172,9934
+        #define DEBUG_VERBOSE 178,10043
+    #define DBG_LEVEL_STR_TRUE_EX(DBG_LEVEL_STR_TRUE_EX188,10239
+    #define DBG_LEVEL_MSG_TRUE_EX(DBG_LEVEL_MSG_TRUE_EX189,10372
+    #define DebugMsgEx(DebugMsgEx191,10488
+    #define DebugMsgEx1(DebugMsgEx1192,10605
+    #define DebugMsgEx2(DebugMsgEx2193,10727
+    #define DebugMsgEx3(DebugMsgEx3194,10853
+    #define DebugMsgEx4(DebugMsgEx4195,10983
+    #define DebugMsgEx5(DebugMsgEx5196,11117
+    #define DebugMsgEx6(DebugMsgEx6197,11255
+    #define DebugMsgEx7(DebugMsgEx7198,11397
+    #define DebugStrEx(DebugStrEx199,11543
+    #define DebugMsgTrueEx(DebugMsgTrueEx201,11662
+    #define DebugMsgTrueEx1(DebugMsgTrueEx1202,11795
+    #define DebugMsgTrueEx2(DebugMsgTrueEx2203,11933
+    #define DebugMsgTrueEx3(DebugMsgTrueEx3204,12075
+    #define DebugMsgTrueEx4(DebugMsgTrueEx4205,12221
+    #define DebugMsgTrueEx5(DebugMsgTrueEx5206,12371
+    #define DebugMsgTrueEx6(DebugMsgTrueEx6207,12525
+    #define DebugMsgTrueEx7(DebugMsgTrueEx7208,12683
+    #define DebugStrTrueEx(DebugStrTrueEx209,12845
+    #define DBG_LEVEL_STR_TRUE_EX(DBG_LEVEL_STR_TRUE_EX213,12989
+    #define DBG_LEVEL_MSG_TRUE_EX(DBG_LEVEL_MSG_TRUE_EX214,13030
+    #define DebugMsgEx(DebugMsgEx216,13076
+    #define DebugMsgEx1(DebugMsgEx1217,13106
+    #define DebugMsgEx2(DebugMsgEx2218,13141
+    #define DebugMsgEx3(DebugMsgEx3219,13180
+    #define DebugMsgEx4(DebugMsgEx4220,13223
+    #define DebugMsgEx5(DebugMsgEx5221,13270
+    #define DebugMsgEx6(DebugMsgEx6222,13321
+    #define DebugMsgEx7(DebugMsgEx7223,13376
+    #define DebugStrEx(DebugStrEx224,13435
+    #define DebugMsgTrueEx(DebugMsgTrueEx226,13467
+    #define DebugMsgTrueEx1(DebugMsgTrueEx1227,13504
+    #define DebugMsgTrueEx2(DebugMsgTrueEx2228,13546
+    #define DebugMsgTrueEx3(DebugMsgTrueEx3229,13592
+    #define DebugMsgTrueEx4(DebugMsgTrueEx4230,13642
+    #define DebugMsgTrueEx5(DebugMsgTrueEx5231,13696
+    #define DebugMsgTrueEx6(DebugMsgTrueEx6232,13754
+    #define DebugMsgTrueEx7(DebugMsgTrueEx7233,13816
+    #define DebugStrTrueEx(DebugStrTrueEx234,13882
+#define BEGIN_DEBUG_STR(BEGIN_DEBUG_STR241,14016
+#define BEGIN_DEBUG_MSG(BEGIN_DEBUG_MSG242,14093
+#define BEGIN_DEBUG_MSG1(BEGIN_DEBUG_MSG1243,14177
+#define BEGIN_DEBUG_MSG2(BEGIN_DEBUG_MSG2244,14274
+#define BEGIN_DEBUG_MSG3(BEGIN_DEBUG_MSG3245,14375
+#define BEGIN_DEBUG_MSG4(BEGIN_DEBUG_MSG4246,14480
+#define BEGIN_DEBUG_MSG5(BEGIN_DEBUG_MSG5247,14589
+#define BEGIN_DEBUG_MSG6(BEGIN_DEBUG_MSG6248,14702
+#define BEGIN_DEBUG_MSG7(BEGIN_DEBUG_MSG7249,14819
+#define BEGIN_DEBUG_STR_TRUE(BEGIN_DEBUG_STR_TRUE251,14942
+#define BEGIN_DEBUG_MSG_TRUE(BEGIN_DEBUG_MSG_TRUE252,15035
+#define BEGIN_DEBUG_MSG_TRUE1(BEGIN_DEBUG_MSG_TRUE1253,15135
+#define BEGIN_DEBUG_MSG_TRUE2(BEGIN_DEBUG_MSG_TRUE2254,15248
+#define BEGIN_DEBUG_MSG_TRUE3(BEGIN_DEBUG_MSG_TRUE3255,15365
+#define BEGIN_DEBUG_MSG_TRUE4(BEGIN_DEBUG_MSG_TRUE4256,15486
+#define BEGIN_DEBUG_MSG_TRUE5(BEGIN_DEBUG_MSG_TRUE5257,15611
+#define BEGIN_DEBUG_MSG_TRUE6(BEGIN_DEBUG_MSG_TRUE6258,15740
+#define BEGIN_DEBUG_MSG_TRUE7(BEGIN_DEBUG_MSG_TRUE7259,15873
+#define BEGIN_DEBUG_STR_EX(BEGIN_DEBUG_STR_EX261,16012
+#define BEGIN_DEBUG_MSG_EX(BEGIN_DEBUG_MSG_EX262,16118
+#define BEGIN_DEBUG_MSG_EX1(BEGIN_DEBUG_MSG_EX1263,16231
+#define BEGIN_DEBUG_MSG_EX2(BEGIN_DEBUG_MSG_EX2264,16357
+#define BEGIN_DEBUG_MSG_EX3(BEGIN_DEBUG_MSG_EX3265,16487
+#define BEGIN_DEBUG_MSG_EX4(BEGIN_DEBUG_MSG_EX4266,16621
+#define BEGIN_DEBUG_MSG_EX5(BEGIN_DEBUG_MSG_EX5267,16759
+#define BEGIN_DEBUG_MSG_EX6(BEGIN_DEBUG_MSG_EX6268,16901
+#define BEGIN_DEBUG_MSG_EX7(BEGIN_DEBUG_MSG_EX7269,17047
+#define BEGIN_DEBUG_STR_TRUE_EX(BEGIN_DEBUG_STR_TRUE_EX271,17199
+#define BEGIN_DEBUG_MSG_TRUE_EX(BEGIN_DEBUG_MSG_TRUE_EX272,17289
+#define END_DEBUG 274,17388
+class cTraceMsgLevelcTraceMsgLevel284,17588
+    const char *GetFileName(cTraceMsgLevel::GetFileName290,17719
+    long GetLine(cTraceMsgLevel::GetLine295,17809
+#define __LevelMsg(__LevelMsg306,17966
+#define __LevelMsg(__LevelMsg308,18045
+
+LGLOG.H,816
+#define __LGLOG_H9,229
+enum eLoggingOptionseLoggingOptions18,325
+    #define __Debug_QuietEval(__Debug_QuietEval48,1227
+    #define __Debug_True 50,1319
+    #define __Debug_False 51,1362
+    #define __Debug_QuietEval(__Debug_QuietEval52,1405
+#define __Debug_BeginScope 55,1537
+#define __Debug_EndScope 56,1579
+#define LogMsg(LogMsg66,1764
+#define LogMsg1(LogMsg167,1863
+#define LogMsg2(LogMsg268,1941
+#define LogMsg3(LogMsg369,2023
+#define LogMsg4(LogMsg470,2109
+#define LogMsg5(LogMsg571,2199
+#define LogMsg6(LogMsg672,2293
+#define LogMsg7(LogMsg773,2391
+#define LogStr(LogStr74,2493
+    #define mprintf 79,2641
+    #define mprint 80,2714
+    #define mprintf 82,2791
+    #define mprint 83,2857
+#define LogStrWinRect(LogStrWinRect113,3871
+#define LogStrWinPt(LogStrWinPt114,3929
+
+LGPRNTF.H,27
+#define __LGPRNTF_H11,201
+
+LGSPRNTF.H,0
+
+MEMREQ.H,129
+#define __MEMREQ_H9,231
+struct sMemoryRequirementssMemoryRequirements12,262
+} sMemoryRequirements;sMemoryRequirements18,364
+
+MEMSTAT.H,319
+#define __MEMSTAT_H11,247
+} MemCatInfo;MemCatInfo22,411
+} MemDpmiInfo;MemDpmiInfo35,1049
+} MemStat;MemStat42,1289
+#define MS_VERBALIZE 59,1935
+#define MS_MEMORIZE 60,1961
+#define MS_SETBREAK 61,1987
+#define MS_GETSTAT 62,2013
+#define TARGET_BADNESS 69,2205
+#define VERBALIZE73,2320
+#define GETSTAT78,2476
+
+STKTRACE.H,27
+#define __STKTRACE_H9,235
+
+THRDTOOL.H,2181
+#define __THRDTOOL_H12,297
+#define THRDTOOL_DEBUG17,377
+class cThreadLockcThreadLock27,574
+class cAutoLockcAutoLock80,1806
+class cThreadSyncObjectcThreadSyncObject104,2351
+class cThreadEvent cThreadEvent146,3157
+class cThreadSemaphore cThreadSemaphore186,4005
+class cThreadMutex cThreadMutex209,4655
+class cWorkerThreadcWorkerThread235,5314
+    int GetPriority(cWorkerThread::GetPriority271,6023
+inline cThreadLock::cThreadLock(390,8461
+inline cThreadLock::~cThreadLock(397,8591
+inline void cThreadLock::Lock(404,8718
+inline void cThreadLock::Unlock(411,8841
+inline BOOL cThreadLock::AssertOwnedByCurrentThread(418,8966
+inline void cThreadLock::SetTrace(425,9090
+cAutoLock::cAutoLock(437,9251
+cAutoLock::~cAutoLock(446,9390
+inline cThreadSyncObject::cThreadSyncObject(456,9525
+inline cThreadSyncObject::~cThreadSyncObject(463,9648
+inline void cThreadSyncObject::AssertUseable(479,9968
+inline cThreadSyncObject::operator HANDLE 487,10152
+inline BOOL cThreadSyncObject::Wait(494,10276
+inline BOOL cThreadEvent::Set(507,10544
+inline BOOL cThreadEvent::Reset(517,10718
+inline BOOL cThreadEvent::Pulse(527,10896
+inline BOOL cThreadEvent::Check(537,11074
+inline cWorkerThread::cWorkerThread(550,11267
+inline int cWorkerThread::GetPriority(558,11467
+inline BOOL cWorkerThread::SetPriority(565,11607
+inline DWORD cWorkerThread::Suspend(572,11764
+inline DWORD cWorkerThread::Resume(579,11892
+inline BOOL cWorkerThread::Terminate(586,12018
+inline DWORD cWorkerThread::CallWorker(593,12177
+inline DWORD cWorkerThread::CallMaster(600,12365
+inline HANDLE cWorkerThread::GetCallHandle(607,12495
+inline DWORD cWorkerThread::GetCallParam(614,12617
+class cThreadLockcThreadLock623,12750
+    cThreadLock(cThreadLock::cThreadLock626,12781
+    ~cThreadLock(cThreadLock::~cThreadLock627,12806
+    void Lock(cThreadLock::Lock628,12831
+    void Unlock(cThreadLock::Unlock629,12856
+    BOOL AssertOwnedByCurrentThread(cThreadLock::AssertOwnedByCurrentThread630,12881
+    void SetTrace(cThreadLock::SetTrace631,12936
+class cAutoLockcAutoLock634,12971
+    cAutoLock(cAutoLock::cAutoLock637,13000
+    ~cAutoLock(cAutoLock::~cAutoLock638,13041
+
+TIMINGS.H,7315
+#define __TIMINGS_H9,233
+EXTERN unsigned long __declspec(116,3228
+#define TimerRawTimeValue(TimerRawTimeValue117,3301
+#define TimerRawTimeValue(TimerRawTimeValue119,3351
+    #define DECLARE_TIMER(DECLARE_TIMER127,3543
+    #define DECLARE_TSET(DECLARE_TSET130,3632
+    #define DECLARE_AUTO_TIMER(DECLARE_AUTO_TIMER133,3769
+    #define AUTO_TIMER(AUTO_TIMER137,3908
+    #define TIMER_SetName(TIMER_SetName139,4007
+    #define TIMER_GetName(TIMER_GetName140,4082
+    #define TIMER_IsActive(TIMER_IsActive141,4153
+    #define TIMER_GetResult(TIMER_GetResult142,4225
+    #define TIMER_OutputResult(TIMER_OutputResult143,4298
+    #define TIMER_Clear(TIMER_Clear144,4374
+    #define TIMER_Start(TIMER_Start145,4443
+    #define TIMER_Mark(TIMER_Mark146,4512
+    #define TIMER_Mark_(TIMER_Mark_147,4580
+    #define TIMER_Stop(TIMER_Stop148,4655
+    #define TIMER_Stop_(TIMER_Stop_149,4723
+    #define TIMER_MarkStop(TIMER_MarkStop150,4798
+    #define TIMER_MarkStop_(TIMER_MarkStop_151,4870
+    #define TSET_SetName(TSET_SetName153,4951
+    #define TSET_GetName(TSET_GetName154,5024
+    #define TSET_Size(TSET_Size155,5093
+    #define TSET_StopAll(TSET_StopAll156,5159
+    #define TSET_ClearAll(TSET_ClearAll157,5228
+    #define TSET_OutputResultAll(TSET_OutputResultAll158,5298
+    #define TSET_GetSumResult(TSET_GetSumResult159,5375
+    #define TSET_OutputSumResult(TSET_OutputSumResult160,5449
+    #define TSET_TimerSetName(TSET_TimerSetName161,5526
+    #define TSET_TimerGetName(TSET_TimerGetName162,5606
+    #define TSET_TimerIsActive(TSET_TimerIsActive163,5682
+    #define TSET_TimerGetResult(TSET_TimerGetResult164,5759
+    #define TSET_TimerOutputResult(TSET_TimerOutputResult165,5837
+    #define TSET_TimerClear(TSET_TimerClear166,5918
+    #define TSET_TimerStart(TSET_TimerStart167,5992
+    #define TSET_TimerMark(TSET_TimerMark168,6066
+    #define TSET_TimerMark_(TSET_TimerMark_169,6139
+    #define TSET_TimerStop(TSET_TimerStop170,6219
+    #define TSET_TimerStop_(TSET_TimerStop_171,6292
+    #define TSET_TimerMarkStop(TSET_TimerMarkStop172,6372
+    #define TSET_TimerMarkStop_(TSET_TimerMarkStop_173,6449
+    #define DECLARE_TIMER(DECLARE_TIMER177,6544
+    #define DECLARE_TSET(DECLARE_TSET178,6583
+    #define DECLARE_AUTO_TIMER(DECLARE_AUTO_TIMER179,6629
+    #define AUTO_TIMER(AUTO_TIMER181,6673
+    #define TIMER_SetName(TIMER_SetName183,6706
+    #define TIMER_GetName(TIMER_GetName184,6746
+    #define TIMER_IsActive(TIMER_IsActive185,6802
+    #define TIMER_GetResult(TIMER_GetResult186,6861
+    #define TIMER_OutputResult(TIMER_OutputResult187,6921
+    #define TIMER_Clear(TIMER_Clear188,6960
+    #define TIMER_Start(TIMER_Start189,6992
+    #define TIMER_Mark(TIMER_Mark190,7024
+    #define TIMER_Mark_(TIMER_Mark_191,7055
+    #define TIMER_Stop(TIMER_Stop192,7096
+    #define TIMER_Stop_(TIMER_Stop_193,7127
+    #define TIMER_MarkStop(TIMER_MarkStop194,7168
+    #define TIMER_MarkStop_(TIMER_MarkStop_195,7203
+    #define TSET_SetName(TSET_SetName197,7250
+    #define TSET_GetName(TSET_GetName198,7287
+    #define TSET_Size(TSET_Size199,7343
+    #define TSET_StopAll(TSET_StopAll200,7398
+    #define TSET_ClearAll(TSET_ClearAll201,7429
+    #define TSET_TimerGetResult(TSET_TimerGetResult202,7461
+    #define TSET_OutputResultAll(TSET_OutputResultAll203,7521
+    #define TSET_GetSumResult(TSET_GetSumResult204,7560
+    #define TSET_OutputSumResult(TSET_OutputSumResult205,7620
+    #define TSET_TimerSetName(TSET_TimerSetName206,7656
+    #define TSET_TimerGetName(TSET_TimerGetName207,7705
+    #define TSET_TimerIsActive(TSET_TimerIsActive208,7761
+    #define TSET_TimerOutputResult(TSET_TimerOutputResult209,7820
+    #define TSET_TimerClear(TSET_TimerClear210,7868
+    #define TSET_TimerStart(TSET_TimerStart211,7909
+    #define TSET_TimerMark(TSET_TimerMark212,7950
+    #define TSET_TimerMark_(TSET_TimerMark_213,7990
+    #define TSET_TimerStop(TSET_TimerStop214,8040
+    #define TSET_TimerStop_(TSET_TimerStop_215,8080
+    #define TSET_TimerMarkStop(TSET_TimerMarkStop216,8130
+    #define TSET_TimerMarkStop_(TSET_TimerMarkStop_217,8174
+class cTimerBasecTimerBase228,8369
+    const char * GetName(cTimerBase::GetName232,8442
+class cSimpleTimer cSimpleTimer253,8803
+class cDiffTimer cDiffTimer277,9241
+class cAverageTimer cAverageTimer306,9796
+class cAverageTimerMarkercAverageTimerMarker346,10604
+class cTimerSetcTimerSet362,10921
+    int Size(cTimerSet::Size369,11019
+class cDiffTimerSet cDiffTimerSet391,11451
+class cAverageTimerSet cAverageTimerSet398,11582
+inline void cTimerBase::SetName(407,11786
+inline const char * cTimerBase::GetName(415,11972
+inline BOOL cTimerBase::IsActive(422,12094
+inline cTimerBase::cTimerBase(429,12218
+inline cTimerBase::cTimerBase(437,12340
+inline cSimpleTimer::cSimpleTimer(448,12561
+inline cSimpleTimer::cSimpleTimer(455,12669
+inline double cSimpleTimer::GetResult(462,12806
+inline void cSimpleTimer::OutputResult(473,13047
+inline void cSimpleTimer::Clear(482,13306
+inline void cSimpleTimer::Start(490,13453
+inline void cSimpleTimer::Stop(498,13616
+inline cSimpleTimer::~cSimpleTimer(507,13834
+inline cDiffTimer::cDiffTimer(521,14088
+inline cDiffTimer::cDiffTimer(528,14191
+inline double cDiffTimer::GetResult(535,14323
+inline void cDiffTimer::OutputResult(546,14572
+inline void cDiffTimer::Clear(554,14767
+inline void cDiffTimer::Start(562,14911
+inline void cDiffTimer::Mark(570,15085
+inline void cDiffTimer::Mark(579,15367
+inline void cDiffTimer::Stop(588,15692
+inline void cDiffTimer::Stop(598,16006
+inline cDiffTimer::~cDiffTimer(608,16363
+inline cAverageTimer::cAverageTimer(622,16616
+inline cAverageTimer::cAverageTimer(629,16813
+inline ulong cAverageTimer::GetIters(636,17039
+inline ulong cAverageTimer::GetTotalTime(643,17156
+inline ulong cAverageTimer::GetMinTime(650,17276
+inline ulong cAverageTimer::GetMaxTime(657,17392
+inline double cAverageTimer::GetResult(664,17508
+inline void cAverageTimer::OutputResult(675,17799
+inline void cAverageTimer::Clear(683,18067
+inline void cAverageTimer::Start(694,18270
+inline void cAverageTimer::Mark(706,18495
+inline void cAverageTimer::Stop(713,18602
+inline void cAverageTimer::Stop(728,18968
+inline void cAverageTimer::MarkStop(736,19146
+inline void cAverageTimer::MarkStop(744,19262
+inline cAverageTimer::~cAverageTimer(752,19413
+inline cAverageTimerMarker::cAverageTimerMarker(765,19644
+inline cAverageTimerMarker::~cAverageTimerMarker(773,19823
+inline int cTimerSet<TIMER_TYPE, NUM_TIMERS>::Size(784,20090
+inline void cTimerSet<TIMER_TYPE, NUM_TIMERS>::SetName(792,20270
+inline const char * cTimerSet<TIMER_TYPE, NUM_TIMERS>::GetName(801,20524
+inline void cTimerSet<TIMER_TYPE, NUM_TIMERS>::StopAll(817,20920
+inline void cTimerSet<TIMER_TYPE, NUM_TIMERS>::ClearAll(826,21156
+inline void cTimerSet<TIMER_TYPE, NUM_TIMERS>::OutputResultAll(835,21394
+inline double cTimerSet<TIMER_TYPE, NUM_TIMERS>::GetSumResult(844,21646
+inline void cTimerSet<TIMER_TYPE, NUM_TIMERS>::OutputSumResult(862,22052
+inline cTimerSet<TIMER_TYPE, NUM_TIMERS>::cTimerSet(872,22327
+inline cTimerSet<TIMER_TYPE, NUM_TIMERS>::cTimerSet(885,22646
+inline cTimerSet<TIMER_TYPE, NUM_TIMERS>::~cTimerSet(898,22980
+
+TMPALLOC.H,341
+#define TempMemInit(TempMemInit26,812
+#define TempMemUninit(TempMemUninit27,878
+#define TempMalloc(TempMalloc28,943
+#define TempRealloc(TempRealloc29,1004
+#define TempFree(TempFree30,1071
+#define TempMemInit 32,1149
+#define TempMemUninit 33,1184
+#define TempMalloc 34,1223
+#define TempRealloc 35,1255
+#define TempFree 36,1289
+
+BUGTRAK.C,359
+#define __BUGTRAK_SRC1,0
+errtype bugtrak_init(25,550
+errtype bugtrak_register(77,2386
+errtype bugtrak_generate(94,3100
+errtype bugtrak_generate_all(105,3463
+errtype bugtrak_shutdown(118,3812
+errtype bugtrak_file_report(130,4278
+errtype bugtrak_report_registration(137,4392
+errtype bugtrak_begin_session(146,4608
+errtype bugtrak_end_session(163,5190
+
+DBG.C,516
+void DbgReportError(470,17648
+void DbgReportWarnUser(489,18017
+void DbgReportWarning(506,18340
+bool DbgSpewTest(530,18820
+void DbgDoSpew(554,19304
+int DbgGetKey(575,19715
+void DbgSetReportRoutine(615,20422
+void DbgSetSlotNames(629,20783
+void DbgSetSlotName(650,21187
+int DbgFindBankName(687,22239
+int DbgFindSlotName(708,22649
+void DbgSetLogPath(737,23298
+bool DbgSetLogFile(768,23967
+bool DbgOpenLogFile(856,25852
+void DbgCloseLogFiles(903,26851
+void DbgHandle(933,27507
+void DbgHandleC(1010,29237
+
+DBGCFG.C,1292
+#define DbgIsDbgSame(DbgIsDbgSame83,2336
+#define DbgIsMonoSame(DbgIsMonoSame84,2427
+#define DbgIsFuncSame(DbgIsFuncSame85,2521
+#define HALF_DBG_SLOTS 105,3128
+#define DG_DSPNUM 107,3174
+#define NUM_EDIT_ITEMS 108,3204
+void DbgInit(137,3911
+void DbgMonoConfig(161,4472
+#define MONO_SIZE 163,4497
+void DbgMonoHandleInput(203,5261
+bool DbgMonoReadInput(498,11836
+void DbgMonoClearInput(551,12728
+void DbgMonoWriteMasterPage(567,13021
+void DbgMonoWriteLogPath(598,13875
+#define LP_XPOS 600,13906
+#define LP_WIDTH 601,13926
+void DbgMonoWriteBank(620,14292
+void DbgMonoWriteBankItem(640,14805
+void DbgMonoWriteBankPage(695,15903
+void DbgMonoWriteSlot(728,16781
+void DbgMonoWriteSlotItem(750,17403
+bool DbgAddConfigPath(807,18644
+isnumber(814,18769
+int DbgLoadConfig(830,19055
+#define TOKEN_BANKNAME 832,19090
+#define TOKEN_SLOTNAME 833,19116
+#define TOKEN_LOGPATH 834,19142
+#define TOKEN_BANK 835,19167
+#define TOKEN_SLOT 836,19189
+#define TOKEN_DBG 837,19211
+#define TOKEN_MONO 838,19232
+#define TOKEN_FUNC 839,19254
+#define TOKEN_FILE 840,19276
+#define TOKEN_CR 841,19298
+#define NUM_TOKENS 842,19318
+int DbgSaveConfig(964,22037
+bool DbgAreSlotsSame(1042,24098
+bool DbgAreFilesSame(1064,24578
+bool DbgReadConfigToken(1087,25042
+char *DbgSkip(1124,25757
+
+DPATHDIR.C,165
+char *DatapathDirGetName(15,276
+void DatapathDirGetPath(21,392
+DatapathDir *DatapathOpenDir(41,768
+char *DatapathReadDir(57,1085
+void DatapathCloseDir(116,2875
+
+EXIT.C,71
+void Exit(36,874
+void SetExitMsg_(53,1297
+void PrintExitMsg(67,1584
+
+LGPRNTF.C,77
+#define PRINT_BUF_SIZE 18,340
+int lg_vprintf(31,989
+int lg_printf(53,1826
+
+LGSPRNTF.C,352
+#define MAX_FIX_PRECIS 17,378
+typedef enum { STAGE_TEXT, STAGE_FLAGS, STAGE_FWID, STAGE_PRECISION } lgsStage;lgsStage53,1363
+typedef enum { SMALL, DEFAULT, BIG } bigness;bigness55,1446
+int lg_sprintf(71,2313
+int lg_vsprintf(88,2683
+void lg_sprintf_install_stringfunc(389,12946
+static int int_to_str(409,13685
+static int uint_to_str(438,14507
+
+MEMGROW.C,79
+int MemGrowHeap(45,1670
+void MemLockHeap(82,2240
+void MemUnlockHeap(95,2564
+
+MEMSTAT.C,139
+#define MSG_BASE 37,854
+#define MAX_HEAP_ITEMS 39,923
+int MemStats(49,1170
+int DetermineLargest(218,5272
+int MallocableTotal(251,5856
+
+STACK.C,112
+void MemStackInit 31,807
+void *MemStackAlloc 40,973
+void *MemStackRealloc 61,1545
+bool MemStackFree 81,2161
+
+TMPALLOC.C,363
+#define TEMP_BUF_SIZE 18,397
+MemStack *temp_mem_get_stack(26,614
+int temp_mem_init(35,918
+int temp_mem_uninit(61,1776
+void *temp_malloc(74,2110
+void *temp_realloc(83,2342
+int temp_free(89,2480
+int temp_spew_mem_init(98,2780
+int temp_spew_mem_uninit(108,3029
+void *temp_spew_malloc(119,3245
+void *temp_spew_realloc(129,3483
+int temp_spew_free(139,3753

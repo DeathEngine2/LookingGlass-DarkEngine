@@ -1,0 +1,10 @@
+mpstack.c
+x:\prj\tech\libsrc\mp\mpstack.c(221) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpstack.c(221) : warning C4024: 'mp_evaluate_motion' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpstack.c(226) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpstack.c(226) : warning C4024: 'mp_evaluate_motion' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpstack.c(230) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpstack.c(230) : warning C4024: 'mp_evaluate_transition' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpstack.c(248) : warning C4047: '=' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpstack.c(250) : warning C4047: '=' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpstack.c(58) : warning C4706: assignment within conditional expression

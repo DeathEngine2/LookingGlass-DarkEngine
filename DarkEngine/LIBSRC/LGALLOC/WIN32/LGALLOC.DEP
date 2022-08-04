@@ -1,0 +1,43 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+allcguid.obj: allcguid.h
+
+memall.obj: _lg.h dbg.h dbgmacro.h mallocdb.h memall.h memmacro.h types.h
+
+memcore.obj: allocapi.h comtools.h coremutx.h dbgalloc.h fastmutx.h heap.h \
+	 heaptool.h membase.h memcore.h memtimer.h mprintf.h multpool.h \
+	 nullallc.h poolimp.h primallc.h stdalloc.h timings.h types.h
+
+membase.obj: allocapi.h comtools.h membase.h types.h
+
+pool.obj: dbg.h dbgmacro.h heaptool.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pool.h poolimp.h types.h
+
+poolimp.obj: dbg.h dbgmacro.h heaptool.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pool.h poolimp.h stktrace.h types.h \
+	 virtmem.h
+
+multpool.obj: allocapi.h comtools.h dbg.h dbgmacro.h heaptool.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h membase.h memmacro.h \
+	 multpool.h poolimp.h types.h
+
+dbgalloc.obj: allocapi.h comtools.h dbg.h dbgalloc.h dbgmacro.h fastmutx.h \
+	 hashfns.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 membase.h memcore.h memmacro.h mprintf.h stktrace.h types.h
+
+nonover.obj: mallocdb.h
+
+heap.obj: allocapi.h comtools.h dbg.h dbgmacro.h heap.h heaptool.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h memall.h membase.h memmacro.h \
+	 mprintf.h types.h
+
+memtimer.obj: allocapi.h comtools.h fastmutx.h membase.h memcore.h \
+	 memtimer.h mprintf.h timings.h types.h
+
+primallc.obj: allocapi.h comtools.h dbg.h dbgmacro.h fastmutx.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h membase.h memcore.h \
+	 memmacro.h primallc.h types.h
+
+stdalloc.obj: allocapi.h comtools.h membase.h stdalloc.h types.h
+
+nullallc.obj: nullallc.h

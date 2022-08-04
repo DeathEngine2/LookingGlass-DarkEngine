@@ -1,0 +1,11 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+splcmain.obj: appagg.h appapi.h appguid.h comtools.h datapath.h dbg.h \
+	 dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h lgsndid.h \
+	 lgsound.h memall.h memmacro.h mprintf.h prikind.h pumpenum.h res.h \
+	 restypes.h sndfmt.h sndutil.h types.h utilmain.h wappapi.h \
+	 wappguid.h
+
+utilmain.obj: comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h lgsndid.h lgsound.h memall.h memmacro.h mprintf.h types.h \
+	 utilmain.h

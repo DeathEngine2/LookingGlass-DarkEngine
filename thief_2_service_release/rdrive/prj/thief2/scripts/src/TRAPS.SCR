@@ -1,0 +1,1962 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "phprops.h"
+#include "tfint.h" // for trap flags.
+#include "drkgoalt.h" //for the all complete trap
+
+/* Traps in general derive from this script and in so doing get the following
+   basic infrastructure:
+   * Handling of "TurnOn" and "TurnOff" messages, dispatched to an activation method.
+   * Interpretation of locked or unlocked traps.
+   * Interpretation of trap flags, such as Invert (reverse sense of on and off)
+     NoOn and NoOff (intercept the handling of certain messages) and Once (destroy
+     object after completion, or just lock it?)
+*/
+
+BEGIN_SCRIPT(StdTrap, RootScript)
+
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      ; // overload me
+   }
+
+   METHOD void HandleMessage(boolean on, object sender)
+   {
+      integer flags=0;
+      boolean invert=FALSE, activated=FALSE;
+
+      if(Property.Possessed(self,"TrapFlags"))
+         flags=Property.Get(self,"TrapFlags");
+
+      invert=flags&TRAPF_INVERT;
+
+      if(!Locked.IsLocked(self) && sender!=object(self))
+      {
+         if(on && !(flags & TRAPF_NOON))
+         {
+            Activate(!invert,sender); activated=TRUE;
+         }
+         else if(!on && !(flags & TRAPF_NOOFF))
+         {
+            Activate(invert,sender); activated=TRUE;
+         }
+      }
+
+      if(activated && flags&TRAPF_ONCE)
+         Property.Set(self,"Locked",TRUE);
+         // Object.Destroy(self); // dicey. May just want to lock
+   }
+
+MESSAGES:
+
+   OnMessage()
+   {
+      if(MessageIs("TurnOn"))
+         HandleMessage(TRUE,message.from);
+      else if(MessageIs("TurnOff"))
+         HandleMessage(FALSE,message.from);
+      DefaultOnMessage();
+   }
+   OnTimer()
+   {
+      if(message.name=="TurnOn")
+         HandleMessage(TRUE,message.from);
+      else if(message.name=="TurnOff")
+         HandleMessage(FALSE,message.from);
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(StdTrap)
+
+
+BEGIN_SCRIPT(TrigDoorOpen, Door)
+MESSAGES:
+    OnDoorOpening()
+    {
+       if(message.PrevActionType==sDoorMsg::kClose)
+       {
+          Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+       }
+       DefaultOnDoorOpening();
+    }
+    OnDoorClose()
+    {
+       Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+       DefaultOnDoorClose();
+    }
+END_SCRIPT(TrigDoorOpen)
+
+
+
+BEGIN_SCRIPT(TrigUnlock, RootScript)
+   MESSAGES:
+      OnNowLocked()
+      {
+         Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+         DefaultOnNowLocked();
+      }
+      OnNowUnlocked()
+      {
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         DefaultOnNowUnlocked();
+      }
+END_SCRIPT(TrigUnlock)
+
+
+
+
+BEGIN_SCRIPT(TrigSchemaDone, RootScript)
+
+MESSAGES:
+   OnSchemaDone()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      // DefaultOnSchemaDone();
+      SCRIPT_CALL_BASE(SchemaDone);
+   }
+END_SCRIPT(TrigSchemaDone)
+
+
+
+// Script:		TrigContained
+// Sends "TurnOn" on all outgoing links when the object it is placed on becomes contained 
+BEGIN_SCRIPT (TrigContained, RootScript)
+MESSAGES:
+   OnContained()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice");
+      DefaultOnContained();
+   }
+END_SCRIPT (TrigContained)
+
+
+
+// Assumed to be put on an object with an edge-triggered OBB
+// physics model.  Triggers when the player intrudes on those bounds.
+BEGIN_SCRIPT(TrigOBB, Physics)
+
+METHODS:
+   METHOD void Census(object who)
+   {
+      if(!Link.AnyExist("Population",self,who))
+      {
+         Link.Create("Population",self,who);
+         Object.AddMetaProperty(who,"M-NotifyRegion");
+      }
+      UpdatePop();
+   }
+   METHOD void DeCensus(object who)
+   {
+      Object.RemoveMetaProperty(who,"M-NotifyRegion");
+      Link.DestroyMany("Population",self,who);
+      UpdatePop();
+   }
+   METHOD void TrigOBBActivate()
+   {
+      Sound.PlayEnvSchema(self,"Event Activate",self,NULL,kEnvSoundAtObjLoc);
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+   }
+   METHOD void TrigOBBDeactivate()
+   {
+      Sound.PlayEnvSchema(self,"Event Deactivate",self,NULL,kEnvSoundAtObjLoc);
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+   }
+   METHOD void UpdatePop()
+   {
+      boolean populated=Link.AnyExist("Population",self);
+      boolean was_populated=GetData("Populated");
+
+      if(populated!=was_populated)
+      {
+         if(!populated)
+            TrigOBBDeactivate();
+         else
+            TrigOBBActivate();
+      }
+      SetData("Populated",populated);
+   }      
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      Physics.SubscribeMsg(self, kEnterExitMsg);
+      if(!IsDataSet("Populated"))
+         SetData("Populated",FALSE);
+      DefaultOnBeginScript();
+   }
+   OnEndScript()
+   {
+      Physics.UnsubscribeMsg(self, kEnterExitMsg);
+      DefaultOnEndScript();
+   }
+   OnPhysEnter()
+   {
+      object critter=message.transObj;
+
+      // Debug.MPrint("PhysEnter ",self," by ",critter);
+
+      // only collisions with AI's and players trigger the glyph.
+      if((Object.InheritsFrom(critter,"Avatar")
+          || Object.InheritsFrom(critter,"Creature")))
+      {
+         boolean live=TRUE;
+
+         // Dead guys don't trigger.
+         if(Property.Possessed(critter,"AI_Mode") &&
+            integer(Property.Get(critter,"AI_Mode"))==kAIM_Dead)
+            live=FALSE;
+         if(Property.Possessed(critter,"DeathStage") &&
+            integer(Property.Get(critter,"DeathStage"))!=0)
+            live=FALSE;
+
+         if(live)
+            Census(critter);
+      }
+      DefaultOnPhysEnter();
+   }
+   OnPhysExit()
+   {
+      object critter=message.transObj;
+
+      // Debug.MPrint("PhysExit ",self," by ",critter);
+
+      if(Link.AnyExist("Population",self,critter))
+         DeCensus(critter);
+      DefaultOnPhysExit();
+   }
+   
+END_SCRIPT(TrigOBB)
+
+
+// TrigOBB that's only triggered by player
+BEGIN_SCRIPT(TrigOBBPlayer, TrigOBB)
+MESSAGES:
+   OnPhysEnter()
+   {
+      object critter=message.transObj;
+
+      if(Object.InheritsFrom(critter,"Avatar"))
+         DefaultOnPhysEnter();
+   }
+
+END_SCRIPT(TrigOBBPlayer)
+
+// glyphs fire their triggers when a creature collides with
+// their "edge-triggered" physics model.
+// upon firing, they actuate some tweq effects.
+// otherwise, they're standard triggers.
+BEGIN_SCRIPT(Glyph,TrigOBB)
+
+METHODS:
+   METHOD integer Shots()
+   {
+      integer count=-1;
+      if(Property.Possessed(self,"StackCount"))
+         count=Property.Get(self,"StackCount");
+      return count;
+   }
+
+   METHOD void TrigOBBActivate()
+   {
+      integer count=Shots();
+      if(count!=0)
+      {
+         ActReact.React("tweq_control",1.0,self,0,kTweqTypeAll,kTweqDoActivate);
+         Base::TrigOBBActivate();
+         if(count>0)
+         {
+            Property.Set(self,"StackCount",--count);
+         }
+      }
+   }
+
+MESSAGES:
+
+   // when our tweqscale completes, stop all tweqs
+   OnTweqComplete()
+   {
+      if(message.Type==kTweqTypeScale)
+      {
+         ActReact.React("tweq_control",1.0,self,0,kTweqTypeAll,kTweqDoHalt);
+         Property.Set(self,"Scale",vector(1.0,1.0,1.0));
+         if(Shots()==0 || !Link.AnyExist("ControlDevice",self))
+            Object.Destroy(self);
+      }
+      DefaultOnTweqComplete();
+   }
+
+END_SCRIPT(Glyph)
+
+
+
+BEGIN_SCRIPT(TrigRoomPlayer, Room)
+
+MESSAGES:
+
+   OnPlayerRoomEnter()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      DefaultOnPlayerRoomEnter();
+   }
+   OnPlayerRoomExit()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      DefaultOnPlayerRoomExit();
+   }
+
+END_SCRIPT(TrigRoomPlayer)
+
+
+BEGIN_SCRIPT(TrigRoomPlayerTrans, Room)
+
+MESSAGES:
+
+   OnPlayerRoomEnter()
+   {
+      if ((object)message.FromObjId != (object)0)
+      {
+         if(Link.AnyExist("Route",message.FromObjId,self))
+            Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         if(Link.AnyExist("Route",self,message.FromObjId))
+            Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      }
+      DefaultOnPlayerRoomEnter();
+   }
+   OnPlayerRoomExit()
+   {
+      if ((object)message.ToObjId != (object)0)
+      {
+         if(Link.AnyExist("Route",self,message.ToObjId))
+            Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         if(Link.AnyExist("Route",message.ToObjId,self))
+            Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      }
+      DefaultOnPlayerRoomExit();
+   }
+
+END_SCRIPT(TrigRoomPlayerTrans)
+
+
+/* Keep track of the creatures in a given room, sending
+   TurnOn messages when the room is populated and
+   TurnOff when the room is depopulated.
+   NOTE: This needs to know when creatures in the room die.  Currently, this is done by
+   a separate script on the creature itself (NotifyRoomOnSlain, below)
+*/
+BEGIN_SCRIPT(TrigRoomCreature, Room)
+
+METHODS:
+   METHOD void TurnOn()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+   }
+   METHOD void TurnOff()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+   }
+   METHOD void UpdatePop()
+   {
+      boolean populated=Link.AnyExist("Population",self);
+      boolean was_populated=GetData("Populated");
+
+      if(populated!=was_populated)
+      {
+         if(!populated)
+            TurnOff();
+         else
+            TurnOn();
+      }
+      SetData("Populated",populated);
+   }      
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      // this counts on our getting room enter messages
+      // on simulation start to actually determine initial
+      // population (and trigger if appropriate).
+      if(!IsDataSet("Populated"))
+         SetData("Populated",FALSE);
+   }
+   OnCreatureRoomEnter()
+   {
+      object critter=message.MoveObjId;
+      boolean live=TRUE;
+
+      // Dead guys don't trigger.
+      if(Property.Possessed(critter,"AI_Mode") &&
+         integer(Property.Get(critter,"AI_Mode"))==kAIM_Dead)
+         live=FALSE;
+      if(Property.Possessed(critter,"DeathStage") &&
+         integer(Property.Get(critter,"DeathStage"))!=0)
+         live=FALSE;
+
+      if(live)
+      {  
+         Link.Create("Population",self,critter);
+         Object.AddMetaProperty(critter,"M-NotifyRegion");
+         UpdatePop();
+      }
+      DefaultOnCreatureRoomEnter();
+   }
+   OnCreatureRoomExit()
+   {
+      object critter=message.MoveObjId;
+
+      Object.RemoveMetaProperty(critter,"M-NotifyRegion");
+      Link.DestroyMany("Population",self,critter);
+      UpdatePop();
+
+      DefaultOnCreatureRoomExit();
+   }
+   OnPlayerRoomEnter()
+   {
+      Link.Create("Population",self,"Player");
+      UpdatePop();
+      DefaultOnPlayerRoomEnter();
+   }
+   OnPlayerRoomExit()
+   {
+      Link.DestroyMany("Population",self,"Player");
+      UpdatePop();
+      DefaultOnPlayerRoomExit();
+   }
+   OnMessage()
+   {
+      if(MessageIs("Obituary"))
+      {
+         Link.DestroyMany("Population",self,message.from);
+         UpdatePop();
+      }
+      DefaultOnMessage();
+   }
+
+END_SCRIPT(TrigRoomCreature)
+
+
+/* Sends a TurnOn whenever the population of the room changes, and keeps
+   population links for future reference.
+   */
+BEGIN_SCRIPT(TrigRoomPopChange,TrigRoomCreature)
+METHODS:
+   METHOD void UpdatePop()
+   {
+      TurnOn();
+   }
+END_SCRIPT(TrigRoomPopChange)
+
+/* Used by population-tracking rooms (and OBB's) to get notification of creature
+   death within their bounds.  This script is put on the creature via a metaprop
+   while so contained.
+   */
+BEGIN_SCRIPT(NotifyRegion, RootScript)
+
+MESSAGES:
+   // Note: this can behave strangely for zombies, who can be "slain"
+   // and then get back up...
+   OnSlain()
+   {
+      Link.BroadcastOnAllLinks(self,"Obituary","~Population");
+      DefaultOnSlain();
+   }
+
+END_SCRIPT(NotifyRegion)
+
+
+/* TrigAIAlert:
+Triggers when AI (presumably a security camera)
+reaches alert level 3 (fully alert of player)
+*/
+BEGIN_SCRIPT(TrigAIAlert, AI)
+
+MESSAGES:
+   OnAlertness()
+   {
+      if(message.level==kAIAL_High)
+      {
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      }
+   }
+   // @TODO: Might really want a TurnOff for when AI loses the PC.
+END_SCRIPT(TrigAIAlert)
+
+
+/* TrigSlain:
+Triggers when the object is slain.
+*/
+BEGIN_SCRIPT(TrigSlain, RootScript)
+
+MESSAGES:
+   OnSlain()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      DefaultOnSlain();
+   }
+END_SCRIPT(TrigSlain)
+
+
+/* TrigWorldFocus:
+   This script sends a standard "TurnOn" message when an object is focused
+*/
+BEGIN_SCRIPT(TrigWorldFocus, RootScript)
+
+MESSAGES:
+
+   OnWorldSelect()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      DefaultOnWorldSelect();
+   }
+   OnWorldDeSelect()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      DefaultOnWorldDeSelect();
+   }
+END_SCRIPT(TrigWorldFocus)
+
+
+
+/* These should be self-explanatory
+ */
+BEGIN_SCRIPT(TrigWorldFrob, RootScript)
+MESSAGES:
+   OnFrobWorldEnd()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      DefaultOnFrobWorldEnd();
+    }
+END_SCRIPT(TrigWorldFrob)
+
+BEGIN_SCRIPT(TrigInvFrob, RootScript)
+MESSAGES:
+   OnFrobInvEnd()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      DefaultOnFrobInvEnd();
+    }
+END_SCRIPT(TrigInvFrob)
+
+
+
+// Script:	TrapConverse
+/* Put on conversation object so as to be able to start it with a "TurnOn." */
+BEGIN_SCRIPT(TrapConverse, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+         AI.StartConversation(self);
+   }
+END_SCRIPT(TrapConverse)
+
+
+// Script:	TrapFindSecret
+/* When this trap is triggered, the player is credited with finding a secret.
+   One secret per trap, please, as the service call marks anything we say
+   is "found" as no longer being "hidden"!
+   */
+BEGIN_SCRIPT(TrapFindSecret, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      if (on) DarkGame.FoundObject(self);
+   }
+END_SCRIPT(TrapFindSecret)
+
+
+/* Retexture an area, as indicated by crazy texture replace properties. */
+BEGIN_SCRIPT(TrapTexture, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(Property.Possessed(self,"TerrRepOn") &&
+         Property.Possessed(self,"TerrRepOff"))
+      {
+         string ontex=Property.Get(self,"TerrRepOn");
+         string offtex=Property.Get(self,"TerrRepOff");
+
+         if(on)
+            AnimTexture.ChangeTexture(self,NULL,offtex,NULL,ontex);
+         else
+            AnimTexture.ChangeTexture(self,NULL,ontex,NULL,offtex);
+      }
+   }
+            
+END_SCRIPT(TrapTexture)
+
+
+// Script: TrapPatrol
+/* Turns an AI's patrol on or off.  Could do this with TrapConverse,
+   but that's kind of overkill for this speicalized use.
+
+   As a matter of style, this should _only_ be used for behind-the-
+   scenes stage managing.  Overt AI decision-making should as a rule
+   be handled with the core AI tools!
+
+   @TODO: Should AIs reset their idle origin when patrolling is
+   turned off?
+*/
+BEGIN_SCRIPT(TrapPatrol, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      linkset guylinks=Link.GetAll("ControlDevice",self);
+
+      while(guylinks.AnyLinksLeft())
+      {
+         Property.Set(guylinks.Link().To(),"AI_Patrol",on);
+
+         guylinks.NextLink();
+      }
+   }
+END_SCRIPT(TrapPatrol)
+
+BEGIN_SCRIPT(TrapRelay, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      integer percent_filter=100;
+      string msg=on?"TurnOn":"TurnOff";
+      
+      if(Property.Possessed(self,"ScriptTiming"))
+         percent_filter=Property.Get(self,"ScriptTiming");
+      
+      if(Data.RandFlt0to1()<=(float(percent_filter)/100.0))
+         Link.BroadcastOnAllLinks(self,msg,"ControlDevice",NULL);
+   }
+END_SCRIPT(TrapRelay)
+
+/* Like a Relay Trap, but waits a certain amount of time before passing
+   on the message.  If another message is received before the time passes,
+   the previous message is never delivered. */
+
+BEGIN_SCRIPT(TrapTimedRelay, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      float time_delay=1.0;
+      string msg=on?"TimedTurnOn":"TimedTurnOff";
+      
+      if(Property.Possessed(self,"ScriptTiming"))
+         time_delay=(float)Property.Get(self,"ScriptTiming")/1000.0;
+      
+      if ((integer)GetData("MessageTimer")!=0)
+         KillTimer((integer)GetData("MessageTimer"));
+       
+      integer thandle = SetOneShotTimer(self,msg,time_delay,NULL);
+      SetData("MessageTimer",thandle);
+
+   }
+
+MESSAGES:
+  
+   OnBeginScript()
+   {
+      if (!IsDataSet("MessageTimer"))
+         SetData("MessageTimer",0);
+      DefaultOnBeginScript();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "TimedTurnOn")
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      if (message.name == "TimedTurnOff")
+         Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(TrapTimedRelay)
+
+
+/* Like a Relay trap, but a certain amount of time after relaying any
+   message, it will relay the opposite message (if no new messages have
+   come in the mean time).  For many applications, you may well want
+   to set "NoOn" or "NoOff" for this one.
+   */
+BEGIN_SCRIPT(TrapRevert, StdTrap)
+METHODS:
+   METHOD void ClearTimer(boolean kill)
+   {
+      if(IsDataSet("RevertTimer"))
+      {
+         timer_handle timeh=GetData("RevertTimer");
+         if(kill) KillTimer(timeh);
+         ClearData("RevertTimer");
+      }
+   }
+   METHOD void Relay(boolean on)
+   {
+      string msg=on?"TurnOn":"TurnOff";
+      Link.BroadcastOnAllLinks(self,msg,"ControlDevice",NULL);
+   }
+   METHOD void Activate(boolean on, object sender)
+   {
+      integer time=-1;
+      
+      Relay(on);
+
+      if(Property.Possessed(self,"ScriptTiming"))
+         time=Property.Get(self,"ScriptTiming");
+
+      if(time>0)
+      {
+         timer_handle timeh=SetOneShotTimer(self,"Revert",float(time)/1000.0,!on);
+         ClearTimer(TRUE);
+         SetData("RevertTimer",timeh);
+      }
+   }
+MESSAGES:
+   OnTimer()
+   {
+      if(message.name=="Revert")
+      {
+         Relay(message.data);
+         ClearTimer(FALSE);
+      }
+      DefaultOnTimer();
+   }
+END_SCRIPT(TrapRevert)
+
+
+/* Sends alternating turn on/turn off messages based in its Tweq Flicker property.
+   If the tweq turns off (e.g. due to player going out of radius) makes sure it
+   always ends with an "off"
+   */
+BEGIN_SCRIPT(TrigFlicker, StdTrap)
+METHODS:
+   METHOD void Fire(boolean on)
+   {
+      if(IsDataSet("Check"))
+      {
+         timer_handle check=GetData("Check");
+         KillTimer(check);
+      }
+      SetData("IsOn",on);
+      Link.BroadcastOnAllLinks(self,on?"TurnOn":"TurnOff","ControlDevice",NULL);
+      if(on)
+      {
+         integer time=15000;
+
+         if(Property.Possessed(self,"CfgTweqBlink"))
+            time=Property.Get(self,"CfgTweqBlink","Rate");
+         timer_handle check=SetOneShotTimer(self,"Check",float(2.0*time)/1000.0);
+         SetData("Check",check);
+      }
+   }
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+         ActReact.React("tweq_control",1.0,self,0,kTweqTypeFlicker,kTweqDoActivate);
+      else
+      {
+         boolean on=GetData("IsOn");
+         if(on)
+            Fire(FALSE);
+         ActReact.React("tweq_control",1.0,self,0,kTweqTypeFlicker,kTweqDoHalt);
+      }
+   }
+
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting)
+         SetData("IsOn",FALSE);
+      DefaultOnSim();
+   }
+   OnTweqComplete()
+   {
+      if(message.Type==kTweqTypeFlicker &&
+         message.Op==kTweqOpFrameEvent)
+      {
+         boolean on=GetData("IsOn");
+         on=!on;
+         Fire(on);
+      }
+      DefaultOnTweqComplete();
+   }
+   OnTimer()
+   {
+      if(message.name=="Check")
+      {
+         boolean on=GetData("IsOn");
+         if(on)
+            Fire(FALSE);
+         Debug.MPrint("Flicker Trigger safety deactivation.");
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(TrigFlicker)
+
+
+BEGIN_SCRIPT(TrigPPlate, PressurePlate)
+MESSAGES:
+   OnPressurePlateActive()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+   }
+   OnPressurePlateInactive()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+   }
+
+END_SCRIPT(TrigPPlate)
+
+BEGIN_SCRIPT(TrigPPlateImmed, PressurePlate)
+MESSAGES:
+   OnPressurePlateActivating()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+   }
+   OnPressurePlateDeactivating()
+   {
+      Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+   }
+END_SCRIPT(TrigPPlateImmed)
+
+// When I get a TurnOn, release my contents into the world.
+// When I get TurnOff, contain them again.  Both operations
+// are idempotent, of course,
+//
+// Note that this is only _really_ designed for the case where
+// the trap contains exactly one object.
+BEGIN_SCRIPT(TrapRelease, StdTrap)
+
+METHODS:
+
+   METHOD boolean HasRefs(object obj)
+   {
+      return(Property.Possessed(obj,"HasRefs") &&
+             (Property.Get(obj,"HasRefs")==TRUE));
+   }
+
+   METHOD void ReplaceLinks(linkkind was, linkkind shallbe)
+   {
+      linkset waslinks=Link.GetAll(was,self);
+      boolean appear=(was==linkkind("Contains"));
+
+      while(waslinks.AnyLinksLeft())
+      {
+         link thislink=waslinks.Link();
+         object targ=thislink.To();
+
+         // if disappearing objects, don't do anything to those
+         // not currently ref'd (e.g., those contained by other
+         // things.
+         if(appear || HasRefs(targ))
+         {
+            if(!Link.AnyExist(shallbe,self,targ))
+               Link.Create(shallbe,self,targ);
+            Link.Destroy(thislink);
+            if(appear)
+            {
+               Object.Teleport(targ,vector(0,0,0),vector(0,0,0),self);
+               Property.Set(targ,"HasRefs",TRUE);
+            }
+            else
+            {
+               Object.Teleport(self,vector(0,0,0),vector(0,0,0),targ);
+            }
+         }
+         waslinks.NextLink();
+      }
+   }
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+         ReplaceLinks("Contains","Owns");
+      else
+         ReplaceLinks("Owns","Contains");
+   }
+
+END_SCRIPT(TrapRelease)
+
+
+BEGIN_SCRIPT(TrapTweqEmit, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+         ActReact.React("tweq_control",1.0,self,0,kTweqTypeEmitter,kTweqDoActivate);
+   }   
+
+END_SCRIPT(TrapTweqEmit)
+
+
+BEGIN_SCRIPT(ReloadTweqEmit, RootScript)
+
+METHODS:
+   METHOD void Report(integer warnlevel)
+  {
+    if(warnlevel>=2)
+    {
+      if(Property.Possessed(self,"CfgTweqEmit"))
+      {
+        integer rate=Property.Get(self,"CfgTweqEmit","Rate");
+        integer time=Property.Get(self,"StTweqEmit","Cur Time");
+        if(time!=(rate-1))
+        {
+          Debug.MPrint("Suspicious time field on reloading tweq emit trap.");
+          Debug.MPrint("rate=",rate," implies time should be ",rate-1," not ",time);
+        }
+      }
+      else
+        Debug.MPrint(self," has no CfgTweqEmit property!");
+    }
+  }
+
+MESSAGES:
+   OnTweqComplete()
+   {
+      if(Property.Possessed(self,"CfgTweqEmit"))
+      {
+         integer rate=Property.Get(self,"CfgTweqEmit","Rate");
+         integer time=rate-1;
+
+         if(time<0) time=0;
+         Property.Set(self,"StTweqEmit","Cur Time",time);
+         Property.Set(self,"StTweqEmit","Frame #",0);
+         DefaultOnTweqComplete();
+      }
+   }
+
+END_SCRIPT(ReloadTweqEmit)
+
+
+
+
+/* Used to implement RequireAll and RequireAny meta-traps.
+
+   Keeps track of current state by forging a "ScriptParams"
+   link to a correspondent when it gets a "TurnOn", and
+   breaking the link if it gets a "TurnOff"
+   */
+   
+BEGIN_SCRIPT(TrapRequirement, StdTrap)
+METHODS:
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+      {
+         if(!Link.AnyExist("ScriptParams",self,sender))
+         {
+            if (sender != (object)0)
+               Link.Create("ScriptParams",self,sender);
+         }
+      }
+      else
+      {
+         Link.DestroyMany("ScriptParams",self,sender);
+      }
+   }
+END_SCRIPT(TrapRequirement)
+
+/* Trap keeps track of "TurnOn" and "TurnOff" messages,
+   sending a "TurnOn" if and only if all items control linked
+   to it have sent "TurnOn" more recently.  As soon as the
+   first one sends a "TurnOff," so does this trap.
+   */
+BEGIN_SCRIPT(TrapRequireAll, TrapRequirement)
+
+METHODS:
+
+   METHOD boolean CheckForAllLinked()
+   {
+      if(Link.AnyExist("~ControlDevice",self))
+      {
+         linkset controllers=Link.GetAll("~ControlDevice",self);
+
+         while(controllers.AnyLinksLeft())
+         {
+            if(!Link.AnyExist("ScriptParams",self,controllers.Link().To()))
+               return(FALSE);
+            controllers.NextLink();
+         }
+         return TRUE;
+      }
+      else
+         return TRUE;
+   }
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+      {
+         Base::Activate(on,sender);
+         if(CheckForAllLinked())
+               Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      }
+      else
+      {
+         if(CheckForAllLinked())
+            Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+         Base::Activate(on,sender);
+      }
+   }
+END_SCRIPT(TrapRequireAll)
+
+
+/* Trap keeps track of "TurnOn" and "TurnOff" messages,
+   sending a "TurnOn" as soon as any items control linked
+   to it have sent "TurnOn" more recently.  When all have most
+   recently sent a "TurnOff," so does this trap.  All other
+   "TurnOn" and "TurnOff" messages are filtered out.
+   */
+BEGIN_SCRIPT(TrapRequireAny, TrapRequirement)
+
+METHODS:
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+      {
+         if(!Link.AnyExist("ScriptParams",self))
+               Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         Base::Activate(on,sender);
+      }
+      else
+      {
+         boolean waslinked=Link.AnyExist("ScriptParams",self);
+
+         Base::Activate(on,sender);
+         if(waslinked && !Link.AnyExist("ScriptParams",self))
+               Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      }
+   }
+END_SCRIPT(TrapRequireAny)
+
+
+
+
+/* Destroys all objects it controls.  Obviously, this is rather a one-shot trap.
+   Destroys itself when it's done, just to be tidy.
+ */
+BEGIN_SCRIPT(TrapDestroy, StdTrap)
+
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+     if(on)
+     {
+       linkset victims=Link.GetAll("ControlDevice",self);
+       while(victims.AnyLinksLeft())
+       {
+          Damage.Slay(victims.Link().To(),self);
+          victims.NextLink();
+       }
+       if (Property.Possessed(self,"AI"))
+          Sound.HaltSpeech(self);
+       Object.Destroy(self);
+     }
+   }
+END_SCRIPT(TrapDestroy)
+
+
+       
+/* Trap which teleports its controlled object to its own location.
+   No response to "TurnOff"
+   */
+BEGIN_SCRIPT(TrapTeleporter, StdTrap)
+
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      if(on)
+      {
+         // Let's don't do a Link.GetAll, since I really don't think we
+         // want to teleport several objects to the same location...
+
+         if(Link.AnyExist("ControlDevice",self))
+         {
+            object victim=Link.GetOne("ControlDevice",self).To();
+
+            // Could be that the victim is the player factory.  No
+            // way to link to the actual player object in the edtior,
+            // after all...
+            if(Link.AnyExist("PlayerFactory",victim))
+               victim=Object.Named("Player");
+
+            // remove me from whatever container I might be in.
+            Container.Remove(victim);
+            Object.Teleport(victim,vector(0,0,0),vector(0,0,0),self);
+
+            // If victim was patrolling, he'd better find a new place to go
+            Link.DestroyMany("AICurrentPatrol",victim,AnyObject);
+         }
+      }
+   }  
+
+END_SCRIPT(TrapTeleporter)
+
+
+/* When triggered, makes its controlled object(s) no longer rotation-
+   or location-controlled.  You'd better know what you're doing!
+*/
+BEGIN_SCRIPT(TrapDeadfall, StdTrap)
+
+METHODS:
+  METHOD void Uncontrol(object targ)
+  {
+     if(Property.Possessed(targ,"PhysControl"))
+     {
+        integer controls=Property.Get(targ,"PhysControl","Controls Active");
+
+        controls &= (~(kCPT_Location|kCPT_Rotation));
+        Property.Set(targ,"PhysControl","Controls Active",controls);
+     }
+  }
+  METHOD void Activate(boolean on, object sender)
+  {
+     if(on)
+     {
+        linkset controls=Link.GetAll("ControlDevice",self);
+
+        while(controls.AnyLinksLeft())
+        {
+           Uncontrol(controls.Link().To());
+           controls.NextLink();
+        }
+        Object.Destroy(self);
+     }
+  }
+
+END_SCRIPT(TrapDeadfall)
+
+
+
+
+/* Sends a TurnOn if the AI is brain-killed (killed or KO'd)
+ */
+BEGIN_SCRIPT(TrigBrainDead, AI)
+MESSAGES:
+   OnAIModeChange()
+   {
+      // Debug.MPrint(self," changing mode to ",message.mode);
+      if (message.mode == kAIM_Dead)
+      {
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      }
+      DefaultOnAIModeChange();
+   }
+END_SCRIPT(TrigBrainDead)
+
+
+
+
+// Script to derive from with basic parsing routines for
+// TrapQVar properties.
+BEGIN_SCRIPT(QVarTrapTrigBase, StdTrap)
+
+METHODS:
+
+   // Overload me.
+   METHOD void ProcessOperation(char op, integer arg, integer sigfigs, 
+                                string qvar, boolean reverse)
+   {
+   }
+
+   METHOD boolean VarName(string ref command, string ref qvar)
+   {
+      integer NameInd;
+      
+      if(Property.Possessed(self,"TrapQVar"))
+         command=Property.Get(self,"TrapQVar");
+      else
+         return FALSE;
+      
+      // Search to just after any occurance of ':'
+      // we take this to be our Qvar name
+      for(NameInd=0;command[NameInd]!=':';NameInd++)
+         if(command[NameInd]==0) return FALSE;
+      NameInd++;
+
+      qvar=(((const char*)command)+NameInd);
+      return TRUE;
+   }
+
+   METHOD void ParseOperation(boolean ReverseSense) 
+   {
+      string command, qvar;
+      integer ArgInd, arg=0, sign=1, sigfigs=0;
+      
+      if(!VarName(command,qvar)) return;
+
+      // Okay, at this point, our string is at least 1 char long
+      // since we found a ':'.  The first char is taken as our
+      // opcode, and contiguous digits after the first char
+      // are our argument.  If we first find a '-' sign, parse
+      // as a negative number.
+      
+      ArgInd=1;
+      if(command[ArgInd]=='-')
+      {
+         ArgInd=2; sign=-1;
+      }            
+      for(ArgInd=1;(command[ArgInd]>='0' && command[ArgInd]<='9');ArgInd++)
+      {
+         arg=(arg*10)+(command[ArgInd]-'0');
+         sigfigs++;
+      }
+      arg*=sign;
+
+      ProcessOperation(command[0],arg,sigfigs,qvar,ReverseSense);
+   }
+
+END_SCRIPT(QVarTrapTrigBase)
+
+
+/*
+   The Quest Var trigger subscribes to changes in a given quest
+   variable and sends TurnOns and TurnOffs based on whether that
+   quest var satisfies a given critereon of equality or inequality.
+
+   The format of the quest var comparator is similar to that of
+   quest var operators in Quest Var traps: 
+                     <comparator><argument>:<name>
+   Where the comparator is a single character indicating the boolean
+   comparison to apply to the quest var of the given name, compared
+   to the integer value in the argument.
+
+   The comparator can be '>' '<' '=' '"' or '&'.  You can reverse the
+   sense of the trigger for <=, >=, and != using trap flags.
+
+   The comparator " requires some explanation.  It works just like =
+   except that only the digits actually supplied in the argument are
+   considered.  A value of 5199 satisfies "199 but not =199.
+
+   The & comparator works if the quest variable value shares any bits
+   with the argument (that is, if the boolean & of the two is non-zero).
+   Handy for checking particular bits of a bitfield.
+ */
+BEGIN_SCRIPT(TrigQVar, QVarTrapTrigBase)
+
+   METHOD void Trigger(boolean satisfied)
+   {
+      if(satisfied)
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+      else
+         Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+   }
+
+   /* Process should be called once on begin script to subscribe
+      to variable changes and send initial TurnOn/TurnOff consistent
+      with quest variable value.
+      */
+   METHOD void ProcessOperation(char op, integer arg, integer sigfigs,
+                                string qvar, boolean reverse)
+   {
+      integer qvarval=Quest.Get(qvar);
+      integer mod=1;
+      boolean satisfied=FALSE, wassatisfied;
+
+      for(;sigfigs>0;sigfigs--) mod*=10;
+
+      switch(op)
+      {
+         case '=': satisfied=(qvarval==arg); break;
+         case '"': satisfied=((qvarval%mod)==arg); break;
+         case '>': satisfied=(qvarval>arg); break;
+         case '<': satisfied=(qvarval<arg); break;
+         case '&': satisfied=(qvarval&arg); break;
+      }
+      if(reverse) satisfied=!satisfied;
+
+      if(!IsDataSet("WasSatisfied"))
+         SetData("WasSatisfied",!satisfied); // So we'll _always send initially
+
+      wassatisfied=GetData("WasSatisfied");
+
+      if(satisfied!=wassatisfied)
+      {
+         Trigger(satisfied);
+      }
+      SetData("WasSatisfied",satisfied);
+   }
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      string command, qvar;
+
+      if(VarName(command,qvar))
+         Quest.SubscribeMsg(self,qvar);
+      ParseOperation(FALSE);
+      DefaultOnBeginScript();
+   }
+   OnQuestChange()
+   {
+      ParseOperation(FALSE);
+      DefaultOnQuestChange();
+   }
+
+END_SCRIPT(TrigQVar)
+
+
+/* 
+   The Quest Var trap performs some operation on a quest variable
+   as specified by an "operator" string property.
+
+   The format of the quest var operator is <op><argument>:<name>
+   the op is a single character indicating the operation to apply
+   to the quest var of the specified name.  The argument is a single
+   non-negative integer argument which us used if the op is a
+   binary operator.  Currently-supported ops are:
+   
+   Let x be the named quest variable, and a be the argument.
+   rand(a) is a random integer between 0 and a (inclusive).
+   
+   Op    Effect of TurnOn     Effect of TurnOff
+   
+   =     x=a                     x=0
+   !     x|=a                    x&=(~a)
+   |     x|=a                    x&=(~a)
+   +     x+=a                    x-=a
+   -     x-=a                    x+=a
+   *     x*=a                    x/=a (integer!)
+   /     x/=a (integer!)         x*=a
+   %     x=x mod a               x*=a
+   {     x=x<<a (shift left)     x=x>>a (shift right)
+   }     x=x>>a (shift right)    x=x<<a (shift left)
+   "     x=(x*10)+(a%10)         x=x/10
+   ?     x+=rand(a)              x-=rand(a)
+   d     x+=rand(a-1)+1          x-=rand(a-1)+1
+
+*/
+BEGIN_SCRIPT(TrapSetQVar, QVarTrapTrigBase)
+
+METHODS:
+
+   METHOD void ProcessOperation(char op, integer arg, integer sigfigs,
+                                string qvar, boolean reverse)
+   {
+      integer qvarval=Quest.Get(qvar);
+      integer arg2=0;
+
+      // Debug.MPrint("questvar ",qvar," was ",qvarval);
+
+      switch(op)
+      {
+         case '=':
+            qvarval=reverse?0:arg;
+            break;
+         case '"':
+            if(reverse) 
+               qvarval/=10;
+            else
+               qvarval=(qvarval*10)+(arg%10); // stuff tens digit
+            qvarval=qvarval%100000000; // only keep 8 digits
+            break;
+         case '!':
+         case '|':
+            if(!reverse)
+               qvarval|=arg; // set bits in arg
+            else
+               qvarval&=(~arg); // unset bits in arg
+            break;
+         case 'd':
+            arg-=1;
+            if(arg<0) arg=0;
+            arg2=1; // and fall through.
+         case '?':
+            arg=Data.RandInt(0,arg)+arg2;
+            reverse=!reverse; // and fall through
+         case '-':
+            reverse=!reverse; // and fall through
+         case '+':
+            if(reverse)
+               qvarval-=arg;
+            else
+               qvarval+=arg;
+            break;
+         case '%':
+            if(!reverse)
+            {
+               qvarval=(qvarval%arg);
+               break;
+            }
+            // else fall through
+         case '/':
+            reverse=!reverse; // and fall through
+         case '*':
+            if(!reverse)
+               qvarval*=arg;
+            else
+               qvarval/=arg;
+            break;
+         case '{':
+            reverse=!reverse; // and fall through
+         case '}':
+            if(!reverse)
+               qvarval=qvarval<<arg;
+            else
+               qvarval=qvarval>>arg;
+            break;
+      }      
+      Quest.Set(qvar,qvarval);
+      // Debug.MPrint("New value = ",qvarval);
+   }
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      ParseOperation(!on);
+   }
+
+END_SCRIPT(TrapSetQVar)
+
+/* TrapNonFinalComplete sends a TurnOn when all visible non-final goals
+   are complete.  It sends a TurnOff if this gets invalidated.
+*/
+
+BEGIN_SCRIPT(TrapNonFinalComplete, StdTrap)
+
+METHODS:
+   
+   METHOD void SubscribeGoalChanges()
+   {
+      //assume <=20 quest vars
+      int i;
+      for (i = 0; i < 20; i++)
+      {
+         Quest.SubscribeMsg(self,GoalVisibleVarName(i));
+         Quest.SubscribeMsg(self,GoalStateVarName(i));
+      }
+   }
+
+   METHOD void UnsubscribeGoalChanges()
+   {
+      //assume <=20 quest vars
+      int i;
+      for (i = 0; i < 20; i++)
+      {
+         Quest.UnsubscribeMsg(self,GoalVisibleVarName(i));
+         Quest.UnsubscribeMsg(self,GoalStateVarName(i));
+      }
+   }
+
+   METHOD string GoalFinalVarName(integer i)
+   {
+      return ("GOAL_FINAL_"+string(i));
+   }
+
+   METHOD string GoalReverseVarName(integer i)
+   {
+      return ("GOAL_REVERSE_"+string(i));
+   }
+
+   METHOD void CheckCompleteness()
+   {
+      //wastrue is whether we used to satisfy this clause
+      boolean wastrue = (boolean)GetData("HaveFired");
+      //shouldbetrue is whether we now satisfy this clause
+      boolean shouldbetrue = TRUE;
+      int i;
+      for (i = 0; i < 20; i++)
+      {
+         //if there is a visible, nonfinal goal that is neither complete
+         //nor inactive (meaning it is incomplete or failed), then we have
+         //not completed all visible, non-final goals, and so the clause
+         //won't be satisifed
+         if ((Quest.Get(GoalVisibleVarName(i)) == 1) &&
+             (Quest.Get(GoalStateVarName(i)) != kGoalComplete) &&
+             (Quest.Get(GoalStateVarName(i)) != kGoalInactive) &&
+	     (Quest.Get(GoalReverseVarName(i)) != 1) &&
+             (Quest.Get(GoalFinalVarName(i)) != 1))
+            shouldbetrue = FALSE;
+      }
+      if (wastrue != shouldbetrue)
+      {
+         Debug.MPrint("Was ",wastrue," is now: ",shouldbetrue);
+         if (shouldbetrue)
+         {
+            Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+            SetData("HaveFired",1);
+         }
+         else
+         {
+            Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+            SetData("HaveFired",0);
+         }
+      }
+   }
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      if (!IsDataSet("HaveFired"))
+         SetData("HaveFired",0);
+      SubscribeGoalChanges();
+      DefaultOnBeginScript();
+   }
+
+   OnQuestChange()
+   {
+      CheckCompleteness();
+      DefaultOnQuestChange();
+   }
+
+   OnEndScript()
+   {
+      UnsubscribeGoalChanges();
+      DefaultOnEndScript();
+   }
+
+END_SCRIPT(TrapNonFinalComplete)
+
+/* TrapDirection is a meta-trap that transduces "TurnOn" and "TurnOff"
+   messages into "GoForward" and "GoReverse" messages.
+   @TODO: What would really be preferable would be a general transducer
+   trap that would use a property to determine what messages to send in
+   the "TurnOn" and "TurnOff" cases.  This could then be implemented
+   as one of those, as could inverter traps.
+   */
+BEGIN_SCRIPT(TrapDirection, StdTrap)
+METHODS:
+   METHOD void Activate(boolean on, object sender)
+   {
+      integer direction=0;
+      
+      Link.BroadcastOnAllLinks(self,on?"GoForward":"GoReverse","ControlDevice",NULL);
+   }
+END_SCRIPT(TrapDirection)
+
+/* TrigRoomObject
+   An object with this script send a TurnOn message when
+   taken to a specific room.  Link the object to the room, with a Route
+   link, to specify where it needs to go.  It'll also get a TurnOff
+   when removed from the room.
+   We intend that this will be used to score victory conditions, by
+   making the object also a Quest Var setting trap.
+   */
+BEGIN_SCRIPT(TrigRoomObject, Room)
+METHODS:
+   METHOD boolean RoomIsDest(object room)
+   {
+      if ((object)room == (object)0) //obj null is never dest.
+         return FALSE;
+      boolean inroom=FALSE;
+      object routeroom=OBJ_NULL;
+      linkset dest=Link.GetAll("Route",self);
+
+      // am I now in any of the rooms I have route links to?
+      while(!inroom && dest.AnyLinksLeft())
+      {
+         object thisroom=dest.Link().To();
+
+         if(Object.InheritsFrom(room,thisroom))
+         {
+            inroom=TRUE;
+            routeroom=thisroom;
+         }
+         dest.NextLink();
+      }
+      return inroom;
+   }
+
+MESSAGES:
+   OnObjRoomTransit()
+   {
+      string msg;
+      boolean wasin=RoomIsDest(message.FromObjId);
+      boolean amin=RoomIsDest(message.ToObjId);
+
+      if(amin!=wasin)
+      {
+         if(amin)
+            msg="TurnOn";
+         else
+            msg="TurnOff";
+         Link.BroadcastOnAllLinks(self,msg,"ControlDevice");
+      }
+      DefaultOnObjRoomTransit();
+   }
+END_SCRIPT(TrigRoomObject)
+
+/* Like TrigRoomObject, except that it treats containment in a player's
+   inventory as being equivalent to reaching the destination.  Good for
+   victory conditions which require the player to deliver an object somewhere,
+   and also want to give him credit as soon as he's carrying it.
+   */
+BEGIN_SCRIPT(TrigRoomDelivery, TrigRoomObject)
+METHODS:
+   METHOD void Turn()
+   {
+      boolean inroom=GetData("InRoom"), wason=GetData("OnState");
+      boolean ininv=FALSE, on=wason;
+      object container=OBJ_NULL;
+
+      if(Link.AnyExist("~Contains",self))
+         container=Link.GetOne("~Contains",self).To();
+      ininv=(container!=object(OBJ_NULL) && Object.InheritsFrom(container,"Avatar"));
+
+      on=(inroom || ininv);
+
+      if(on != wason)
+      {
+         SetData("OnState",on);
+         Link.BroadcastOnAllLinks(self,on?"TurnOn":"TurnOff","ControlDevice");
+      }
+   }
+MESSAGES:
+   OnBeginScript()
+   {
+      if(!IsDataSet("InRoom"))
+         SetData("InRoom",FALSE);
+      if(!IsDataSet("OnState"))
+         SetData("OnState",FALSE);
+      DefaultOnBeginScript();
+   }
+   OnObjRoomTransit()
+   {
+      string msg;
+      boolean inroom=RoomIsDest(message.ToObjId);
+
+      SetData("InRoom",inroom);
+      Turn();
+      
+      // Don't do this.
+      // DefaultOnObjRoomTransit();
+   }
+   OnContained()
+   {
+      Turn();
+      DefaultOnContained();
+   }
+END_SCRIPT(TrigRoomDelivery)
+
+
+/* TrigRoomDeposit
+   Like TrigRoomObject, but the Object must not be contained by anything.
+   Doesn't inherit from TrigRoomObject because I need different methods
+   and messages.
+*/
+
+BEGIN_SCRIPT(TrigRoomDeposit, Room)
+METHODS:
+   METHOD boolean RoomIsDest(object room)
+   {
+      if ((object)room == (object)0) //objnull is never dest.
+         return FALSE;
+      boolean inroom=FALSE;
+      object routeroom=OBJ_NULL;
+      linkset dest=Link.GetAll("Route",self);
+
+      // am I now in any of the rooms I have route links to?
+      while(!inroom && dest.AnyLinksLeft())
+      {
+         object thisroom=dest.Link().To();
+
+         if(Object.InheritsFrom(room,thisroom))
+         {
+            inroom=TRUE;
+            routeroom=thisroom;
+         }
+         dest.NextLink();
+      }
+      return inroom;
+   }
+
+   METHOD boolean CheckContained()
+   {
+      return (Link.AnyExist("~Contains",self));
+   }
+   
+   METHOD void CheckSuccess()
+   {
+      int oldsat = (integer)GetData("Satisfied");
+      SetData("Satisfied",(integer)GetData("RightRoom") &&
+                          !CheckContained());
+      int newsat = (integer)GetData("Satisfied");
+      if (newsat != oldsat)
+      {
+         if (newsat)
+            Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         else
+            Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      }
+   }
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      if (!IsDataSet("Contained"))
+         SetData("Contained",CheckContained());
+      if (!IsDataSet("RightRoom"))
+         SetData("RightRoom",0); //assume not
+      if (!IsDataSet("Satisfied"))
+         SetData("Satisfied",0);
+      DefaultOnBeginScript();
+   }
+
+   OnContained()
+   {
+      if (message.event == kContainRemove)
+      {
+         CheckSuccess();
+         SetData("Contained",CheckContained());
+//         Debug.MPrint("Trap Drop ",CheckContained());
+      }
+      if (message.event == kContainAdd)
+      {
+         CheckSuccess();
+         SetData("Contained",CheckContained());
+//         Debug.MPrint("Trap Grab ",CheckContained());
+      }
+      DefaultOnContained();
+   }
+
+   OnObjRoomTransit()
+   {
+      string msg;
+      boolean wasin=RoomIsDest(message.FromObjId);
+      boolean amin=RoomIsDest(message.ToObjId);
+
+      if(amin!=wasin)
+      {
+         if(amin)
+         {
+            SetData("RightRoom",1);
+         }
+         else
+            SetData("RightRoom",0);
+         CheckSuccess();
+      }
+      DefaultOnObjRoomTransit();
+   }
+END_SCRIPT(TrigRoomDeposit)
+
+
+
+/* TrapCapacitor:
+	When it receives a "TurnOn", it relays it, then refuses to relay any more 
+	"TurnOn" or "TurnOff" messages for X seconds.  After X seconds pass, it 
+	relays the most recently received "TurnOn"/"TurnOff" message, if any.
+
+	X is defined by the data hanging off a ScriptParams link from the object
+	to itself, or 30.0 by default if that data does not exist.
+
+   @TODO: This should probably use the existing ScriptTiming property, not
+   the ScriptParams data.
+*/
+
+BEGIN_SCRIPT (TrapCapacitor, StdTrap)
+
+States
+{
+	Uncharged,
+	Charged
+};
+
+METHODS:
+float GetCapacitorTime ()
+{
+	float delay=30.0;
+
+   if (Link.AnyExist("ScriptParams",self,self))
+	  delay = (float)Link.GetOne("ScriptParams",self,self).GetData();
+   else if(Property.Possessed(self,"ScriptTiming"))
+	  delay = (float)Property.Get(self,"ScriptTiming");
+
+	 return delay;
+}
+
+METHOD void Activate(boolean on, object sender)
+{
+   if (StateIs((int)Charged))
+   {
+      SetData("LastMsg",on?"TurnOn":"TurnOff");
+   }
+   else if (StateIs((int)Uncharged))
+   {
+      if (on)
+      {
+         SetState(Charged);
+         Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+         SetOneShotTimer("Decharge",GetCapacitorTime());
+         SetData("LastMsg","NONE");
+      }
+      else
+      {
+         Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+      }
+   }
+}
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+		SetState(Uncharged);
+	DefaultOnSim();
+}
+
+OnTimer()
+{
+	if (message.name == "Decharge")
+	{
+		SetState(Uncharged);
+
+		if (GetData("LastMsg") != "NONE")
+		{
+			Link.BroadcastOnAllLinks(self,GetData("LastMsg"),"ControlDevice",NULL);
+		}
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (TrapCapacitor)
+
+
+/* Turrets' alertness is controlled by external sensors, such as cameras
+   or other triggers.   When a turret gets a "TurnOn," it goes to high
+   alertness and stays there.  When it gets a "TurnOff," it goes to low
+   alertness and stays _there_.
+   Turrets inherit from TrapRequirement so they can be on so long as
+   _any_ of their sensors have sent them a TurnOn without a matching
+   TurnOff.
+*/
+BEGIN_SCRIPT(TurretAlert, TrapRequirement)
+
+   // @TODO: Get awareness communicated from camera, instead of (in addition to?)
+   // alert cap. -TJS
+
+METHODS:
+
+// @TODO: Initialize turret in OFF mode to be AI asleep? -TJS
+
+   METHOD void KillSleepTimer(void)
+   {
+      if(IsDataSet("SleepTimer"))
+      {
+         timer_handle timeh=GetData("SleepTimer");
+         KillTimer(timeh);
+         ClearData("SleepTimer");
+      }
+   }
+
+   METHOD void SleepMode(boolean asleep)
+   {
+      integer mode=Property.Get(self,"AI_Mode");
+
+      if(asleep)
+         mode=kAIM_Asleep;
+      else if(mode==kAIM_Asleep)
+         mode=kAIM_Normal;
+
+      Property.Set(self,"AI_Mode",mode);
+   }
+
+   METHOD void ClampAlert(integer alert)
+   {
+      Property.Set(self,"AI_AlertCap","Min level",alert);
+      Property.Set(self,"AI_AlertCap","Max level",alert);
+   }
+
+   METHOD void Activate(boolean on, object sender)
+   {
+      SetData("On",on);
+      if(on)
+      {
+         ClampAlert(kHighAlert);
+         SleepMode(FALSE);
+         KillSleepTimer();
+         Base::Activate(on,sender);
+      }
+      else
+      {
+         Base::Activate(on,sender);
+         if(!Link.AnyExist("ScriptParams",self))
+         {
+            KillSleepTimer();
+
+            // If we sleep right away, it will freeze the creature, possibly
+            // in firing (open) joint position.  We don't want that.
+            timer_handle timeh=SetOneShotTimer(self,"Sleep",2.0);
+            SetData("SleepTimer",timeh);
+            
+            ClampAlert(kNoAlert);
+         }
+      }
+   }
+MESSAGES:
+   OnBeginScript()
+   {
+      if(!IsDataSet("On"))
+      {
+         // we've never been activated or desctivated yet.  We should be asleep.
+         SleepMode(TRUE);
+         SetData("On",FALSE);
+      }
+      DefaultOnBeginScript();
+   }
+   OnTimer()
+   {
+      if(message.name=="Sleep")
+      {
+         integer cap=Property.Get(self,"AI_AlertCap","Max level");
+         ClearData("SleepTimer");
+         if(cap==kNoAlert)
+            SleepMode(TRUE);
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(TurretAlert)
+
+
+
+/* TrapLocker locks and unlocks the object 
+   the script is on in response to "TurnOn" and "TurnOff"
+   messages, respectively.  */
+BEGIN_SCRIPT(TrapLocker, StdTrap)
+METHODS:
+METHOD void Activate(boolean on, object sender)
+{
+  Property.Set(self,"Locked",on);
+}
+END_SCRIPT(TrapLocker)
+
+//dammit, I'm going to make this available for the dromedheads out there,
+//at least.
+BEGIN_SCRIPT(AdvPickScript,RootScript)
+
+MESSAGES:
+
+   OnPickStateChange()
+   {
+      linkset splinks = Link.GetAll("ScriptParams",self);
+      while (splinks.AnyLinksLeft())
+      {
+         link cursplink = splinks.Link();
+         if ((integer)cursplink.GetData() == message.prevstate)
+         {
+            SendMessage(cursplink.To(),"TurnOff");             
+         }
+         if ((integer)cursplink.GetData() == message.currentstate)
+         {
+            SendMessage(cursplink.To(),"TurnOn");            
+         }
+         splinks.NextLink();         
+      }
+      DefaultOnPickStateChange();
+   }
+
+END_SCRIPT(AdvPickScript)
+
+
+
+
+
+

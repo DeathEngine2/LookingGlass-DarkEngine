@@ -1,0 +1,107 @@
+head	 1.5;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.5
+date	 1997.10.22.15.24.09;  author KEVIN;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 1997.06.17.10.43.25;  author KEVIN;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 1997.06.16.15.20.19;  author KEVIN;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1997.06.13.10.44.58;  author KEVIN;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1997.06.02.16.43.35;  author KEVIN;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@flags for lgd3d lib.
+@
+
+
+1.5
+log
+@Fixed major crash bug.  Tidied up spew.
+@
+text
+@%if $(COMP)==w110
+ILINK = 1
+%endif
+
+dev_d3dtest = d3dtest
+dev_lib_flav = dbg
+
+USE_D3D2_API = USE_D3D2_API
+MONO_SPEW =
+
+%if %exists(flagsloc.mh)
+%include flagsloc.mh
+%endif
+
+ALL_FLAGS = $(USE_D3D2_API) $(MONO_SPEW)
+@
+
+
+1.4
+log
+@use precomp only for w106.
+@
+text
+@d1 2
+a2 2
+%if $(COMP)==w106
+PRECOMP = 1
+d4 1
+d9 1
+d15 1
+a15 1
+ALL_FLAGS = $(USE_D3D2_API)
+@
+
+
+1.3
+log
+@Use new api by default
+@
+text
+@d1 1
+d3 1
+@
+
+
+1.2
+log
+@Added USE_D3D2_API flag.
+@
+text
+@d5 1
+a5 1
+#USE_D3D2_API = USE_D3D2_API
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d4 8
+@

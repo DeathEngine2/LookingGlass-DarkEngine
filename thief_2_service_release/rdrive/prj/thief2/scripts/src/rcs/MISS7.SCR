@@ -1,0 +1,1402 @@
+head	 1.13;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.13
+date	 2000.03.20.15.05.22;  author rsmith;  state Exp;
+branches ;
+next	 1.12;
+
+1.12
+date	 2000.03.20.01.47.41;  author rsmith;  state Exp;
+branches ;
+next	 1.11;
+
+1.11
+date	 2000.03.20.00.06.52;  author rsmith;  state Exp;
+branches ;
+next	 1.10;
+
+1.10
+date	 2000.03.05.17.58.46;  author rsmith;  state Exp;
+branches ;
+next	 1.9;
+
+1.9
+date	 2000.03.03.17.00.24;  author rsmith;  state Exp;
+branches ;
+next	 1.8;
+
+1.8
+date	 2000.02.24.17.55.56;  author rsmith;  state Exp;
+branches ;
+next	 1.7;
+
+1.7
+date	 2000.02.24.01.01.01;  author rsmith;  state Exp;
+branches ;
+next	 1.6;
+
+1.6
+date	 2000.02.23.00.38.36;  author rsmith;  state Exp;
+branches ;
+next	 1.5;
+
+1.5
+date	 2000.02.20.07.42.50;  author rsmith;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 2000.02.08.05.25.52;  author rsmith;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 2000.02.07.07.00.09;  author rsmith;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1999.10.20.16.50.12;  author rsmith;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.09.09.19.29.55;  author rsmith;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Thief 2 - Mission 7 - Bank - Mission specific script source file
+@
+
+
+1.13
+log
+@more fixes to summonableguard
+robust over save/load
+@
+text
+@
+// Script file for Thief 2 - Mission 7 - Bank
+
+
+
+// Script: LootVO
+// Plays a particular VO when G first picks up loot
+BEGIN_SCRIPT (LootVO, RootScript)
+
+MESSAGES:
+OnContainer()
+{
+	if ( (GetTime()>0.0) && (Property.Possessed(message.containee,"Loot")) )
+	{
+		Sound.PlayVoiceOver (self, "gar0703");
+	}
+	DefaultOnContainer();
+}
+
+END_SCRIPT (LootVO)
+
+
+// HackOnConvDone
+// Puts the AI on patrol and AIWatchObj links him to
+// all objects he has ScriptParams links to.
+// All upon receipt of a "ConversationDone" msg.
+BEGIN_SCRIPT (HackOnConvDone, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("ConversationDone"))
+	{
+		Property.Set(self,"AI_Patrol",TRUE);
+
+		if(Link.AnyExist("ScriptParams",self))
+		{
+			linkset SPs=Link.GetAll("ScriptParams",self);
+
+			while(SPs.AnyLinksLeft())
+			{
+				Link.Create("AIWatchObj",self,SPs.Link().To());
+				SPs.NextLink();
+			}
+		}
+	}
+	DefaultOnMessage();
+}
+
+END_SCRIPT (HackOnConvDone)
+
+
+
+
+// Script:	HackTrigSchemaDone
+// Sends a TurnOn X seconds after it gets one, where X
+// is defined by ScriptTiming property
+BEGIN_SCRIPT (HackTrigSchemaDone, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		// delay passing msg for time defined by ScriptTiming property
+		if(Property.Possessed(self,"ScriptTiming"))
+			SetOneShotTimer("TrigNow",(float)Property.Get(self,"ScriptTiming"));
+	}
+
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	if (message.name=="TrigNow")
+	{
+		Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT (HackTrigSchemaDone)
+
+
+// Script: DiffBasedKeyDst
+// get diff level, if H or X, 
+// change this lock to use new KeyDst values
+BEGIN_SCRIPT (DiffBasedKeyDst, RootScript)
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		int difficulty = Quest.Get("difficulty");
+
+		// HARD and EXPERT
+		if (difficulty >= 1)
+		{
+			Property.Set(self,"KeyDst","LockID",9);
+		}
+	DefaultOnSim();
+	}
+}
+END_SCRIPT (DiffBasedKeyDst)
+
+
+
+// Script:	TheRecording
+
+// Play SoundDescription-linked sound ambiently when object is frobbed
+// identical to script in miss9.scr
+BEGIN_SCRIPT (TheRecording, RootScript)
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("Playing",FALSE);
+	}
+	DefaultOnSim();
+}
+OnFrobInvEnd()
+{
+	if (!(boolean)GetData("Playing"))
+	{
+		if (Link.AnyExist("SoundDescription",self))
+		{
+			object schema = Link.GetOne("SoundDescription",self).To();
+			if (Sound.PlaySchemaAmbient(self,schema))
+				SetData("Playing",TRUE);
+		}
+		else
+			Debug.MPrint(" TheRecording is not SoundDescription linked to anything.");
+	}
+
+	DefaultOnFrobInvEnd();
+}
+OnSchemaDone()
+{
+	object schema;
+
+	if (Link.AnyExist("SoundDescription",self,Object.Named(message.name)))
+	{
+		SetData("Playing",FALSE);
+	}
+
+	DefaultOnSchemaDone();
+}
+
+END_SCRIPT (TheRecording)
+
+
+
+
+
+// Script: GuardSummoner
+
+// Upon receipt of a "TurnOn", sends a "ComeARunnin" msg to
+// all CD-linked AI's 
+
+BEGIN_SCRIPT (GuardSummoner, RootScript)
+
+METHODS:
+
+void SummonGuards ()
+{
+	if(Link.AnyExist("ControlDevice",self))
+	{
+		linkset Controls=Link.GetAll("ControlDevice",self);
+
+		while(Controls.AnyLinksLeft())
+		{
+			PostMessage(Controls.Link().To(), "ComeARunnin");
+			Controls.NextLink();
+		}
+	}
+	else
+		Debug.MPrint(" *** Warning: no ControlDevice link exists for object ", self, ".");
+}
+
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+	{
+		SummonGuards();
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (GuardSummoner)
+
+
+
+// Script: SummonableGuard
+
+// Upon receipt of a "ComeARunnin" msg, runs to the object
+// the msg came from.
+
+BEGIN_SCRIPT (SummonableGuard, AI)
+
+METHODS:
+// return object at end of Route link from me, or (object)0 if none
+object GetDest ()
+{
+	if (Link.AnyExist("Route",self))
+		return (object)Link.GetOne("Route",self).To();
+	else
+		return (object)0;
+}
+
+void KillAllLinks(string LinkFlavor, object From)
+{
+	if (Link.AnyExist((const char *)LinkFlavor, From))
+	{
+		linkset Links=Link.GetAll((const char *)LinkFlavor, From);
+
+		while(Links.AnyLinksLeft())
+		{
+			Link.Destroy(Links.Link());
+			Links.NextLink();
+		}
+	}
+}
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("ComeARunnin"))
+	{
+		SetOneShotTimer("Delay",1.5);
+		// store destination object by pointing a Route link to it
+		Link.Create("Route",self,message.from);
+	}
+
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	if (message.name == "Delay")
+	{
+		if (GetDest() !=(object)0)
+		{
+//			Debug.MPrint(self," going to ",GetDest());
+			Property.Set (self, "AI_AlertCap", "Min level", 3);
+			GotoObjLoc(GetDest(), kFast); 
+		}
+	}
+	else if (message.name == "Declamp")
+	{
+//		Debug.MPrint(self," declamping.");
+		Property.Set (self, "AI_AlertCap", "Min level", 0);
+	}
+	DefaultOnTimer();
+}
+
+OnObjActResult()
+{
+	object dest = GetDest();
+
+	if ( (dest !=(object)0) && (SuccessfulGoto((object)dest)) )
+	{
+//		Debug.MPrint(self," successfully got to ",dest);
+		// check to see if this is a waypoint or the final destination
+		if (Link.AnyExist("Route",dest))
+		{
+			// waypoint
+			// store my new destination by killing all old route links 
+			// from me and setting a new one
+			object new_dest = Link.GetOne("Route",dest).To();
+			KillAllLinks("Route",self);
+			Link.Create("Route",self,new_dest);
+			GotoObjLoc(new_dest, kFast); 
+//			Debug.MPrint(self," going to  ",new_dest);
+		}
+		else
+		{
+			// final destination
+			KillAllLinks("Route",self);
+			SetOneShotTimer("Declamp",8.0);
+		}
+	}
+	else
+	{
+		// either I didn't get to my dest because something higher priority
+		// came up, or my data is scrambled somehow.  either way, i need to declamp
+//		Debug.MPrint(self,"'s, goto was not successful.  dest = ",dest);
+		KillAllLinks("Route",self);
+		SetOneShotTimer("Declamp",8.0);
+	}
+
+	DefaultOnObjActResult();
+}
+
+END_SCRIPT (SummonableGuard)
+
+
+// Script:  LobbyCamera
+
+// Lobby camera sends a "TurnOn" when slain, and a "TurnOff" 60 seconds later.
+// @@TODO:	This timer is a little kooky (the alarm will shut off even if the other 
+//				cameras can still see the player, but it will do for now).
+BEGIN_SCRIPT (LobbyCamera, RootScript)
+
+MESSAGES:
+OnSlain()
+{
+	Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+	SetOneShotTimer("Deactivate",60.0); 
+//	DefaultOnSlain();
+}
+OnTimer()
+{
+	if (message.name == "Deactivate")
+		Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+	DefaultOnTimer();
+}
+END_SCRIPT(LobbyCamera)
+
+
+
+// Script: DoorTranslator
+
+// Meta trap that converts 
+//		TurnOn to TrapLock
+//		TurnOff to TrapUnlock
+
+// These are interpreted by TrapDoorLock
+
+// purpose - use standard TripTrap functionality to 
+// make doors lock without having to make an new type
+// of StdDoor that doesn't interpret TurnOn/Off
+
+BEGIN_SCRIPT (DoorTranslator, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("TurnOn"))
+		Link.BroadcastOnAllLinks(self,"TrapLock","ControlDevice",NULL);
+	else if (MessageIs("TurnOff"))
+		Link.BroadcastOnAllLinks(self,"TrapUnlock","ControlDevice",NULL);
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (DoorTranslator)
+
+
+
+
+// TrapDoorLock
+
+//		TrapLock - lock self
+//		TrapUnlock - unlock self
+
+// These are sent by DoorTranslator
+
+// purpose - use standard TripTrap functionality to 
+// make doors lock without having to make an new type
+// of StdDoor that doesn't interpret TurnOn/Off
+
+BEGIN_SCRIPT (TrapDoorLock, RootScript)
+
+MESSAGES:
+OnMessage()
+{
+	if (MessageIs("TrapLock"))
+		Property.Set(self,"Locked",TRUE);
+	else if (MessageIs("TrapUnlock"))
+		Property.Set(self,"Locked",FALSE);
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (TrapDoorLock)
+
+
+
+// Script: NaggingLever
+
+// Lever that periodically sends a TurnOn/TurnOff msg correpsonding
+// to its state.
+// The period is 10 seconds unless the player is within 50 feet, in which case the
+// period is 0.1 seconds.  DistToPlayer is calculated every 10 seconds.
+
+// purpose - since the knobs at the time lock in bank control each other
+// and control RequireAll traps, the knobs need to inform the RequireAll traps
+// every time any knob changes state,  the easiest way to do this was to have
+// them inform the traps all the time.
+
+BEGIN_SCRIPT (NaggingLever, RootScript)
+
+METHODS:
+
+float GetInterval()
+{
+	return (float)GetData("Interval");
+}
+
+// @@NOTE: bad multiplayer assumption
+real GetDistToPlayer()
+{
+	vector p1=Object.Position(self);
+	vector p2=Object.Position(Object.Named("Player"));
+	return (real) (p1-p2).Magnitude();
+}
+
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("Interval",10.0);
+		SetOneShotTimer("Ping",GetInterval());
+		SetOneShotTimer("ComputeDistance",0.1);
+	}
+	DefaultOnSim();
+}
+
+OnTimer()
+{
+	if (message.name == "Ping")
+	{
+		
+		if (Property.Get(self,"StTweqJoints","AnimS")==0x02)
+		{
+			Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+		}
+		else if (Property.Get(self,"StTweqJoints","AnimS")==0x00)
+		{
+			Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+		}
+		else
+		{
+			// it must be currently moving, don't broadcast anything
+		}
+
+		SetOneShotTimer("Ping",GetInterval());
+	}
+
+	if (message.name == "ComputeDistance")
+	{
+		if (GetDistToPlayer() < 50.0)
+		{
+			SetData("Interval",0.1);
+		}
+		else
+		{
+			SetData("Interval",10.0);
+		}
+
+		SetOneShotTimer("ComputeDistance",10.0);
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (NaggingLever)
+
+
+
+// Script: IveBeenFrobbed
+
+// This is a special-purpose script.  Every time the object
+// is frobbed, it sends a "IveBeenFrobbed" msg, iterpreted by
+// FrobTracker, below.
+// we can't use TurnOns because these objects have NaggingLever, so
+// they send TurnOns all the time
+// purpose: let the player win the puzzle if they frob the knobs enough
+// times, whether or not the puzzle is really solved
+// to avoid frustration
+
+BEGIN_SCRIPT (IveBeenFrobbed, RootScript)
+MESSAGES:
+OnFrobWorldEnd()
+{
+	Link.BroadcastOnAllLinks(self,"IveBeenFrobbed","ControlDevice",NULL);
+	DefaultOnFrobWorldEnd();
+}
+
+END_SCRIPT (IveBeenFrobbed)
+
+
+// Script: FrobTracker
+
+// This is a special-purpose script.  
+// if it receives a magic number (currently 60) of "IveBeenFrobbed"
+// msgs, it broadcasts TurnOns.
+// This is also the script with the easter egg whereby the time lock
+// opens automatically after the level has been played for 8 hours.
+BEGIN_SCRIPT (FrobTracker, RootScript)
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("TimesFrobbed",0);
+		SetOneShotTimer("OpenSesame",28800.0);
+	}
+	DefaultOnSim();
+}
+
+OnMessage()
+{
+	if (MessageIs("IveBeenFrobbed"))
+	{
+		SetData("TimesFrobbed",(int)GetData("TimesFrobbed")+1);
+		if ((int)GetData("TimesFrobbed") == 60)
+			Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+	}
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	if (message.name == "OpenSesame")
+	{
+		Debug.MPrint(" Open Sesame!");
+		Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT (FrobTracker)
+
+
+
+
+// Script: SmoothRelay
+
+// Only sends TurnOn's, never TurnOff's.
+// Doesn't receive a TurnOn as soon as it receives one.
+// Sends TurnOn's iff it doesn't receive a TurnOff
+// in some specified interval after it receives a TurnOn.
+// purpose:  the RequireAll traps associated with the 
+// NaggingLever script, above, oftens sends TurnOns while
+// levers are moving and then sends a TurnOff when it comes
+// to rest less than a second later.
+
+BEGIN_SCRIPT (SmoothRelay, RootScript)
+
+METHODS:
+
+float GetInterval()
+{
+	return 0.25;
+}
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+		SetData("State","Normal");
+	DefaultOnSim();
+}
+
+OnMessage()
+{
+	// if we get a TurnOn when we're smoothing data, ignore it because we're
+	// just listening for TurnOffs
+	if ( (MessageIs("TurnOn")) && (GetData("State")=="Normal") )
+	{
+//		Debug.MPrint(" Smoothing Data...");
+		SetData("State","SmoothingData");
+		SetOneShotTimer("SmoothOver",GetInterval());
+	}
+	else if ((MessageIs("TurnOff")))
+	{
+//		Debug.MPrint(" ****** REVERTING TO NORMAL.");
+		SetData("State","Normal");
+	}
+
+	DefaultOnMessage();
+}
+
+OnTimer()
+{
+	if (message.name == "SmoothOver")
+	{
+		// as long as we're still smoothing data and haven't reverted to normal
+		if (GetData("State")=="SmoothingData")
+		{
+//			Debug.MPrint(" SENDING TURNON.");
+			Link.BroadcastOnAllLinks(self,"TurnOn","ControlDevice",NULL);
+		}
+	}
+	DefaultOnTimer();
+}
+
+END_SCRIPT (SmoothRelay)
+
+
+
+//  @@ TODO:	I have 4 scripts which kill different (conceptual) classes of AIs based 
+//				on diff levels and quest vars.  Really there should be a base of such scripts
+//				and other scripts which inherit from it, overriding relevant methods.
+
+
+// Script:		CameraKiller
+
+// Runs through outgoing ControlDevice links (presumed to be
+// connected to cameras) and destroys at random.  It destroys an
+// amount of the cameras, based on quest vars that are read according
+// to diff:
+//  Normal	cam_kill_n
+//  Hard		cam_kill_h
+//  Expert	cam_kill_x
+
+// also cleans up after the camera by destroying ~CD-linked switches
+// and CD-linked turrets (it leaves any CD-linked lights or doors)
+
+BEGIN_SCRIPT (CameraKiller, RootScript)
+
+METHODS:
+
+// the primary method, called on sim start
+void KillCameras ()
+{
+	int rand_max,i,j,current_victim;
+
+	int num_victims = GetNumVictims();
+
+	for (i=0; i<num_victims; i++)
+	{
+		rand_max = CountLinks(Link.GetAll("ControlDevice",self));
+		current_victim = Data.RandInt(1,rand_max);
+
+		linkset Victims = Link.GetAll("ControlDevice",self);
+		for (j=0; j< (current_victim-1) ; j++)
+			Victims.NextLink();
+
+		CleanUp(Victims.Link().To());
+		Object.Destroy(Victims.Link().To());
+	}  // num_victims for loop
+}
+
+
+// destroys ~CD-linked switches
+// and CD-linked turrets.
+// any anything ScriptParams links (assumed to be wires and other
+// set dressing associated with the camera).
+// call before destroying camera 
+void CleanUp (object camera)
+{
+	linkset CDs = Link.GetAll("ControlDevice",camera);
+	while(CDs.AnyLinksLeft())
+	{
+		if (Object.InheritsFrom (CDs.Link().To(),Object.Named("Turret")))
+		{
+			Object.Destroy(CDs.Link().To());
+		}
+		CDs.NextLink();
+	}
+
+	linkset tCDs = Link.GetAll("~ControlDevice",camera);
+	while(tCDs.AnyLinksLeft())
+	{
+		if (Object.InheritsFrom (tCDs.Link().To(),Object.Named("Switches")))
+		{
+			Object.Destroy(tCDs.Link().To());
+		}
+		tCDs.NextLink();
+	}
+
+	linkset SPs = Link.GetAll("ScriptParams",camera);
+	while(SPs.AnyLinksLeft())
+	{
+		Object.Destroy(SPs.Link().To());
+		SPs.NextLink();
+	}
+
+}
+
+// returns a value based on mission quest vars,
+// reads the appropriate one per diff
+int GetNumVictims()
+{
+	int num;
+
+	int difficulty = Quest.Get("difficulty");
+
+	// EXPERT
+	if (difficulty == 2)
+	{
+		num = Quest.Get("cam_kill_x");
+	}
+	// HARD
+	else if (difficulty == 1)
+	{
+		num = Quest.Get("cam_kill_h");
+	}
+	// NORMAL
+	else // if (difficulty == 0)  - best to return something
+	{
+		num = Quest.Get("cam_kill_n");
+	}
+
+	Debug.MPrint(" Killing ",num," cameras.");
+	return num;
+}
+
+// returns # links in passed-in linkset
+int CountLinks(linkset tocount)
+{
+	int N=0;
+	while(tocount.AnyLinksLeft())
+	{
+		N++;
+		tocount.NextLink();
+	}
+	return N;
+}
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+		KillCameras();
+	DefaultOnSim();
+}
+
+END_SCRIPT (CameraKiller)
+
+
+
+// Script:		AIKillerWork
+
+//  Same as CameraKiller, above, but kills WorkerBots and uses these quest vars:
+//  Normal	work_kill_n
+//  Hard		work_kill_h
+//  Expert	work_kill_x
+
+// Cleans up after the AI by destroying Contains linked stuff
+
+BEGIN_SCRIPT (AIKillerWork, RootScript)
+
+METHODS:
+
+// the primary method, called on sim start
+void KillAIs ()
+{
+	int rand_max,i,j,current_victim;
+
+	int num_victims = GetNumVictims();
+
+	for (i=0; i<num_victims; i++)
+	{
+		rand_max = CountLinks(Link.GetAll("ControlDevice",self));
+		current_victim = Data.RandInt(1,rand_max);
+
+		linkset Victims = Link.GetAll("ControlDevice",self);
+		for (j=0; j< (current_victim-1) ; j++)
+			Victims.NextLink();
+
+		CleanUp(Victims.Link().To());
+		Object.Destroy(Victims.Link().To());
+	}  // num_victims for loop
+}
+
+
+// destroys Contains-linked objects
+// call before destroying AI
+void CleanUp (object target)
+{
+	linkset Conts = Link.GetAll("Contains",target);
+	while(Conts.AnyLinksLeft())
+	{
+		Object.Destroy(Conts.Link().To());
+		Conts.NextLink();
+	}
+}
+
+// returns a value based on mission quest vars,
+// reads the appropriate one per diff
+int GetNumVictims()
+{
+	int num;
+
+	int difficulty = Quest.Get("difficulty");
+
+	// EXPERT
+	if (difficulty == 2)
+	{
+		num = Quest.Get("work_kill_x");
+	}
+	// HARD
+	else if (difficulty == 1)
+	{
+		num = Quest.Get("work_kill_h");
+	}
+	// NORMAL
+	else // if (difficulty == 0)  - best to return something
+	{
+		num = Quest.Get("work_kill_n");
+	}
+
+	Debug.MPrint(" Killing ",num," workerbots.");
+	return num;
+}
+
+// returns # links in passed-in linkset
+int CountLinks(linkset tocount)
+{
+	int N=0;
+	while(tocount.AnyLinksLeft())
+	{
+		N++;
+		tocount.NextLink();
+	}
+	return N;
+}
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+		KillAIs();
+	DefaultOnSim();
+}
+
+END_SCRIPT (AIKillerWork)
+
+
+// Script:		AIKillerLong
+
+//  Same as CameraKiller, above, but kills "long range patrollers" and uses these quest vars:
+//  Normal	long_kill_n
+//  Hard		long_kill_h
+//  Expert	long_kill_x
+
+// Cleans up after the AI by destroying Contains linked stuff
+
+BEGIN_SCRIPT (AIKillerLong, RootScript)
+
+METHODS:
+
+// the primary method, called on sim start
+void KillAIs ()
+{
+	int rand_max,i,j,current_victim;
+
+	int num_victims = GetNumVictims();
+
+	for (i=0; i<num_victims; i++)
+	{
+		rand_max = CountLinks(Link.GetAll("ControlDevice",self));
+		current_victim = Data.RandInt(1,rand_max);
+
+		linkset Victims = Link.GetAll("ControlDevice",self);
+		for (j=0; j< (current_victim-1) ; j++)
+			Victims.NextLink();
+
+		CleanUp(Victims.Link().To());
+		Object.Destroy(Victims.Link().To());
+	}  // num_victims for loop
+}
+
+
+// destroys Contains-linked objects
+// call before destroying AI
+void CleanUp (object target)
+{
+	linkset Conts = Link.GetAll("Contains",target);
+	while(Conts.AnyLinksLeft())
+	{
+		Object.Destroy(Conts.Link().To());
+		Conts.NextLink();
+	}
+}
+
+// returns a value based on mission quest vars,
+// reads the appropriate one per diff
+int GetNumVictims()
+{
+	int num;
+
+	int difficulty = Quest.Get("difficulty");
+
+	// EXPERT
+	if (difficulty == 2)
+	{
+		num = Quest.Get("long_kill_x");
+	}
+	// HARD
+	else if (difficulty == 1)
+	{
+		num = Quest.Get("long_kill_h");
+	}
+	// NORMAL
+	else // if (difficulty == 0)  - best to return something
+	{
+		num = Quest.Get("long_kill_n");
+	}
+
+	Debug.MPrint(" Killing ",num," long range patrollers.");
+	return num;
+}
+
+// returns # links in passed-in linkset
+int CountLinks(linkset tocount)
+{
+	int N=0;
+	while(tocount.AnyLinksLeft())
+	{
+		N++;
+		tocount.NextLink();
+	}
+	return N;
+}
+
+MESSAGES:
+OnSim()
+{
+	if (message.starting)
+		KillAIs();
+	DefaultOnSim();
+}
+
+END_SCRIPT (AIKillerLong)
+
+
+
+// Script:		AIKillerHX
+
+//  Same as CameraKiller, above, but kills "hard-expert-only patrollers" and uses these quest vars:
+//  Normal	N/A (they are all diff destroyed)
+//  Hard		hx_kill_h
+//  Expert	hx_kill_x
+
+// Cleans up after the AI by destroying Contains linked stuff
+
+BEGIN_SCRIPT (AIKillerHX, RootScript)
+
+METHODS:
+
+// the primary method, called on sim start
+void KillAIs ()
+{
+	int rand_max,i,j,current_victim;
+
+	int num_victims = GetNumVictims();
+
+	for (i=0; i<num_victims; i++)
+	{
+		rand_max = CountLinks(Link.GetAll("ControlDevice",self));
+		current_victim = Data.RandInt(1,rand_max);
+
+		linkset Victims = Link.GetAll("ControlDevice",self);
+		for (j=0; j< (current_victim-1) ; j++)
+			Victims.NextLink();
+
+		CleanUp(Victims.Link().To());
+		Object.Destroy(Victims.Link().To());
+	}  // num_victims for loop
+}
+
+
+// destroys Contains-linked objects
+// call before destroying AI
+void CleanUp (object target)
+{
+	linkset Conts = Link.GetAll("Contains",target);
+	while(Conts.AnyLinksLeft())
+	{
+		Object.Destroy(Conts.Link().To());
+		Conts.NextLink();
+	}
+}
+
+// returns a value based on mission quest vars,
+// reads the appropriate one per diff
+int GetNumVictims()
+{
+	int num;
+
+	int difficulty = Quest.Get("difficulty");
+
+	// EXPERT
+	if (difficulty == 2)
+	{
+		num = Quest.Get("hx_kill_x");
+	}
+	// HARD
+	else // if (difficulty == 1) - best to return something
+	{
+		num = Quest.Get("hx_kill_h");
+	}
+
+	Debug.MPrint(" Killing ",num," H-X  patrollers.");
+	return num;
+}
+
+// returns # links in passed-in linkset
+int CountLinks(linkset tocount)
+{
+	int N=0;
+	while(tocount.AnyLinksLeft())
+	{
+		N++;
+		tocount.NextLink();
+	}
+	return N;
+}
+
+MESSAGES:
+OnSim()
+{
+	// don't do this on normal
+	if ( (message.starting) && (Quest.Get("difficulty")!=0) )
+	{
+		KillAIs();
+	}
+	DefaultOnSim();
+}
+
+END_SCRIPT (AIKillerHX)
+@
+
+
+1.12
+log
+@fixes to summonableguard
+@
+text
+@d205 24
+a229 1
+
+d235 2
+a236 1
+		SetData("Dest",message.from);
+d246 1
+a246 1
+		if ((object)GetData("Dest")!=(object)0)
+d248 1
+d250 1
+a250 1
+			GotoObjLoc((object)GetData("Dest"), kFast); 
+d255 1
+d263 1
+a263 1
+	object dest = (object)GetData("Dest");
+d265 1
+a265 1
+	if (dest !=(object)0)
+d267 3
+a269 1
+		if (SuccessfulGoto((object)dest))
+d271 8
+a278 9
+			if (Link.AnyExist("Route",dest))
+			{
+				SetData("Dest",Link.GetOne("Route",dest).To());
+				GotoObjLoc((object)GetData("Dest"), kFast); 
+			}
+			else
+			{
+				SetOneShotTimer("Declamp",8.0);
+			}
+d280 6
+d287 8
+a297 1
+
+@
+
+
+1.11
+log
+@made SummonableGuard follow Route links if any exist,
+when they get to their locations
+@
+text
+@d224 2
+a225 2
+			Debug.MPrint(self," going to ",(object)GetData("Dest"));
+			GotoObjLoc((object)GetData("Dest"), kFast, kHighPriorityAction);
+d228 4
+d246 5
+a250 2
+				Debug.MPrint(self," got to ",dest,". Now I'm going to ",(object)GetData("Dest"));
+				GotoObjLoc((object)GetData("Dest"), kFast, kHighPriorityAction);
+@
+
+
+1.10
+log
+@fixed SummonableGuard delay so that it doesn't pass
+incorrect data to GotoObjLoc
+@
+text
+@d111 1
+d224 2
+a225 1
+			GotoObjLoc((object)GetData("Dest"), kFast);
+d230 21
+@
+
+
+1.9
+log
+@Added "TheRecording" which basically just plays an ambient schema on \
+InvFrob
+Made a fix to DoorTranslator that was begat of cut-and-paste carelessness
+Made SummonableGuard pause for 1.5 secs between receipt of the 
+instruction to "ComeARunnin" and the actual AI command to pathfind.
+@
+text
+@d211 1
+d221 4
+a224 2
+		Debug.MPrint(self," pathfinding now.");
+		GotoObjLoc(message.from, kFast);
+@
+
+
+1.8
+log
+@added HackOnConvDone or something like that
+removed some annoying debug.mprints
+@
+text
+@d108 47
+d210 1
+a210 1
+		GotoObjLoc(message.from, kFast);
+d216 10
+d273 1
+a273 1
+		Link.BroadcastOnAllLinks(self,"Close","ControlDevice",NULL);
+@
+
+
+1.7
+log
+@added: LootVO, HackTrigSchemaDone, DiffBasedKeyDst
+changed CameraKiller so it kills things on the ScriptParams
+links of victim cameras
+@
+text
+@d23 5
+d29 26
+a524 1
+		Debug.MPrint(" End of CD link: ",CDs.Link().To());
+a534 1
+		Debug.MPrint(" End of ~CD link: ",tCDs.Link().To());
+@
+
+
+1.6
+log
+@removed LeverNoSETranslator, since the correct scripts
+and data are being used now instead of the stuff i was
+trying to use before
+added simple scripts to support the time lock puzzle:
+ - NaggingLever
+ - IveBeenFrobbed
+ - FrobTracker
+ - SmoothRelay
+ time lock puzzle seems to work now
+@
+text
+@d5 72
+d383 1
+a383 1
+// to rest a second later.
+d486 2
+d494 1
+d505 1
+d512 8
+@
+
+
+1.5
+log
+@added:
+  LobbyCamera
+  LeverNoSETranslator
+  AIKillerWork
+  AIKillerLong
+  AIKillerHX
+@
+text
+@d151 1
+a151 1
+// Script: LeverNoSETranslator
+d153 4
+a156 2
+// Meta trap that converts 
+//		"ToggleNoSE" to TurnOn-or-TurnOff depending on state of device the msg is from.
+d158 4
+a161 1
+// These are interpreted by TrapDoorLock
+d163 1
+a163 2
+// purpose - use standard TripTrap functionality to 
+// have the TimeLock knobs be controlled by a RequireAllTrap.
+d165 1
+a165 1
+BEGIN_SCRIPT (LeverNoSETranslator, RootScript)
+d167 14
+d182 1
+a182 1
+OnMessage()
+d184 1
+a184 1
+	if (MessageIs("ToggleNoSE"))
+d186 14
+a199 2
+		// 2 = reverse (just turned on), 0 = normal (just turned off)
+		if (Property.Get(message.from,"StTweqJoints","AnimS")==0x02)
+d201 5
+d207 5
+a211 1
+			Link.BroadcastOnAllLinks(self,"TurnOff","ControlDevice",NULL);
+d214 70
+d287 79
+a365 1
+END_SCRIPT (LeverNoSETranslator)
+@
+
+
+1.4
+log
+@added CameraKiller, which randomly destroys
+cameras and their related objects on sim start.
+it destroys N of the total available set (determined
+in data by links), where N is based on diff level
+@
+text
+@d69 1
+d71 4
+a74 1
+// Script: TattleTale
+d76 14
+a89 1
+// DoorTranslator
+d91 4
+d122 1
+d151 35
+d300 294
+@
+
+
+1.3
+log
+@added "DoorTranslator" and "TrapDoorLocker"
+which together allow StdDoors to be locked and unlocked
+w/ the trigtrap system
+@
+text
+@a71 40
+// Upon alert level 3, run to the ControlDevice linked object.
+// since the desired behavior upon arrival is finicky, this script
+// now also signals the basement combatbots, therefore it is specific
+// to workerbots in the basement
+
+BEGIN_SCRIPT (TattleTale, AI)
+
+METHODS:
+object GetDest()
+{
+	return (object)Link.GetOne("ControlDevice",self).To();
+}
+
+MESSAGES:
+
+OnAlertness()
+{
+	if (message.level == kHighAlert)
+	{
+		GotoObjLoc(GetDest(),kFast,kHighPriorityAction);		
+	}
+
+	DefaultOnAlertness();
+}
+
+OnObjActResult()
+{
+	if (SuccessfulGoto(GetDest()))
+	{
+		AI.Signal(Object.Named("BaseGuardBot1"),"WakeUp");
+		AI.Signal(Object.Named("BaseGuardBot2"),"WakeUp");
+	}
+
+	DefaultOnObjActResult();
+}
+
+
+END_SCRIPT (TattleTale)
+
+
+d127 116
+@
+
+
+1.2
+log
+@added TattleTale script for basement worker bot behavior
+@
+text
+@d111 56
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d68 43
+@

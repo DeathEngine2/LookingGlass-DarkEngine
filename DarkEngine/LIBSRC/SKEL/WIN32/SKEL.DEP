@@ -1,0 +1,20 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+skel.obj: _skel.h comtools.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h g2.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+	 matrixs.h md.h mds.h memall.h memmacro.h mprintf.h mxang.h \
+	 prikind.h r3d.h r3ds.h res.h restypes.h skel.h types.h
+
+sklist.obj: comtools.h datapath.h dbg.h dbgmacro.h dev2d.h fix.h g2.h \
+	 grspoint.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrix.h \
+	 matrixs.h md.h mds.h memall.h memmacro.h mprintf.h mxang.h \
+	 prikind.h r3d.h r3ds.h res.h restypes.h skel.h types.h
+
+skdraw.obj: 2d.h dev2d.h fix.h font.h g2.h grspoint.h matrix.h matrixs.h \
+	 mprintf.h mxang.h r3d.h r3ds.h types.h
+
+render.obj: 2d.h 2dres.h _skel.h comtools.h datapath.h dbg.h dbgmacro.h \
+	 dev2d.h fdesc.h fix.h font.h g2.h grspoint.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h md.h mds.h \
+	 mdutil.h memall.h memmacro.h mprintf.h mxang.h prikind.h r3d.h \
+	 r3ds.h rect.h res.h restypes.h skel.h tmpalloc.h types.h

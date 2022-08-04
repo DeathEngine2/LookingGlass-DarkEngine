@@ -1,0 +1,44 @@
+DIBFILE.H://  void SetColorTable( LPBITMAPINFO pBmi );
+DIBFILE.H:    void SetColorTable( CGameDIB* pDIB );
+GADSCALE.H:#define LGadScaleLitColor(b)    (((LGadScale*)b)->lit_color        )
+GADSCALE.H:#define LGadScaleDimColor(b)    (((LGadScale*)b)->dim_color        )
+GADSCALE.H:#define LGadScaleSetLitColor(b,v)    (((LGadScale*)b)->lit_color       = (v))
+GADSCALE.H:#define LGadScaleSetDimColor(b,v)    (((LGadScale*)b)->dim_color       = (v))
+GUISTYLE.H:typedef enum _StyleColorKind
+GUISTYLE.H:   StyleColorFG,                // foreground 
+GUISTYLE.H:   StyleColorBG,                // background,
+GUISTYLE.H:   StyleColorText,              // text color
+GUISTYLE.H:   StyleColorHilite,            // hilight color
+GUISTYLE.H:   StyleColorBright,            // bright color
+GUISTYLE.H:   StyleColorDim,               // dim color
+GUISTYLE.H:   StyleColorFG2,               // alternate foreground 
+GUISTYLE.H:   StyleColorBG2,               // alternate background
+GUISTYLE.H:   StyleColorBorder,            // border color
+GUISTYLE.H:   StyleColorWhite,             // white color
+GUISTYLE.H:   StyleColorBlack,             // black color
+GUISTYLE.H:   StyleColorXOR,               // color for xor-ing
+GUISTYLE.H:   StyleColorBevelLight,        // light bevel color
+GUISTYLE.H:   StyleColorBevelDark,         // dark bevel color
+GUISTYLE.H:   StyleNumColors
+GUISTYLE.H:} StyleColorKind;
+GUISTYLE.H:typedef ulong StyleColor;
+GUISTYLE.H:   StyleColor   colors[StyleNumColors];
+GUISTYLE.H:EXTERN StyleColor guiStyleGetColor(guiStyle* style, StyleColorKind kind);
+MOVIE.H:	uchar *pColorSet;		// ptr to color set table (4x4 codec)
+MOVIE.H:	long lenColorSet;		// length of color set table
+PALMNCH.H:void PlmSetFillColor( int r, int g, int b );
+PALMNCH.H:void PlmSetNColors( int n );
+PALMNCH.H:errtype PlmAddPostColor( int r, int g, int b, int slot );
+PALMNCH.H:errtype PlmAddFixColor( int r, int g, int b, int slot );
+PALMNCH.H:ulong PlmNumColorsRead( void );
+QUIKTIME.H:	ushort opColor[3];
+TNG.H:	uchar backColor;		// background color (if bitmapRef == backColor == 0,
+TNG.H:	uchar textColor;		// text color
+TNG.H:	uchar altBackColor;	// alternate background color for some gadgets
+TNG.H:	uchar altTextColor;	// alternate text color for some gadgets
+TNG.H:	uchar bordColor[4];	// if TNG_BEVEL, u.l. & l.r. bevel colors
+VESA.H:   char  DirectColorModeInfo;    /* Direct color mode attributes     */
+WAPPAPI.H:    STDMETHOD_(void, SetDialogBkColor)(THIS_ COLORREF clrCtlBk /* = RGB(192, 192, 192)*/,
+WAPPAPI.H:#define IWinApp_SetDialogBkColor(p, a, b)   COMCall2(p, SetDialogBkColor, a, b)
+util2d.h:extern int UtilSetColor(short r, short g, short b);
+util2d.h:extern long UtilMakeColor(short r, short g, short b);

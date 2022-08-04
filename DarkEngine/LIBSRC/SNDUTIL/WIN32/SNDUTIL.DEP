@@ -1,0 +1,53 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+streamer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h imaadpcm.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 streamer.h timelog.h timer.h types.h
+
+rstremer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 streamer.h timelog.h timer.h types.h
+
+fstremer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 streamer.h timelog.h timer.h types.h
+
+mstremer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 streamer.h timelog.h timer.h types.h
+
+splicer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 splicer.h timelog.h timer.h types.h
+
+rsplicer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 splicer.h timelog.h timer.h types.h
+
+fsplicer.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h prikind.h res.h restypes.h sndfmt.h sndutil.h \
+	 splicer.h timelog.h timer.h types.h
+
+imaadpcm.obj: imaadpcm.h
+
+oneshot.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h oneshot.h prikind.h res.h restypes.h sndfmt.h \
+	 sndutil.h timelog.h timer.h types.h
+
+roneshot.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h oneshot.h prikind.h res.h restypes.h sndfmt.h \
+	 sndutil.h timelog.h timer.h types.h
+
+foneshot.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsndid.h lgsound.h memall.h \
+	 memmacro.h mprintf.h oneshot.h prikind.h res.h restypes.h sndfmt.h \
+	 sndutil.h timelog.h timer.h types.h

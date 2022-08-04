@@ -1,0 +1,9 @@
+dependencies on the 2D:
+
+view.c:      gets aspect ratio from grd_cap->aspect
+ctxtguts.c:  sets the 2d canvas with gr_set_canvas
+primfunc.c:  uses internal indices into grd_canvas_table
+             references grd_canvas_table
+             references gr_null and gr_silent_null
+             (we copied grnull.h into the r3d tree to get them)
+primmisc.c:  calls the 2d line drawer and gr_set_fcolor

@@ -1,0 +1,2 @@
+x:\prj\tech\libsrc\actmovie\actmovie.cpp(648): Warning! W014: (col 5) no reference to symbol 'msg' 
+x:\prj\tech\libsrc\actmovie\actmovie.cpp(648): Note! N392: (col 5) 'tagMSG msg' in 'int stdcall cActiveMoviePlayer1::Play( int )' defined in: x:\prj\tech\libsrc\actmovie\actmovie.cpp(535) (col 13) 

@@ -1,0 +1,6 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+templ1.obj: comtools.h dbg.h dbgmacro.h dlist.h dlisttem.h hashfns.h \
+	 hashfunc.h hashset.h hshstimp.h hshsttem.h interset.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h objcguid.h \
+	 objcoll.h pool.h str.h templexp.h types.h

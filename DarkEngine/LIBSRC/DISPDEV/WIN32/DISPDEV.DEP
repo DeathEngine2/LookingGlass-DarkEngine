@@ -1,0 +1,64 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+dispbase.obj: aggmemb.h comtools.h constrid.h dbg.h dbgmacro.h dev2d.h \
+	 dispapi.h dispbase.h dispguid.h fix.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h objcguid.h \
+	 objcoll.h prikind.h types.h
+
+cbchain.obj: cbchain.h lgassert.h lglog.h
+
+wdisp.obj: aggmemb.h appagg.h cbchain.h comtools.h constrid.h dbg.h \
+	 dbgmacro.h dev2d.h dispapi.h dispbase.h dispguid.h fix.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h \
+	 mxang.h objcguid.h objcoll.h prikind.h pumpenum.h rect.h relocptr.h \
+	 thrdtool.h types.h wappapi.h wappguid.h wdcreate.h wdisp.h \
+	 wdispapi.h wdispcb.h wdspguid.h wdspmode.h wdspprov.h
+
+wdspprov.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dev2d.h dispapi.h dispbase.h dispguid.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 objcguid.h objcoll.h prikind.h pumpenum.h relocptr.h thrdtool.h \
+	 types.h wappapi.h wappguid.h wdisp.h wdispapi.h wdspguid.h \
+	 wdspprov.h
+
+wdspmode.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dev2d.h dispapi.h dispbase.h dispguid.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 objcguid.h objcoll.h prikind.h pumpenum.h relocptr.h thrdtool.h \
+	 types.h wappapi.h wappguid.h wdisp.h wdispapi.h wdspguid.h \
+	 wdspmode.h
+
+wdispdd.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dddynf.h ddraw.h dev2d.h dispapi.h dispbase.h dispguid.h dynfunc.h \
+	 fix.h gshelapi.h gshlguid.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h matrixs.h memall.h memmacro.h mprintf.h mxang.h objcguid.h \
+	 objcoll.h prikind.h pumpenum.h relocptr.h thrdtool.h types.h \
+	 wdcreate.h wddmode.h wdisp.h wdispapi.h wdispdd.h wdisptls.h \
+	 wdspgshl.h wdspguid.h wdspmode.h wdspprov.h
+
+wddmode.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 ddraw.h dev2d.h dispapi.h dispbase.h dispguid.h fix.h gshelapi.h \
+	 gshlguid.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h matrixs.h \
+	 memall.h memmacro.h mprintf.h mxang.h objcguid.h objcoll.h \
+	 prikind.h pumpenum.h relocptr.h thrdtool.h types.h wdcreate.h \
+	 wddmode.h wdisp.h wdispapi.h wdispdd.h wdspguid.h wdspmode.h \
+	 wdspprov.h
+
+wdispgdi.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dev2d.h dispapi.h dispbase.h dispguid.h fix.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h \
+	 objcguid.h objcoll.h prikind.h relocptr.h thrdtool.h types.h \
+	 wdisp.h wdispapi.h wdispgdi.h wdisptls.h wdspgshl.h wdspguid.h \
+	 wdspmode.h wdspprov.h
+
+wdcreate.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dbmem.h dddynf.h ddraw.h dev2d.h dispapi.h dispbase.h dispguid.h \
+	 dynfunc.h fix.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 matrixs.h memall.h memmacro.h mprintf.h mxang.h objcguid.h \
+	 objcoll.h prikind.h pumpenum.h relocptr.h thrdtool.h types.h \
+	 wappapi.h wappguid.h wdisp.h wdispapi.h wdispdd.h wdispgdi.h \
+	 wdspguid.h wdspmode.h wdspprov.h
+
+wdspgshl.obj: appagg.h comtools.h gshelapi.h gshlguid.h pumpenum.h types.h
+
+dddynf.obj: dddynf.h ddraw.h dynfunc.h

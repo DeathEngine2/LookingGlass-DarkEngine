@@ -1,0 +1,236 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+#include "loadup.scr"
+
+// Script file for Thief 2 - Mission 10 - Trail of Blood
+
+
+BEGIN_SCRIPT(ParticleFillPhysOBB, RootScript)
+
+   METHOD void FillPhysOBB(void)
+   {
+      vector dims, launchmin, launchmax;
+      integer density;
+      float volume;
+
+      if(!Property.Possessed(self,"PhysDims"))
+         return;
+
+      Property.Remove(self,"ParticleGroup");
+      Property.Remove(self,"PGLaunchInfo");
+      Property.Add(self,"PGLaunchInfo");
+      Property.Add(self,"ParticleGroup");
+
+      dims=Property.Get(self,"PhysDims","Size");
+
+      // Debug.MPrint("dims ",dims);
+
+      launchmin.x=dims.x/-2.0;
+      launchmin.y=dims.y/-2.0;
+      launchmin.z=dims.z/-2.0;
+      launchmax.x=-launchmin.x;
+      launchmax.y=-launchmin.y;
+      launchmax.z=-launchmin.z;
+
+      volume=dims.x*dims.y*dims.z;
+      density=Property.Get(self,"ParticleGroup","number of particles");
+
+      Property.Set(self,"PGLaunchInfo","Box Min",launchmin);
+      Property.Set(self,"PGLaunchInfo","Box Max",launchmax);
+      Property.Set(self,"ParticleGroup","number of particles",density*volume);
+   }
+
+MESSAGES:
+   OnBeginScript()
+   {
+      FillPhysOBB();
+      DefaultOnBeginScript();
+   }
+   OnMessage()
+   {
+      if(MessageIs("Test"))
+      {
+         FillPhysOBB();
+      }
+      DefaultOnMessage();
+   }
+END_SCRIPT(ParticleFillPhysOBB)
+
+BEGIN_SCRIPT(FixLootGoal, RootScript)
+
+MESSAGES:
+
+   OnDifficulty()
+   {
+      integer loot=Quest.Get("total_loot");
+      if (Property.Possessed(self,"TrapQVar"));
+      {
+         integer qnum=(integer)Property.Get(self,"TrapQVar");
+         integer oldtarg = (integer)Quest.Get("goal_loot_"+(string)qnum);
+         Quest.Set("goal_loot_"+(string)qnum,oldtarg+loot,kQuestDataMission);
+         Debug.MPrint("Upping loot goal on goal goal_loot_",qnum," from ",oldtarg," to ",oldtarg+loot);
+      }
+      DefaultOnDifficulty();
+   }
+
+END_SCRIPT(FixLootGoal)
+
+BEGIN_SCRIPT(DewDropDoll, RootScript)
+
+METHODS:
+
+   METHOD object GetGhostForm()
+   {
+      linkset splinks = Link.GetAll("ScriptParams",self);
+      while (splinks.AnyLinksLeft())
+      {
+         link cursplink = splinks.Link();
+         Debug.MPrint("Dewdrop has link to ",cursplink.To()," data ",cursplink.GetData());
+         if ((string)cursplink.GetData()=="myghost")
+            return (cursplink.To());
+         splinks.NextLink();
+      }
+      return (object)0;
+   }
+
+   METHOD object GetCarrier()
+   {
+      if (Link.AnyExist("~Contains",self))
+         return (Link.GetOne("~Contains",self).To());
+      return (object)0;
+   }
+
+   METHOD void DewdropPower()
+   {
+      if ((object)GetGhostForm() == (object)0)
+      {
+         Debug.MPrint("Sorrow!  Dewdrop has no ghost form.");
+         return;
+      }
+      if ((object)GetCarrier() == (object)0)
+      {
+         Debug.MPrint("Bafflement!  Dewdrop activated without a carrier.");
+         return;
+      }
+      object myghost = GetGhostForm();
+      Object.Teleport(myghost,vector(0,0,5),vector(0,0,0),GetCarrier());
+      DrkPowerups.TriggerWorldFlash(myghost);
+      SendMessage(myghost,"PowerOn");
+   }
+
+   METHOD boolean CheckProtection()
+   {
+      if ((integer)GetData("Activated")==1)
+         return FALSE;
+      if (GetCarrier()==(object)0)
+         return FALSE;
+      if (!Link.AnyExist("~AIAttack",GetCarrier()))
+         return FALSE;
+      linkset atklinks = Link.GetAll("~AIAttack",GetCarrier());
+      integer mechcount=0;
+      boolean inrange = FALSE;
+      while (atklinks.AnyLinksLeft())
+      {
+         link curatklink = atklinks.Link();
+         if (Object.InheritsFrom(curatklink.To(),"Mechanist"))
+         {
+            mechcount++;
+            Debug.MPrint("Mechanist ",curatklink.To()," found.");
+            vector carrierpos = vector(0,0,0);
+            vector mechpos = vector(0,0,0);
+            carrierpos = Object.Position(GetCarrier());
+            mechpos = Object.Position(curatklink.To());
+            vector deltapos = carrierpos - mechpos;
+            if (deltapos.Magnitude()<10)
+            {
+               Debug.MPrint("And this one is in range.");
+               inrange = TRUE;
+            }
+         }
+         atklinks.NextLink();
+      }
+      return ((mechcount >= 2) && (inrange));       
+   }
+
+MESSAGES:
+
+   OnSim()
+   {
+      if (message.starting)
+      {
+         SetData("Activated",0);
+         SetOneShotTimer(self,"Protector",3.0);
+         Debug.MPrint("Ghost form is ",GetGhostForm());
+      }
+      DefaultOnSim();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "Protector")
+      {
+         Debug.MPrint("Protector message");
+         if (CheckProtection())
+         {
+            DewdropPower();
+            SetData("Activated",1);
+         }
+         else
+         {
+            SetOneShotTimer(self,"Protector",3.0);
+         }
+      }
+      DefaultOnTimer();
+   }
+
+
+END_SCRIPT(DewDropDoll)
+
+BEGIN_SCRIPT(DewDropGhost, RootScript)
+
+METHODS:
+
+   METHOD void ReduceLight()
+   {
+      float lastlight = (float)Property.Get(self,"SelfLit");
+      lastlight = lastlight * 0.9;
+      float alpha = (float)Property.Get(self,"RenderAlpha");
+      alpha = alpha * 0.9;
+      Property.Set(self,"SelfLit",lastlight);
+      Property.Set(self,"RenderAlpha",alpha);
+   }
+
+MESSAGES:
+
+   OnMessage()
+   {
+      if (MessageIs("PowerOn"))
+      {
+         object schmname = Object.Named("pg31001c");
+         if ((object)schmname != (object)0)
+            Sound.PlaySchema(self,schmname,self);
+         SetOneShotTimer(self,"CutLight",1.0);
+         SetOneShotTimer(self,"ByeBye",24.0);
+      }
+      DefaultOnMessage();
+   }
+
+   OnTimer()
+   {
+      if (message.name == "CutLight")
+      {
+         ReduceLight();
+         SetOneShotTimer(self,"CutLight",1.0);
+      }
+      if (message.name == "ByeBye")
+      {
+         Object.Destroy(self);
+      }
+      DefaultOnTimer();
+   }
+
+END_SCRIPT(DewDropGhost)
+

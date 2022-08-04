@@ -1,0 +1,16 @@
+D3DTEST.C:   g_tmgr->unload_texture(&bm);
+D3DTEST.C:   g_tmgr->set_texture(&bm);
+D3DTEST.C:   g_tmgr->set_texture(&bm2);
+D3DTEST.C:   g_tmgr->unload_texture(&bm2);
+D3DTEST.C://   g_tmgr->reload_texture(&bm);
+D3DTEST.C://   g_tmgr->stats();
+RENDER.C:      g_tmgr->set_texture_callback();
+RENDER.C:   g_tmgr->set_texture(bm);
+RENDER.C:   g_tmgr->set_texture(bm);
+SETUP.C:      g_tmgr->start_frame(frame); // set current frame and use default texture
+SETUP.C:      g_tmgr->end_frame();
+TEXTURE.C:         g_tmgr->shutdown();
+TEXTURE.C:      g_tmgr->set_clut(clut);
+TEXTURE.C:      g_tmgr->shutdown();
+TEXTURE.C:   g_tmgr->init(
+TEXTURE.C:            g_tmgr->unload_texture(TdrvBitmap[i]);

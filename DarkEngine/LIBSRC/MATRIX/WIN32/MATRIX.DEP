@@ -1,0 +1,50 @@
+
+
+vecvec.obj: matrix.h matrixs.h mxang.h types.h 
+
+
+dmat.obj: dbg.h dbgmacro.h dmat.h dmats.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h memall.h memmacro.h types.h 
+
+
+matang.obj: matrix.h matrixs.h mxang.h mxsym.h types.h 
+
+
+matangd.obj: matrixd.h matrixds.h mxang.h mxsymd.h types.h 
+
+
+matmat.obj: matrix.h matrixs.h mxang.h types.h 
+
+
+matmatd.obj: matrixd.h matrixds.h mxang.h types.h 
+
+
+matvec.obj: matrix.h matrixs.h mxang.h types.h 
+
+
+matvecd.obj: matrixd.h matrixds.h mxang.h types.h 
+
+
+trans.obj: matrix.h matrixs.h mxang.h types.h 
+
+
+transd.obj: matrixd.h matrixds.h mxang.h types.h 
+
+
+vec2.obj: matrix.h matrixs.h mxang.h types.h 
+
+
+vec2d.obj: matrixd.h matrixds.h mxang.h types.h 
+
+
+vecang.obj: _test.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrix.h matrixs.h memall.h memmacro.h mxang.h mxsym.h \
+         types.h 
+
+
+vecangd.obj: _test.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+         lglog.h matrixd.h matrixds.h memall.h memmacro.h mxang.h mxsymd.h \
+         types.h 
+
+
+vecvecd.obj: matrixd.h matrixds.h mxang.h types.h 

@@ -1,0 +1,7 @@
+HHL.H:   ((void (*)(hhls_color *baseColorPtr, uint n, hhls_vertex **vertex_list))hhld_function_table[HHLC_DRAW_HPOLY])
+HHL.H:   ((void (*)(hhls_color *baseColorPtr, uint n, hhls_vertex **vertex_list))hhld_function_table[HHLC_DRAW_UHPOLY])
+wing.h:UINT WINGAPI WinGGetDIBColorTable( HDC WinGDC, UINT StartIndex,
+wing.h:        UINT NumberOfEntries, RGBQUAD FAR *pColors );
+wing.h:UINT WINGAPI WinGSetDIBColorTable( HDC WinGDC, UINT StartIndex,
+wing.h:        UINT NumberOfEntries, RGBQUAD const FAR *pColors );
+wing.h:HBRUSH WINGAPI WinGCreateHalftoneBrush( HDC Context, COLORREF crColor,

@@ -1,0 +1,91 @@
+WARNING: Can't find dependency file win32\ui.dep.
+map root w: = x:\prj\tech\obj\win32\w105\a611\libsrc\ui >\dev\nul
+map root v: = x:\prj >\dev\nul
+
+Performing flags check...
+
+Building in backing tree; use 'make depend' if necessary.
+butarray.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\butarray.c
+time: 2 sec
+curdrw.obj <-- nonexistent
+special cflags =   /zu /s
+wcc386 x:\prj\tech\libsrc\ui\curdrw.c
+time: 2 sec
+cursors.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\cursors.c
+time: 2 sec
+event.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\event.c
+time: 2 sec
+gadgets.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\gadgets.c
+time: 2 sec
+hotkey.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\hotkey.c
+time: 1 sec
+menu.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\menu.c
+time: 2 sec
+plain.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\plain.c
+time: 1 sec
+pushbutt.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\pushbutt.c
+time: 2 sec
+qboxgadg.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\qboxgadg.c
+time: 2 sec
+region.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\region.c
+time: 2 sec
+slab.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\slab.c
+time: 1 sec
+slider.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\slider.c
+time: 2 sec
+textgadg.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\textgadg.c
+time: 1 sec
+texttool.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\texttool.c
+time: 2 sec
+tng.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tng.c
+time: 2 sec
+tngbarry.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngbarry.c
+time: 3 sec
+tngfont.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngfont.c
+time: 1 sec
+tngmenu.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngmenu.c
+time: 3 sec
+tngplain.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngplain.c
+time: 1 sec
+tngpushb.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngpushb.c
+time: 2 sec
+tngqbox.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngqbox.c
+time: 3 sec
+tngslidr.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngslidr.c
+time: 2 sec
+tngtextg.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\tngtextg.c
+time: 2 sec
+uires.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\uires.c
+time: 1 sec
+vmouse.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\ui\vmouse.c
+time: 1 sec
+Archiving ui.lib.  Flavor = dbg.
+ui.lib <-- nonexistent
+time: 4 sec
+total time: 52 sec
+Deleting temporary files in mk174410.

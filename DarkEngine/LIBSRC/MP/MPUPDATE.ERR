@@ -1,0 +1,7 @@
+mpupdate.c
+x:\prj\tech\libsrc\mp\mpupdate.c(148) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpupdate.c(148) : warning C4024: 'mp_evaluate_motions' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpupdate.c(164) : warning C4047: 'function' : 'struct quat *' differs in levels of indirection from 'struct quat (*)[48]'
+x:\prj\tech\libsrc\mp\mpupdate.c(164) : warning C4024: 'mp_evaluate_motions' : different types for formal and actual parameter 3
+x:\prj\tech\libsrc\mp\mpupdate.c(341) : warning C4706: assignment within conditional expression
+x:\prj\tech\libsrc\mp\mpupdate.c(733) : warning C4706: assignment within conditional expression

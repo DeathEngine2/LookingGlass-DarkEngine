@@ -1,0 +1,9 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+config.obj: _dstruct.h appagg.h appapi.h appguid.h cfgdbg.h comtools.h \
+	 config.h dbg.h dbgmacro.h dbmem.h error.h hash.h hashfns.h lg.h \
+	 lgalt.h lgassert.h lglocmsg.h lglog.h lgsprntf.H memall.h \
+	 memmacro.h mprintf.h nameconv.h recapi.h recguid.h types.h
+
+cfg.obj: cfg.h config.h dbg.h dbgmacro.h error.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h

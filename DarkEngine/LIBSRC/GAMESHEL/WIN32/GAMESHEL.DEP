@@ -1,0 +1,30 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+wgshell.obj: aggmemb.h appagg.h appapi.h appguid.h comconn.h comtools.h \
+	 constrid.h dbg.h dbgmacro.h dispapi.h dispguid.h dynarray.h \
+	 filekind.h filespec.h gshelapi.h gshlguid.h indevapi.h indvguid.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h \
+	 movconst.h movieapi.h moviguid.h mprintf.h objcguid.h objcoll.h \
+	 pdynarr.h prikind.h pumpenum.h types.h wappapi.h wappguid.h \
+	 wdispapi.h wdspguid.h wgshell.h winput.h winshapi.h wnshguid.h
+
+wgshelmt.obj: aggmemb.h comconn.h comtools.h constrid.h coremutx.h dbg.h \
+	 dbgmacro.h dispapi.h dispguid.h dynarray.h gshelapi.h gshlguid.h \
+	 indevapi.h indvguid.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h objcguid.h objcoll.h pdynarr.h prikind.h \
+	 pumpenum.h thrdtool.h types.h wappapi.h wappguid.h wdispapi.h \
+	 wdspguid.h wgshell.h wgshelmt.h winput.h winshapi.h wnshguid.h
+
+winput.obj: aggmemb.h comconn.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dynarray.h error.h gshelapi.h gshlguid.h indevapi.h indvguid.h kb.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h \
+	 mouse.h nec98.h objcguid.h objcoll.h pdynarr.h prikind.h pumpenum.h \
+	 types.h wappapi.h wappguid.h wdispapi.h wdspguid.h wgshell.h \
+	 winput.h winshapi.h wnshguid.h
+
+wgscreat.obj: aggmemb.h comconn.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dynarray.h gshelapi.h gshlguid.h indevapi.h indvguid.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h memall.h memmacro.h objcguid.h \
+	 objcoll.h pdynarr.h prikind.h pumpenum.h thrdtool.h types.h \
+	 wappapi.h wappguid.h wdispapi.h wdspguid.h wgshell.h wgshelmt.h \
+	 winput.h winshapi.h wnshguid.h

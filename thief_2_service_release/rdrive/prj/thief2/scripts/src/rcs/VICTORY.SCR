@@ -1,0 +1,850 @@
+head	 1.16;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.16
+date	 2000.03.07.19.24.53;  author TJS;  state Exp;
+branches ;
+next	 1.15;
+
+1.15
+date	 2000.03.03.17.34.45;  author TJS;  state Exp;
+branches ;
+next	 1.14;
+
+1.14
+date	 2000.02.28.02.13.25;  author TJS;  state Exp;
+branches ;
+next	 1.13;
+
+1.13
+date	 2000.02.27.13.35.09;  author TJS;  state Exp;
+branches ;
+next	 1.12;
+
+1.12
+date	 2000.02.08.21.36.52;  author TJS;  state Exp;
+branches ;
+next	 1.11;
+
+1.11
+date	 2000.02.04.10.57.40;  author TJS;  state Exp;
+branches ;
+next	 1.10;
+
+1.10
+date	 2000.02.02.22.53.23;  author TJS;  state Exp;
+branches ;
+next	 1.9;
+
+1.9
+date	 2000.01.25.17.42.12;  author TJS;  state Exp;
+branches ;
+next	 1.8;
+
+1.8
+date	 2000.01.20.11.08.33;  author adurant;  state Exp;
+branches ;
+next	 1.7;
+
+1.7
+date	 2000.01.12.14.19.10;  author TJS;  state Exp;
+branches ;
+next	 1.6;
+
+1.6
+date	 2000.01.02.22.06.38;  author TJS;  state Exp;
+branches ;
+next	 1.5;
+
+1.5
+date	 1999.12.16.18.26.15;  author TJS;  state Exp;
+branches ;
+next	 1.4;
+
+1.4
+date	 1999.12.02.19.08.18;  author TJS;  state Exp;
+branches ;
+next	 1.3;
+
+1.3
+date	 1999.11.10.15.59.52;  author TJS;  state Exp;
+branches ;
+next	 1.2;
+
+1.2
+date	 1999.09.27.14.36.22;  author TJS;  state Exp;
+branches ;
+next	 1.1;
+
+1.1
+date	 1999.08.23.17.33.19;  author TJS;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@Revision on original Thief core victory conditions module, with more
+generic quest-var based customization support.
+@
+
+
+1.16
+log
+@Satisfied FINAL goals don't get scored complete if we're ending
+the mission in _failure_.
+@
+text
+@// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.15 1970/01/01 00:00:00 TJS Exp $
+
+#include "drkgoalt.h"
+#include "drkscrs.h"
+
+/* It's expected that you'll write a script which derives from
+   this one and makes use of its methods.  Basically, as long
+   as you're updating the quest variables which track mission
+   objectives, this script will take care of ending the mission
+   either in success or failure.
+
+   Probably the object to put this script on is the Player obj,
+   since he'll be in the best position to get events relevant to
+   victory conditions.  But other objects can just set quest vars
+   and this script will be messaged, since it subscribes to change
+   messages for all mission objective vars.
+   */
+
+BEGIN_SCRIPT(VictoryChecker, Room)
+
+METHODS:
+   // Inject a little time delay before _actually_ ending
+   // the mission, so as to not be so jarring.
+   METHOD void EndMission()
+   {
+      timer_handle endhandle;
+
+      // already waiting on an end-mission timer, thank you.
+      if (IsDataSet("EndHandle"))
+         return;
+
+      float endTime=4.5;
+      float fadeDelay=1.0;
+      if (Quest.Exists("EndingTime"))
+         endTime=Quest.Get("EndingTime");
+      endhandle=SetOneShotTimer(self,"EndMission",endTime);
+      SetData("EndHandle",endhandle);
+
+      if (IsDataSet("DoFadeToBlack"))
+      {
+         SetOneShotTimer(self,"FadeToBlack",fadeDelay);
+         SetData("FadeTime",endTime-fadeDelay);
+      }
+      if ((Quest.Get(MISSION_COMPLETE_VAR)==0)&&((int)GetData("IDied")!=1))
+      {  // you arent dead, but you failed
+         string WhyFailed=Data.GetString("PlayHint.str","FailedObj");
+         DarkUI.TextMessage(WhyFailed);
+      }
+   }
+
+   METHOD void SubscribeToGoalChanges(boolean subscribe)
+   {
+      integer objective;
+
+      boolean done = FALSE; 
+      for(objective=0;!done;objective++)
+      {
+         string var = GoalStateVarName(objective); 
+         if (Quest.Exists(var))
+         {
+            if(subscribe)
+            {
+               Quest.SubscribeMsg(self,var);
+               Quest.SubscribeMsg(self,GoalVisibleVarName(objective));
+            }
+            else
+            {
+               Quest.UnsubscribeMsg(self,GoalVisibleVarName(objective));
+               Quest.UnsubscribeMsg(self,var);
+            }               
+         }
+         else
+            done = TRUE; 
+      }
+   }
+
+   METHOD void ObjectiveSet(integer objective, integer value)
+   {
+      Quest.Set(GoalStateVarName(objective),value,kQuestDataMission);
+   }
+
+   METHOD void ObjectiveShow(integer objective, boolean ShowElseHide)
+   {
+      Quest.Set(GoalVisibleVarName(objective),ShowElseHide,kQuestDataMission);
+   }
+   METHOD void ObjectiveInit(integer objective)
+   {
+      ObjectiveSet(objective,kGoalIncomplete);
+      ObjectiveShow(objective,TRUE);
+   }
+   METHOD integer ObjectiveGet(integer objective)
+   {
+      return Quest.Get(GoalStateVarName(objective));
+   }
+   METHOD boolean ObjectiveVisible(integer objective)
+   {
+      /* This really cares not necessarily about the "visible"
+         quest vars as such (which may be inconsistent with the
+         difficulty level information if process_difficulty
+         has not been run), but with what's actually visible on
+         the objectives screen.
+         */
+      string mindiff=GoalMinDiffVarName(objective);
+      string maxdiff=GoalMaxDiffVarName(objective);
+      integer difficulty=Quest.Get("difficulty");
+
+      if(Quest.Exists(mindiff) &&
+         difficulty<Quest.Get(mindiff))
+         return FALSE;
+      if(Quest.Exists(maxdiff) &&
+         difficulty>Quest.Get(maxdiff))
+         return FALSE;
+      
+      return Quest.Get(GoalVisibleVarName(objective));
+   }
+
+   METHOD boolean ObjectiveExists(integer objective)
+   {
+      return Quest.Exists(GoalStateVarName(objective)); 
+   }
+
+   /* Some objectives can be incomplete and still the mission can be
+      completed.  These include reverse goals (which stay incomplete
+      until either failed or until the mission ends, at which point they
+      are succeeded) and optional goals (which are scored normally, but
+      needn't be completed to win the mission, and are cancelled if not
+      completed).
+      Return TRUE if this is such a goal. */
+   METHOD boolean ObjectiveNotBreach(integer objective)
+   {
+      integer retval=(Quest.Get("GOAL_REVERSE_"+string(objective)) ||
+              Quest.Get("GOAL_OPTIONAL_"+string(objective)));
+      return retval;
+   }
+   METHOD integer ObjectivesMet()
+   {
+      // Check whether all objectives are met.  Inactive and invisible
+      // objectives don't need to be met.  If all other objectives met,
+      // return kGoalComplete.  If any objectives failed, return kGoalFailed. 
+      // Else return kGoalIncomplete
+      integer goal, completion, retval=kGoalComplete;
+
+      for(goal=0; ObjectiveExists(goal); goal++)
+      {
+         if(ObjectiveVisible(goal))
+         {
+            completion=ObjectiveGet(goal);
+            if(completion==kGoalFailed)
+               return(kGoalFailed);
+            if(completion==kGoalIncomplete && !ObjectiveNotBreach(goal))
+               retval=kGoalIncomplete;
+         }
+      }
+      
+      return retval;
+   }
+   // Check for mission completion, returning TRUE iff mission done.
+   METHOD boolean CheckComplete()
+   {
+      integer goal;
+      integer completion=ObjectivesMet();
+
+      if(completion==kGoalComplete)
+      {
+         // Okay, no failed goals, and no incomplete goals which
+         // need to be completed in-mission as opposed to just not failed.
+         // complete any remaining incomplete goals, cancelling anything
+         // optional.
+         for(goal=0; ObjectiveExists(goal);goal++)
+         {
+            if(ObjectiveGet(goal)==kGoalIncomplete &&
+               ObjectiveVisible(goal))
+            {
+               if(Quest.Get("GOAL_OPTIONAL_"+string(goal)))
+                  ObjectiveSet(goal,kGoalInactive);
+               else
+                  ObjectiveSet(goal,kGoalComplete);
+            }
+         }
+
+         // if(!IsDataSet("EndHandle"))
+         //    Debug.MPrint("Mission completed!");
+
+         Quest.Set(MISSION_COMPLETE_VAR,1);
+         EndMission();
+         return TRUE;
+      }
+      else if(completion==kGoalFailed)
+      {
+         Quest.Set(MISSION_COMPLETE_VAR,0); 
+         EndMission();
+         return TRUE;
+      }
+      return FALSE;
+   }
+
+   // Whenever goal quest vars change, check for popup messages we want to show
+   METHOD void CheckPopup(string qvar, integer oldval, integer newval)
+   {
+      integer goal;
+      integer completepopup=FALSE;
+      string popup="";
+      object schem=object(NULL);
+
+      if (DarkGame.BindingGetFloat("goal_notify")!=0.0)
+         completepopup = TRUE;
+
+      for(goal=0; ObjectiveExists(goal); goal++)
+      {
+         if(stricmp(qvar,GoalVisibleVarName(goal))==0)
+         {
+            if(newval && !oldval)
+            {
+               popup="NewGoal";
+               schem=Object.Named("new_obj");
+               break;
+            }
+         }
+         else if(ObjectiveVisible(goal) &&
+                 stricmp(qvar,GoalStateVarName(goal))==0 &&
+                 completepopup)
+         {
+            if(newval==kGoalComplete && newval!=oldval)
+            {
+               popup="DoneGoal";
+               schem=Object.Named("new_obj"); // @@TODO: Or something
+            }
+         }
+      }
+      if(popup!="") 
+      {
+         // Need to make sure these popups don't get superceded by training messages
+         // (or deicsions by the training system to clear the message).  Dirty way
+         // to do this, but we're trying to ship.
+         PostMessage(self,"Popup",(const char *)popup);
+         popup=Data.GetString("PlayHint.str",popup);
+         if(popup!="")
+            DarkUI.TextMessage(popup);
+      }
+      if(schem!=object(NULL)) Sound.PlaySchemaAmbient(self,schem);
+   }
+
+   METHOD void DoubleCheckFinalGoals()
+   {
+      integer goal;
+
+      for(goal=0; ObjectiveExists(goal); goal++)
+      {
+         if(Quest.Get("GOAL_SATISFIED_"+string(goal)) &&
+            !ObjectiveGet(goal)==kGoalComplete)
+            ObjectiveScore(goal,TRUE);
+      }
+   }
+
+   // Score the objective as finished, or remove credit for a finished
+   // objective.  settings such as GOAL_REVERSE_n and GOAL_IRREVERSIBLE_n
+   // can change the sense of this.  Note also that GOAL_FINAL_n will
+   // prevent the goal from being scored unless that would end the mission.
+   METHOD void ObjectiveScore(integer objective, boolean DoneElseUndone)
+   {
+      integer goalstate=DoneElseUndone?kGoalComplete:kGoalIncomplete;;
+
+      // Irreversible goals don't get scored at all when undone
+      if(!DoneElseUndone && Quest.Get("GOAL_IRREVERSIBLE_"+string(objective)))
+         return;
+
+      // Inactive goals do not get scored.
+      if(ObjectiveGet(objective)==kGoalInactive)
+         return;
+
+      // reverse goals are failed in the doing, not completed
+      if(Quest.Get("GOAL_REVERSE_"+string(objective)) &&
+         goalstate==kGoalComplete)
+         goalstate=kGoalFailed;
+
+      // "final" goals cannot be completed unless their completion would
+      // finish the goal set.  We used to do this by scoring them and then
+      // unscoring them if the mission wasn't completed.  However, that
+      // won't work right with the new "objective complete" popup.  Instead,
+      // if we _want_ to score them, set them OPTIONAL just long enough
+      // to let them finish the mission if that's what they're going to do.
+
+      if(Quest.Get("GOAL_FINAL_"+string(objective)))
+      {
+         // if conditions for final goal are satisfied, keep note of that for
+         // future reference, even if it's scored incomplete below.
+         Quest.Set("GOAL_SATISFIED_"+string(objective),goalstate==kGoalComplete);
+
+         if(goalstate==kGoalComplete)
+         {
+            string optqv="GOAL_OPTIONAL_"+string(objective);
+            boolean optional=Quest.Get(optqv);
+
+            Quest.Set(optqv,TRUE);
+            if(CheckComplete() && Quest.Get(MISSION_COMPLETE_VAR)!=0)
+            {
+               ObjectiveSet(objective,goalstate);
+               // Don't let a FINAL objective get unscored once it's been scored.
+               // We're trying to finish a mission, here.
+               Quest.Set(string("GOAL_IRREVERSIBLE_")+string(objective),TRUE);
+            }
+            else
+               goalstate=ObjectiveGet(objective); // for future reference
+        
+            Quest.Set(optqv,optional);
+         }
+         else
+            ObjectiveSet(objective,goalstate);
+      }
+      else
+      {
+         ObjectiveSet(objective,goalstate);
+         // When scoring non-"final" goals, check if satisfied final goals
+         // can now be scored.  Note that this recursion therefore can only
+         // ever be one call deep.
+         DoubleCheckFinalGoals();
+      }
+
+      // A bonus goal is only visible if it's complete.  Otherwise, it doesn't
+      // even count. Basically, like an optional goal except that it's hidden.
+      if(Quest.Get("GOAL_BONUS_"+string(objective)))
+         ObjectiveShow(objective,goalstate==kGoalComplete);
+   }
+
+   // Overload this if you want picking up certain objects to automatically
+   // be reflected in complete goals. Set any goal which corresponds to getting
+   // the object in question.
+   METHOD void ObjToGoal(object obj, boolean got)
+   {
+      return;
+   }
+   // Similar to ObjToGoal, only the passed-in value is a total amount
+   // of loot, then individual values by category
+   METHOD void LootToGoal(integer loot_total, integer goldval,
+                          integer gemsval, integer goodsval, integer lootbits)
+   {
+      return;
+   }
+
+MESSAGES:
+
+   OnBeginScript()
+   {
+      SubscribeToGoalChanges(TRUE);
+      if(!Object.InheritsFrom(self,Object.Named("M-GarrettDiffSettings")))
+      {
+         integer diff=Quest.Get("difficulty");
+         object diffsettings=Object.Named("M-GarrettDiffNormal");
+
+         if(diff==1)
+            diffsettings=Object.Named("M-GarrettDiffHard");
+         else if(diff==2)
+            diffsettings=Object.Named("M-GarrettDiffExpert");
+         Object.AddMetaProperty(self,diffsettings);
+
+         if(DarkGame.ConfigIsDefined("HitPointBonus"))
+         {
+            integer hpbonus=0;
+            integer hp=Property.Get(self,"HitPoints");
+            integer maxhp=Property.Get(self,"MAX_HP");
+
+            DarkGame.ConfigGetInt("HitPointBonus",hpbonus);
+
+            Property.Set(self,"HitPoints",hpbonus+hp);
+            Property.Set(self,"MAX_HP",hpbonus+maxhp);
+         }
+         Property.Add(self,"AirSupply");
+      }
+      DefaultOnEndScript();
+   }
+   OnEndScript()
+   {
+      /* Unsubscriptions really only a matter of form, and seem to be
+         causing instability right now.  So, out the come.
+      SubscribeToGoalChanges(FALSE);
+      */
+      DefaultOnEndScript();
+   }
+   // Some objective handled by quest-var setting traps, especially
+   // when some object other than the player is in the best position
+   // to detect the event.  But the player finds out, oh yes.
+   OnQuestChange()
+   {
+      // Debug.MPrint("Quest ",message.m_pName," change ",message.m_oldValue," to ",message.m_newValue);
+      // Just to be safe (though triggers should be incapable of doing this
+      // to us) make sure the quest change isn't a trivial one.
+      if(message.m_oldValue!=message.m_newValue)
+      {
+         CheckComplete();
+         CheckPopup(message.m_pName,message.m_oldValue,message.m_newValue);
+      }
+      DefaultOnQuestChange();
+   }
+   OnSlain()
+   {
+      if(IsDataSet("EndHandle"))
+      {
+         // waiting on an EndMission timer, but cancel that so we can die proper.
+         timer_handle endhandle=GetData("EndHandle");
+         KillTimer(endhandle);
+      }
+      DarkGame.KillPlayer();
+      Quest.Set(MISSION_COMPLETE_VAR,0); 
+      SetData("DoFadeToBlack", 1);      
+      SetData("IDied", 1);
+      EndMission();      
+   }
+   OnContainer()
+   {
+      ObjToGoal(message.containee,message.event!=kContainRemove);
+
+      if(message.event==kContainAdd || message.event==kContainCombine)
+      {
+         object containee=message.containee;
+
+         if(GetTime()>0.0)
+            if(Property.Possessed(containee,"Loot"))
+            {
+               integer goldval=Property.Get(containee,"Loot","Gold");
+               integer gemsval=Property.Get(containee,"Loot","Gems");
+               integer goodsval=Property.Get(containee,"Loot","Art");
+               integer lootbits=Property.Get(containee,"Loot","Special");
+
+               integer loot=goldval+gemsval+goodsval;
+
+               LootToGoal(loot,goldval,gemsval,goodsval,lootbits);
+            }
+      }
+      DefaultOnContainer();
+   }
+   OnTimer()
+   {
+      if(message.name=="EndMission")
+      {
+         DarkGame.EndMission();
+      }
+      if(message.name=="FadeToBlack")
+      {
+         DarkGame.FadeToBlack(GetData("FadeTime"));
+      }
+      DefaultOnTimer();
+   }
+   OnMessage()
+   {
+      // if I get this message, then if I haven't failed yet, I win
+      // Probably only useful for when we're leaving the mission area.
+      if(MessageIs("CheckVictory"))
+      {
+         CheckComplete();
+      }
+      // Some scripts screw with the quest variables, which can invalidate
+      // my subscriptions.  Let me know, and I'll redo them.
+      if(MessageIs("ReSubscribe"))
+      {
+         SubscribeToGoalChanges(TRUE);
+      }
+      DefaultOnMessage();
+   }
+
+END_SCRIPT(VictoryChecker)
+
+
+
+
+
+
+
+@
+
+
+1.15
+log
+@Made NewGoal and DoneGoal tips so training system doesn't step on top
+of goal notification.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.14 1970/01/01 00:00:00 TJS Exp $
+d295 1
+a295 1
+            if(CheckComplete())
+@
+
+
+1.14
+log
+@Final goals become irreversible when scored.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.13 1970/01/01 00:00:00 TJS Exp $
+d214 1
+a214 1
+               popup=Data.GetString("PlayHint.str","NewGoal");
+d225 1
+a225 1
+               popup=Data.GetString("PlayHint.str","DoneGoal");
+d230 10
+a239 1
+      if(popup!="") DarkUI.TextMessage(popup);
+@
+
+
+1.13
+log
+@Don't score incomplete objectives at mission end if they're not visible.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.12 1970/01/01 00:00:00 TJS Exp $
+d287 1
+d289 4
+@
+
+
+1.12
+log
+@Fixed typo in last checkin that totally broke FINAL goals.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.11 1970/01/01 00:00:00 TJS Exp $
+d171 2
+a172 1
+            if(ObjectiveGet(goal)==kGoalIncomplete)
+@
+
+
+1.11
+log
+@Scores FINAL goals differently, to avoid spurious "goal completed"
+popup.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.10 1970/01/01 00:00:00 TJS Exp $
+d281 1
+a281 1
+            string optqv="GOAL_OPTIONAL"+string(objective);
+@
+
+
+1.10
+log
+@Fixed potential infinite recursion case.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.9 1970/01/01 00:00:00 TJS Exp $
+d266 6
+a271 1
+      ObjectiveSet(objective,goalstate);
+a272 2
+      // "final" goals cannot be completed unless their completion would
+      // finish the goal set.  Otherwise, unscore them.
+d279 1
+a279 1
+         if(!CheckComplete())
+d281 10
+a290 2
+            goalstate=kGoalIncomplete; // for future reference
+            ObjectiveSet(objective,kGoalIncomplete);
+d292 2
+a294 3
+      // When scoring non-"final" goals, check if satisfied final goals
+      // can now be scored.  Note that this recursion therefore can only
+      // ever be one call deep.
+d297 4
+@
+
+
+1.9
+log
+@Don't pop up objective complete notifications about invisible goals.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.8 1970/01/01 00:00:00 adurant Exp $
+d222 1
+a222 1
+            if(newval==kGoalComplete)
+d355 8
+a362 2
+      CheckComplete();
+      CheckPopup(message.m_pName,message.m_oldValue,message.m_newValue);
+@
+
+
+1.8
+log
+@Goal completion modified to check goal_notify setting
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/RCS/victory.scr 1.7 1970/01/01 00:00:00 TJS Exp $
+d205 1
+a205 1
+	completepopup = TRUE;
+d218 2
+a219 1
+         else if(stricmp(qvar,GoalStateVarName(goal))==0 &&
+@
+
+
+1.7
+log
+@Take "ReSubscribe" messages.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.6 1970/01/01 00:00:00 TJS Exp $
+d204 2
+a205 2
+      if(DarkGame.ConfigIsDefined("GoalCompletePopup"))
+         DarkGame.ConfigGetInt("GoalCompletePopup",completepopup);
+@
+
+
+1.6
+log
+@Added HitPointBonus cheat.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.5 1999/12/16 18:26:15 TJS Exp $
+d415 6
+d425 7
+@
+
+
+1.5
+log
+@Rewrote "New Objective" popup text.
+Added "Objective Complete" popup text on a config variable.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.4 1999/12/02 19:08:18 TJS Exp $
+d326 11
+@
+
+
+1.4
+log
+@Cancelled goals do not get changed by ObjectiveScore()
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.3 1999/11/10 15:59:52 TJS Exp $
+a76 18
+   // returns a bitfield of the "goal visible" questvar values,
+   // in order to encapsulate that data and facilitate comparisons,
+   // so we an do the "New Goal" pop-up.
+   METHOD integer GoalVisibleMask()
+   {
+      integer objective, mask=0;
+      boolean done = FALSE; 
+      for(objective=0;!done;objective++)
+      {
+         string var = GoalVisibleVarName(objective); 
+         if (Quest.Exists(var))
+            mask|=(!!integer(Quest.Get(var))<<objective);
+         else
+            done = TRUE; 
+      }
+      // Debug.MPrint("GoalVisibleMask() returning ",mask);
+      return mask;
+   }
+d196 36
+a294 16
+   METHOD void CheckNewGoal()
+   {
+      integer oldgoalvis=GetData("VisGoals");
+      integer goalmask=GoalVisibleMask();
+
+      // Any newly-visible goals?
+      if(goalmask & ~oldgoalvis)
+      {
+         string NewGoal=Data.GetString("PlayHint.str","NewGoal");
+         object schem=Object.Named("new_obj");
+         DarkUI.TextMessage(NewGoal);
+         if(schem!=object(0)) Sound.PlaySchemaAmbient(self,schem);
+      }
+      SetData("VisGoals",goalmask);
+   }
+
+a314 1
+      SetData("VisGoals",GoalVisibleMask());
+d344 1
+a344 1
+      CheckNewGoal();
+@
+
+
+1.3
+log
+@Added code to defer scoring of "final" goals in cases where they
+would normally be Complete when all other objectives are satisfied.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.2 1999/09/27 14:36:22 TJS Exp $
+d236 4
+@
+
+
+1.2
+log
+@Added bonus goals.
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/thief2/scripts/src/rcs/victory.scr 1.1 1999/08/23 17:33:19 TJS Exp $
+d214 12
+d247 16
+a262 1
+      if(Quest.Get("GOAL_FINAL_"+string(objective)) && !CheckComplete())
+d264 1
+a264 2
+         goalstate=kGoalIncomplete; // for future reference
+         ObjectiveSet(objective,kGoalIncomplete);
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 1
+a1 1
+// $Header: r:/prj/cam/scripts/src/RCS/victory.scr 1.31 1998/11/04 18:21:24 TJS Exp $
+d236 2
+d239 6
+@

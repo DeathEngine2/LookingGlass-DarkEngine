@@ -1,0 +1,39 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+array.obj: array.h dbg.h dbgmacro.h error.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+fname.obj: fname.h types.h
+
+hash.obj: _dstruct.h dbg.h dbgmacro.h error.h hash.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h mprintf.h types.h
+
+hheap.obj: dbg.h dbgmacro.h hheap.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h llist.h memall.h memmacro.h types.h
+
+huffde.obj: dbg.h dbgmacro.h huff.h types.h
+
+huffen.obj: dbg.h dbgmacro.h huff.h types.h
+
+llist.obj: llist.h memall.h memmacro.h types.h
+
+lllist.obj: llist.h types.h
+
+message.obj: _dstruct.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h lgsprntf.h memall.h memmacro.h message.h types.h
+
+pqueue.obj: dbg.h dbgmacro.h error.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pqueue.h types.h
+
+rect.obj: rect.h
+
+strall.obj: dbg.h dbgmacro.h hheap.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h llist.h memall.h memmacro.h strall.h types.h
+
+symdump.obj: dbg.h dbgmacro.h fix.h hheap.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h llist.h memall.h memmacro.h slist.h symtab.h \
+	 types.h
+
+symtab.obj: dbg.h dbgmacro.h fix.h hheap.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h lgsprntf.h llist.h memall.h memmacro.h slist.h \
+	 strall.h symtab.h types.h

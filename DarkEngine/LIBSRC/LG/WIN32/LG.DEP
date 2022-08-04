@@ -1,0 +1,69 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+bugtrak.obj: array.h bugtrak.h dbg.h dbgmacro.h error.h lg.h lgalt.h \
+	 lgassert.h lglocmsg.h lglog.h lgsprntf.h memall.h memmacro.h \
+	 types.h
+
+datapath.obj: datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+dbg.obj: coremutx.h dbg.h dbgmacro.h error.h kb.h kbcook.h keydefs.h \
+	 lgassert.h lglog.h lgsprntf.h memall.h memmacro.h mprintf.h \
+	 nameconv.h types.h
+
+dbgcfg.obj: datapath.h dbg.h dbgmacro.h error.h kb.h kbcook.h keydefs.h \
+	 mprintf.h types.h
+
+dbgpp.obj: dbg.h dbgmacro.h dbgpp.h mout.h mprintf.h types.h
+
+exit.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h types.h
+
+lgprntf.obj: dbg.h dbgmacro.h lgsprntf.h memall.h memmacro.h tmpalloc.h \
+	 types.h
+
+lgsprntf.obj: fix.h types.h
+
+memstat.obj: _lg.h dbg.h dbgmacro.h dpmi.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h memstat.h mprintf.h types.h
+
+stack.obj: dbg.h dbgmacro.h memall.h memmacro.h types.h
+
+tmpalloc.obj: _lg.h dbg.h dbgmacro.h memall.h memmacro.h tmpalloc.h types.h
+
+lglog.obj: coremutx.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mprintf.h types.h
+
+lgassert.obj: coremutx.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mprintf.h types.h
+
+stktrace.obj: stktrace.h types.h
+
+breakkey.obj: breakkey.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+hashfns.obj: dbg.h dbgmacro.h hashfns.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+thrdtool.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h thrdtool.h types.h
+
+appagg.obj: appagg.h comtools.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h types.h
+
+codewrit.obj: codewrit.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+dpathdir.obj: datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h types.h
+
+memreq.obj: dbg.h dbgmacro.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h memreq.h types.h
+
+crc32.obj: crc32.h
+
+findfile.obj: findfile.h
+
+coremutx.obj: coremutx.h
+
+timings.obj: mprintf.h timings.h

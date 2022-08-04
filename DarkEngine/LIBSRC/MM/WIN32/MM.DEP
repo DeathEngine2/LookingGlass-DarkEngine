@@ -1,0 +1,22 @@
+
+
+render.obj: dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         mm.h mmd.h mms.h mxang.h qt.h r3d.h r3ds.h sortpoly.h types.h \
+         xformseg.h 
+
+
+debug.obj: dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h memall.h \
+         memmacro.h mm.h mm_.h mms.h mxang.h qt.h r3d.h r3ds.h types.h 
+
+
+sortpoly.obj: dbg.h dbgmacro.h fix.h grspoint.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         mm.h mms.h mxang.h qt.h r3d.h r3ds.h sortpoly.h types.h 
+
+
+xformseg.obj: dbg.h dbgmacro.h dev2d.h fix.h g2.h grspoint.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h memall.h \
+         memmacro.h mm.h mm_.h mms.h mxang.h qt.h r3d.h r3ds.h types.h \
+         xformseg.h 

@@ -1,0 +1,5 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+rnd.obj: appagg.h comtools.h dbg.h dbgmacro.h fix.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h recapi.h recguid.h rnd.h \
+	 types.h

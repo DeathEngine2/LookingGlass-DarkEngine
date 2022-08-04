@@ -1,0 +1,19 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+ststar.obj: \
+	 star.h \
+		 3d.h \
+			 2d.h \
+				 font.h \
+					 dev2d.h \
+						 matrixs.h \
+							 types.h \
+						 fix.h \
+							 types.h \
+				 g2.h \
+					 dev2d.h \
+			 fix.h \
+		 2d.h \
+	 mprintf.h \
+	 3d.h \
+	 2d.h

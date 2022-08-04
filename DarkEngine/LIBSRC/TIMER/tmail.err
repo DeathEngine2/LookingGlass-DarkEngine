@@ -1,0 +1,7 @@
+x:\prj\tech\libsrc\timer\tmail.c(21): Warning! W301: No prototype found for 'AIL_set_timer_divisor'
+x:\prj\tech\libsrc\timer\tmail.c(20): Warning! W301: No prototype found for 'AIL_register_timer'
+x:\prj\tech\libsrc\timer\tmail.c(40): Warning! W301: No prototype found for 'AIL_start_timer'
+x:\prj\tech\libsrc\timer\tmail.c(57): Warning! W301: No prototype found for 'AIL_set_timer_frequency'
+x:\prj\tech\libsrc\timer\tmail.c(46): Warning! W301: No prototype found for 'AIL_stop_timer'
+x:\prj\tech\libsrc\timer\tmail.c(34): Warning! W301: No prototype found for 'AIL_release_timer_handle'
+x:\prj\tech\libsrc\timer\tmail.c(62): Warning! W301: No prototype found for 'AIL_set_timer_period'

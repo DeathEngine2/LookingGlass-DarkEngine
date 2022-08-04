@@ -1,0 +1,77 @@
+WARNING: Can't find dependency file win32\timer.dep.
+map root w: = x:\prj\tech\obj\win32\w105\a611\libsrc\timer >\dev\nul
+map root v: = x:\prj >\dev\nul
+
+Performing flags check...
+
+Building in backing tree; use 'make depend' if necessary.
+tmact.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmact.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmact.asm
+time: 12 sec
+tmadd.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmadd.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmadd.asm
+time: 1 sec
+tmclose.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmclose.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmclose.asm
+time: 1 sec
+tmd.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmd.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmd.asm
+time: 1 sec
+tmdeact.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmdeact.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmdeact.asm
+time: 1 sec
+tmfast.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmfast.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmfast.asm
+time: 1 sec
+tminit.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tminit.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tminit.asm
+time: 1 sec
+tmphnd.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmphnd.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmphnd.asm
+time: 0 sec
+tmrate.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmrate.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmrate.asm
+time: 1 sec
+tmrem.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmrem.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmrem.asm
+time: 1 sec
+tmsden.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmsden.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmsden.asm
+time: 1 sec
+tmrt.obj <-- nonexistent
+special cflags =   /zu /s
+wcc386 x:\prj\tech\libsrc\timer\tmrt.c
+time: 0 sec
+tmsfreq.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmsfreq.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmsfreq.asm
+time: 1 sec
+tmsper.obj <-- nonexistent
+ml x:\prj\tech\libsrc\timer\mktinc\tmsper.asm
+ Assembling: x:\prj\tech\libsrc\timer\mktinc\tmsper.asm
+time: 1 sec
+tmftab.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\timer\tmftab.c
+time: 1 sec
+tmlibt.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\timer\tmlibt.c
+time: 0 sec
+tmail.obj <-- nonexistent
+wcc386 x:\prj\tech\libsrc\timer\tmail.c
+time: 1 sec
+Archiving timer.lib.  Flavor = dbg.
+timer.lib <-- nonexistent
+time: 1 sec
+total time: 31 sec
+Deleting temporary files in mk174407.

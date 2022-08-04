@@ -1,0 +1,4 @@
+x:\prj\tech\libsrc\sndutil\splicer.c(140): Warning! W301: No prototype found for 'LOG2'
+x:\prj\tech\libsrc\sndutil\splicer.c(127): Warning! W301: No prototype found for 'LOG3'
+x:\prj\tech\libsrc\sndutil\splicer.c(149): Warning! W301: No prototype found for 'LOG0'
+x:\prj\tech\libsrc\sndutil\splicer.c(136): Warning! W301: No prototype found for 'LOG1'

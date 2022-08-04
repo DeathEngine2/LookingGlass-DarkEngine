@@ -1,0 +1,67 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+joystick.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dinput.h dynfunc.h inpapi.h inpbase.h inpcompo.h inpdynf.h inperr.h \
+	 joyapi.h joynew.h joystick.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mprintf.h objcguid.h prikind.h \
+	 pumpenum.h recapi.h recguid.h types.h wappapi.h wappguid.h
+
+kbstart.obj: appagg.h comtools.h defehand.h inpcompo.h kb.h types.h
+
+kbshut.obj: comtools.h defehand.h inpcompo.h kb.h recapi.h recguid.h types.h
+
+kbasctab.obj: error.h kb.h kbcook.h
+
+kbcntry.obj: error.h kb.h kbcntry.h kbcook.h
+
+mousesys.obj: _mouse.h appagg.h comtools.h dbg.h dbgmacro.h defehand.h \
+	 error.h fix.h fixedque.h gshelapi.h gshlguid.h indevapi.h \
+	 indvguid.h inpcompo.h inputimp.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h mouse.h mousedev.h mousesys.h \
+	 mousevel.h pumpenum.h recapi.h recguid.h thrdtool.h timer.h \
+	 tminit.h types.h wappapi.h wappguid.h
+
+kbsys.obj: comtools.h dbg.h dbgmacro.h error.h fixedque.h gshelapi.h \
+	 gshlguid.h inpcompo.h inputimp.h kb.h kbarray.h kbscan.h kbstate.h \
+	 lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h memmacro.h \
+	 pumpenum.h thrdtool.h types.h wappapi.h wappguid.h
+
+kbcook.obj: appagg.h comtools.h dbg.h dbgmacro.h error.h inputimp.h kb.h \
+	 kbcook.h kbmod.h kbscan.h lg.h lgalt.h lgassert.h lglocmsg.h \
+	 lglog.h memall.h memmacro.h pumpenum.h types.h wappapi.h wappguid.h
+
+kbwin.obj: kbs.h kbscan.h kbstate.h
+
+defehand.obj: appagg.h comtools.h dbg.h dbgmacro.h defehand.h error.h \
+	 indevapi.h indvguid.h inpcompo.h kb.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h memall.h memmacro.h mouse.h types.h
+
+joywin.obj: fix.h joystick.h joywin.h mprintf.h timer.h types.h
+
+hatcal.obj: fanjoy.h joystick.h
+
+fanjoy.obj: fanjoy.h joystick.h joywin.h
+
+recinput.obj: appagg.h comtools.h dbg.h dbgmacro.h error.h inpcompo.h \
+	 inputimp.h kb.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h memall.h \
+	 memmacro.h mouse.h mprintf.h recapi.h recguid.h types.h
+
+inpinit.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 error.h inpinit.h kb.h lg.h lgalt.h lgassert.h lglocmsg.h lglog.h \
+	 memall.h memmacro.h mouse.h objcguid.h prikind.h tminit.h types.h
+
+inpcompo.obj: appagg.h comtools.h inpcompo.h types.h
+
+inpdynf.obj: dinput.h dynfunc.h inpdynf.h
+
+inperr.obj: dbg.h dbgmacro.h dinput.h types.h
+
+joyold.obj: comtools.h defehand.h fanjoy.h inpcompo.h joystick.h joywin.h \
+	 mprintf.h recapi.h recguid.h types.h
+
+inpman.obj: aggmemb.h appagg.h comtools.h constrid.h dbg.h dbgmacro.h \
+	 dinput.h dlist.h dynfunc.h inpapi.h inpbase.h inpcompo.h inpdynf.h \
+	 inpman.h joyapi.h joynew.h joystick.h lgassert.h lglog.h objcguid.h \
+	 prikind.h pumpenum.h templexp.h types.h wappapi.h wappguid.h
+
+inpguid.obj: comtools.h inpguid.h inpinit.h types.h

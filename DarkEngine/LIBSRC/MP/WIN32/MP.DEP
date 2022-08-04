@@ -1,0 +1,45 @@
+
+
+qt.obj: dbg.h dbgmacro.h matrix.h matrixs.h mxang.h qt.h types.h 
+
+
+mpinit.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h motstruc.h mplist.h mpstack.h multiped.h mxang.h \
+         prikind.h qt.h res.h restypes.h types.h 
+
+
+mplist.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h mplist.h mpstack.h multiped.h mxang.h prikind.h qt.h \
+         res.h restypes.h types.h 
+
+
+mploco.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h mplist.h mpstack.h multiped.h mxang.h prikind.h qt.h \
+         res.h restypes.h types.h 
+
+
+mpmot.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h mplist.h mpstack.h multiped.h mxang.h prikind.h qt.h \
+         res.h restypes.h types.h 
+
+
+mpstack.obj: comtools.h datapath.h dbg.h dbgmacro.h fix.h lg.h lgalt.h \
+         lgassert.h lglocmsg.h lglog.h matrix.h matrixs.h memall.h \
+         memmacro.h motion.h mplist.h mpstack.h multiped.h mxang.h \
+         prikind.h qt.h res.h restypes.h types.h 
+
+
+mpupdate.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h mplist.h mprintf.h mpstack.h multiped.h mxang.h prikind.h \
+         qt.h res.h restypes.h types.h 
+
+
+mpvm.obj: comtools.h datapath.h dbg.h dbgmacro.h lg.h lgalt.h lgassert.h \
+         lglocmsg.h lglog.h matrix.h matrixs.h memall.h memmacro.h \
+         motion.h mplist.h mpstack.h multiped.h mxang.h prikind.h qt.h \
+         res.h restypes.h types.h 

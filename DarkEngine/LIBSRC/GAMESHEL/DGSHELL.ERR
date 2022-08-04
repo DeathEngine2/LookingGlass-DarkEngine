@@ -1,0 +1,11 @@
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(19): Error! E436: (col 39) cannot construct an abstract class 'cDosGameShell' 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(19): Note! N673: (col 39) 'cDosGameShell' has no implementation for the following pure virtual functions 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(19): Note! N674: (col 39) 'long stdcall IGameShell::BringToFront( void )' defined in: x:\prj\tech\h\gshelapi.h(149) (col 28) 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(20): Warning! W014: (col 1) no reference to symbol 'ppGameShell' 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(20): Note! N392: (col 1) 'IGameShell * * ppGameShell' in 'long _GameShellCreate( _GUID const &, IGameShell * *, IUnknown *, int, int )' defined in: x:\prj\tech\libsrc\gameshel\dgshell.cpp(17) (col 54) 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(20): Warning! W014: (col 1) no reference to symbol 'msecBlockSignal' 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(20): Note! N392: (col 1) 'int msecBlockSignal' in 'long _GameShellCreate( _GUID const &, IGameShell * *, IUnknown *, int, int )' defined in: x:\prj\tech\libsrc\gameshel\dgshell.cpp(17) (col 109) 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(45): Warning! W014: (col 1) no reference to symbol 'fFlags' 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(45): Note! N392: (col 1) 'int fFlags' in 'cDosGameShell::cDosGameShell( int, IUnknown * )' defined in: x:\prj\tech\libsrc\gameshel\dgshell.cpp(37) (col 34) 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(166): Warning! W014: (col 1) no reference to symbol 'pszCommandLine' 
+x:\prj\tech\libsrc\gameshel\dgshell.cpp(166): Note! N392: (col 1) 'char const * pszCommandLine' in 'int stdcall cDosGameShell::Exec( char const * )' defined in: x:\prj\tech\libsrc\gameshel\dgshell.cpp(163) (col 54) 

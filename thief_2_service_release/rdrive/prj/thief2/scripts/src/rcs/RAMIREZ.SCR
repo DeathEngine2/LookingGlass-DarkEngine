@@ -1,0 +1,683 @@
+head	 1.1;
+branch   ;
+access   ;
+symbols  ;
+locks    ; strict;
+comment  @@;
+
+
+1.1
+date	 1999.12.30.19.26.42;  author lbaldwin;  state Exp;
+branches ;
+next	 ;
+
+
+desc
+@stuff from ramirez for multiplaeyr stuff
+@
+
+
+
+1.1
+log
+@Initial revision
+@
+text
+@
+
+// Script:		Ramirez
+
+// Ramirez has the following behaviors controlled entirely by pseudoscripts:
+//  - on alertness 2 or 3, he attempts to push the alarm button near his desk
+
+// Ramirez wanders around the CountingRoom.  Basically, the script just pings him with 
+// a low priority goal every few seconds to go to a place in the CountingRoom.  One of them
+// is a 2-point line, so when he gets to the first he goes to the second next.  The point
+// of that one is to give the player a way to blackjack him.
+
+
+// @@NOTE / @@TBD:  So Ramirez is giving himself low priority goals pretty much the whole mission.
+// This is worth noting in case he is screwing up the universe somehow.
+
+// see also the script "RamirezOrder", below, for Ramirez interaction with servants behavior
+
+// INPUT: "PurseStolen" - broadcast "EndRamirez" on all CD links
+
+// OUTPUT: "EndRamirez" - when purse is stolen
+//				"DeadRamirez" - when Ramirez is killed
+
+BEGIN_SCRIPT (Ramirez, AI)
+
+METHODS:
+
+METHOD float GetMoveTime()
+{
+	return (float)Data.RandInt(8,20);
+}
+
+METHOD object GetDest()
+{
+	int i = Data.RandInt(1,4);
+
+	if (i == 1)
+	{
+		return Object.Named("BellPullSpot");
+	}
+	else if (i == 2)
+	{
+		return Object.Named("MoneySpot");
+	}
+	else 
+	{
+		return Object.Named("CountingRoomSpot");
+	}
+}
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		SetOneShotTimer("GoSomewhere",GetMoveTime());
+	}
+	DefaultOnSim();
+}
+
+OnMessage()
+{
+	if (MessageIs("PurseStolen"))
+	{
+		Link.BroadcastOnAllLinks(self,"EndRamirez","ControlDevice");
+	}
+	DefaultOnMessage();
+}
+
+
+OnSlain()
+{
+	Link.BroadcastOnAllLinks(self,"DeadRamirez","ControlDevice");
+
+	DefaultOnSlain();
+}
+
+
+OnTimer()
+{
+	if (message.name == "GoSomewhere")
+	{
+		GotoObjLoc(GetDest(),kSlow,kLowPriorityAction);
+		SetOneShotTimer("GoSomewhere",GetMoveTime());
+	}
+
+	DefaultOnTimer();
+}
+
+OnObjActResult()
+{
+	if (SuccessfulGoto(Object.Named("CountingRoomSpot")))
+	{
+		GotoObjLoc(Object.Named("RamirezSpot"),kSlow,kLowPriorityAction);
+	}
+
+	DefaultOnObjActResult();
+}
+
+END_SCRIPT (Ramirez)
+
+
+
+
+
+
+// Script:		MansionEscape
+
+// Triggers success condition for phase 2.
+
+// OUTPUT:	"MansionEscape" -		Sent to "Phase2StatusManger" when the player enters the room.
+
+
+
+
+// Script:		DoorGuard
+
+// The behavior of this guard is mostly controlled by pseudoscripts
+// and defendobj links.  He defends a door which he locks when he
+// sees it.  Thus if he goes up to alertness 3 (either cuz he spots the
+// player or hears an alarm, etc.) he fights the player if he can and
+// otherwise returns to the door to guard it.  The watchobj link to
+// the door makes him want to lock the door when he sees it, if it is unlocked.
+
+// This script performs the initial check to see if he should bother locking the
+// door.
+
+// INPUT:	"LockDoor?" -		from a pseudoscript, return TRUE if the door (specified 
+//										by message.data) is unlocked, FALE otherwise
+
+BEGIN_SCRIPT (DoorGuard,AI)
+
+METHODS:
+
+METHOD boolean DoorIsOpen (object Door)
+{
+	// @@TODO: use the "Open" enum instead of 1
+	return (Property.Get(Door,"RotDoor","Status")==1);
+}
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("LockDoor?"))
+	{
+		// @@TODO: instead of having the guard tool frob the door with the key on
+		// his belt to lock it, the door starts open and locked and he just shuts it
+		// @@TBD: the door doesn't close if it is LOCKED and open, does this need to be fixed?
+		if (DoorIsOpen((object)((int)message.data)))
+			Reply(TRUE);
+		else
+			Reply(FALSE);
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (DoorGuard)
+
+
+
+
+
+// Script:   SERVANTBELL
+
+// INPUT:	OnMessage, "TurnOn" - make a ringing sound, also sends output
+
+// OUTPUT:	Sends "ServantBell" message to all objects linked with 
+//				ControlDevice links.
+
+BEGIN_SCRIPT (ServantBell, RootScript)
+
+MESSAGES:
+
+OnMessage ()
+{
+	if (MessageIs("TurnOn"))
+	{
+		Sound.PlaySchema(self,"dinner_bell",self);
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (ServantBell)
+
+
+
+
+
+
+
+// Script:		RamirezOrder
+
+// The script to make Ramirez ring the bell when he gets a "RingNow" msg
+// We disallow ringing the bell for 60 seconds after ringing the bell
+// and 90 seconds after receiving a tray.
+
+
+// This script does not send signals when R dies, see "Ramirez", above, for that.
+
+// INPUT:	"RingNow" - translates to a "RingForServant" signal which the
+//					pseudoscript interprets
+//				message.data is a flag which if TRUE, causes R to ring the bell with his mind to 
+//				cut down on the delay associated with the completed execution of his pseudoscript
+
+BEGIN_SCRIPT (RamirezOrder, AI)
+
+States
+{
+	Normal,				// I am allowed to ring
+	NoRing,				// I should not ring
+	End					// dead or on alertness 3
+};
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		SetState(Normal);
+	}
+	DefaultOnSim();
+}
+
+OnMessage()
+{
+	if ( (MessageIs("RingNow")) && (StateIs((int)Normal)) )
+	{
+		boolean RingWithMind = (boolean)message.data;
+
+		if (!RingWithMind)
+			AI.Signal(self,"RingForServant");
+		else
+			FrobObj(Object.Named("ServantButton"));
+
+		SetState(NoRing);
+		SetOneShotTimer("AllowRing",60.0);
+	}
+	DefaultOnMessage();
+}
+
+OnSignalAI()
+{
+	if ( (message.signal == "HeresYourTray") && (StateIs((int)Normal)) )
+	{
+		SetState(NoRing);
+		SetOneShotTimer("AllowRing",90.0);
+	}
+
+	DefaultOnSignalAI();
+}
+
+OnSlain()
+{
+	SetState(End);
+	DefaultOnSlain();
+}
+
+OnAlertness()
+{
+	if (message.level == kHighAlert)
+	{
+		SetState(End);
+	}
+
+	DefaultOnAlertness();
+}
+
+OnTimer()
+{
+	if ( (message.name == "AllowRing") && (StateIs((int)NoRing)) )
+		SetState((int)Normal);
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (RamirezOrder)
+
+
+// Script:		OrderTriggerRoom
+
+// On player entry, if "Joe" (the servant who carries the tray) is not currently carrying a tray,
+// then we send Ramirez the "RingNow" msg, AFTER waiting for a delay which is specified by 
+// data on a ScriptParams link from the room to itself.  A negative delay sends the message to Ramirez
+// with a special flag that tells him to ring the bell with his mind, in order to minimize the delay.
+// This script also sends the message not more than once every 60 seconds, to keep from race conditions
+// when you tell Ramirez to ring the button, between when he just rang the button and when the servant
+// gets the tray.
+
+BEGIN_SCRIPT (OrderTriggerRoom,Room)
+
+METHODS:
+
+// returns the amount of time before the script should send the
+// msg to Ramirez.
+// the time is stored as data on the ScriptParams link from this object
+// to itself
+// if no such data exists, we return 0.0
+METHOD float GetDelay()
+{
+	float delay=0;
+
+	if (Link.AnyExist("ScriptParams",self,self))
+		delay = (float)Link.GetOne("ScriptParams",self,self).GetData();
+
+	return delay;
+}
+
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("CanSend",TRUE);
+	}
+	DefaultOnSim();
+}
+
+OnPlayerRoomEnter()
+{
+	if (	((boolean)GetData("CanSend")) &&
+			(!Object.HasMetaProperty(Object.Named("Joe"),Object.Named("ServantWithTray")))  )
+	{
+		if (GetDelay() >= 0)
+		{
+			SetOneShotTimer("SendNow",GetDelay());
+		}
+		else
+		{
+			// tell R to ring the bell with his mind right now
+			PostMessage(Object.Named("Ramirez"),"RingNow",TRUE);
+			SetOneShotTimer("AllowResend",60.0);
+		}
+
+
+		SetData("CanSend",FALSE);
+	}
+
+	DefaultOnPlayerRoomEnter();
+}
+
+
+OnTimer()
+{
+	if (message.name == "SendNow")
+	{
+		// tell R to ring the bell using his pseudoscript
+		PostMessage(Object.Named("Ramirez"),"RingNow",FALSE);
+		SetOneShotTimer("AllowResend",60.0);
+	}
+	else if (message.name == "AllowResend")
+	{
+		SetData("CanSend",TRUE);
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (OrderTriggerRoom)
+
+
+
+
+
+// Script:		GetTrayLoc
+
+// When this gets frobbed, it deletes the tray object that is
+// linked by a ControlDevice link and makes a new one in 90 seconds.
+
+// @@TODO: make this script and PutTrayLoc inherit from the same script
+
+BEGIN_SCRIPT (GetTrayLoc, RootScript)
+
+MESSAGES:
+
+OnFrobWorldEnd()
+{
+	if (Link.AnyExist("ControlDevice",self))
+	{
+//		Debug.MPrint(" Deleting the tray, obj",Link.GetOne("ControlDevice",self).To());
+		Object.Destroy(Link.GetOne("ControlDevice",self).To());
+		SetOneShotTimer("MakeNewTray",90.0);
+	}
+	else
+	{
+//		Debug.MPrint(" I'm not control device linked to a tray.");
+	}
+
+	DefaultOnFrobWorldEnd();
+}
+
+
+OnTimer()
+{
+	if (message.name == "MakeNewTray")
+	{
+//		Debug.MPrint(" Time to make a new tray");
+		if (!Link.AnyExist("ControlDevice",self))
+		{
+//			Debug.MPrint(" Making a new tray");
+			// clone the SourceTray in the green room and place it at my location
+			object NewTray = Object.BeginCreate(Object.Named("SourceTray"));
+			Object.EndCreate (NewTray);
+			Object.Teleport(NewTray,vector(0,0,0),vector(0,0,0),self);
+
+			// ControlDevice link myself to this tray
+			Link.Create("ControlDevice",self,NewTray);
+		}
+		else
+		{
+//			Debug.MPrint(" There's a tray here already, so I won't make a new one.");
+		}
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (GetTrayLoc)
+
+
+
+
+
+
+// Script:		PutTrayLoc
+
+// When this gets frobbed, it creates a tray object at its own location and 
+// links to it with a ControlDevice link. 90 seconds later, it deletes the tray.
+
+BEGIN_SCRIPT (PutTrayLoc, RootScript)
+
+MESSAGES:
+
+OnFrobWorldEnd()
+{
+	if (!Link.AnyExist("ControlDevice",self))
+	{
+//		Debug.MPrint(" Making a new tray");
+		// clone the SourceTray in the green room and place it at my location
+		object NewTray = Object.BeginCreate(Object.Named("SourceTray"));
+		Object.EndCreate (NewTray);
+//		Debug.MPrint(" I just made tray ",NewTray);
+		Object.Teleport(NewTray,vector(0,0,0),vector(0,0,0),self);
+
+		// ControlDevice link myself to this tray
+		Link.Create("ControlDevice",self,NewTray);
+
+		SetOneShotTimer("DestroyTray",90.0);
+	}
+	else
+	{
+//		Debug.MPrint(" There's a tray here already, so I won't make a new one.");
+	}
+
+	DefaultOnFrobWorldEnd();
+}
+
+
+OnTimer()
+{
+	if (message.name == "DestroyTray")
+	{
+//		Debug.MPrint(" Time to destroy the tray");
+
+		if (Link.AnyExist("ControlDevice",self))
+		{
+//			Debug.MPrint(" Deleting the tray, obj",Link.GetOne("ControlDevice",self).To());
+ 		Object.Destroy(Link.GetOne("ControlDevice",self).To());
+		}
+		else
+		{
+//			Debug.MPrint(" I'm not control device linked to a tray.");
+		}
+	}
+
+	DefaultOnTimer();
+}
+
+END_SCRIPT (PutTrayLoc)
+
+
+
+
+
+
+// Script:		Servant
+
+// On DeadRamirez, remove watchobj link to Ramirez and add watchobj link to RamirezSpot.
+
+BEGIN_SCRIPT (Servant, AI)
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("DeadRamirez"))
+	{
+		Debug.MPrint(" Servant is changing Ramirez related links because Ramirez has been killed.");
+		Link.Destroy(Link.GetOne("AIWatchObj",self,Object.Named("Ramirez")));
+		Link.Create("AIWatchObj",self,Object.Named("RamirezSpot"));
+	}
+
+	DefaultOnMessage();
+}
+
+END_SCRIPT (Servant)
+
+
+
+
+
+// Script:		ServantWithTray
+
+// On alertness or damage, remove ServantWithTray metaprop and create and teleport in a
+// tray and a bottle, for the purposes of falling to the ground excitedly.
+// We clone the "ScardeyTray" and "ScardeyBottle" in the green room rather than
+// "SourceTray" so it will have physics and fall.  We don't want "SourceTray" to
+// have physics or R will get alerted by the sound of the servant putting it down.
+
+// This script is intended to go on the ServantWithTray metaprop rather than the 
+// instance of the servant.
+
+BEGIN_SCRIPT (ServantWithTray, AI)
+
+METHODS:
+
+METHOD void DropTray()
+{
+	if (	(Object.HasMetaProperty(self,Object.Named("ServantWithTray"))) &&
+			(!(boolean)GetData("AlreadyDropped"))  )
+	{
+		Object.RemoveMetaProperty(self,Object.Named("ServantWithTray"));
+
+//		Debug.MPrint(" Making stuff to drop!!");
+
+		// clone the source tray in the green room and place it in front of me
+		object NewTray = Object.BeginCreate(Object.Named("ScardeyTray"));
+		Object.EndCreate (NewTray);
+		Object.Teleport(NewTray,vector(1.5,0,1.5),vector(350,350,345),self);
+
+		// clone the source bottle in the green room and place it in front of me
+		object NewBottle = Object.BeginCreate(Object.Named("ScardeyBottle"));
+		Object.EndCreate (NewBottle);
+		Object.Teleport(NewBottle,vector(1.5,0,2.0),vector(15,10,10),self);
+
+		// clone the source bread in the green room and place it in front of me
+		object NewBread = Object.BeginCreate(Object.Named("ScardeyBread"));
+		Object.EndCreate (NewBread);
+		Object.Teleport(NewBread,vector(1.5,-1,2.0),vector(0,5,355),self);
+
+
+		SetData("AlreadyDropped",TRUE);
+	}
+}
+
+MESSAGES:
+
+OnSim()
+{
+	if (message.starting)
+	{
+		SetData("AlreadyDropped",FALSE);
+	}
+	DefaultOnSim();
+}
+
+OnAlertness()
+{
+
+	if (message.level == 3)
+	{
+		DropTray();
+	}
+	DefaultOnAlertness();
+
+}
+
+OnDamage()
+{
+	DropTray();
+	DefaultOnDamage();
+}
+
+
+OnSlain()
+{
+	DropTray();
+	DefaultOnSlain();
+}
+
+
+OnStimulus(Knockout)
+{
+	DropTray();
+}
+
+OnBeginScript()
+{
+	ActReact.SubscribeToStimulus(self,"Knockout");
+	DefaultOnBeginScript();
+}
+
+OnEndScript()
+{
+	ActReact.UnsubscribeToStimulus(self,"Knockout");
+	DefaultOnEndScript();
+}
+
+// This will allow us to get the stimulus
+SCRIPT_BEGIN_MESSAGE_MAP()
+	STIMULUS_MESSAGE_MAP_ENTRY(Knockout)
+SCRIPT_END_MESSAGE_MAP()
+
+END_SCRIPT (ServantWithTray)
+
+
+
+
+
+// Script:		RamirezAlarm
+
+// When a "TurnOn" msg passes through this relay,
+// the alarm is being rung, so it removes all 
+// metaprops and links that cause guys to ring the alarm.
+
+// Also, it sends "TurnOn" to Phase3StatusManager which will
+// cause the street thugs to get teleported in.  After all, you've
+// been spotted.
+
+// Lastly, it sends "TurnOn" to ServantKiller, to get rid of all the 
+// random servants walking around (to preserve framerate)
+
+BEGIN_SCRIPT (RamirezAlarm, RootScript)
+
+MESSAGES:
+
+OnMessage()
+{
+	if (MessageIs("TurnOn")) 
+	{
+		Object.RemoveMetaPropertyFromMany("RingTheAlarm","@@Human");
+		Link.DestroyMany("AIDefendObj", "@@Human", "@@RamirezButton");
+		Link.DestroyMany("AIWatchObj", "@@Human", "@@RamirezButton");
+		PostMessage(Object.Named("Phase3StatusManager"),"TurnOn");
+		PostMessage(Object.Named("ServantKiller"),"TurnOn");
+	}
+}
+
+END_SCRIPT (RamirezAlarm)
+
+
+@

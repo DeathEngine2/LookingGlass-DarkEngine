@@ -1,0 +1,11 @@
+### OPUS MKMF:  Do not remove this line!  Generated dependencies follow.
+
+filefind.obj: nameconv.h
+
+gifdump.obj: 2d.h dev2d.h fix.h font.h g2.h matrixs.h mxang.h types.h
+
+pcxdump.obj: dbg.h dbgmacro.h dev2d.h dump.h fix.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h types.h
+
+bmpdump.obj: dbg.h dbgmacro.h dev2d.h dump.h fix.h lg.h lgalt.h lgassert.h \
+	 lglocmsg.h lglog.h matrixs.h memall.h memmacro.h mxang.h types.h

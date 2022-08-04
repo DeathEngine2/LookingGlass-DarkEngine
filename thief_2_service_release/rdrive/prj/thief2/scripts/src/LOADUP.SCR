@@ -1,0 +1,70 @@
+/*
+@Copyright Looking Glass Studios, Inc.
+1996,1997,1998,1999,2000 Unpublished Work.
+*/
+
+
+/* Script on player to fill out his inventory based on items held at the end
+   of "Courier" and "Cargo".
+   */
+BEGIN_SCRIPT(Loadup, RootScript)
+METHODS:
+   METHOD void LoadInventoryFrom(object arch, boolean descend)
+   {
+      if(!Object.Exists(arch)) return;
+
+      if(Property.Possessed(arch,"CombineType"))
+      {
+         string combine="CarryInv";
+         integer count=0;
+         combine=combine+string(Property.Get(arch,"CombineType"));
+         count=Quest.Get(combine);
+
+         Debug.MPrint(combine,"=",count);
+
+         if(count>0)
+         {
+            object newobj=Object.Create(arch);
+            if(Property.Possessed(newobj,"StackCount"))
+               Property.Set(newobj,"StackCount",count);
+            Container.Add(newobj,self);
+            Quest.Set(combine,0);
+         }
+      }
+
+      if(descend && Link.AnyExist("~MetaProp",arch))
+      {
+         linkset subtypes=Link.GetAll("~MetaProp",arch);
+         while(subtypes.AnyLinksLeft())
+         {
+            LoadInventoryFrom(subtypes.Link().To(),TRUE);
+            subtypes.NextLink();
+         }
+      }
+   }
+MESSAGES:
+   OnSim()
+   {
+      if(message.starting && Object.InheritsFrom(self,"Avatar"))
+      {
+         LoadInventoryFrom("Grenadz",TRUE);
+         LoadInventoryFrom("SpeedPotion",FALSE);
+         LoadInventoryFrom("AirPotion",FALSE);
+         LoadInventoryFrom("HealingPotion",FALSE);
+         LoadInventoryFrom("InvisiPotion",FALSE);
+         LoadInventoryFrom("SlowfallPotion",FALSE);
+         LoadInventoryFrom("Flare",FALSE);
+         LoadInventoryFrom("broadhead",FALSE);
+         LoadInventoryFrom("water",FALSE);
+         LoadInventoryFrom("firearr",FALSE);
+         LoadInventoryFrom("noise",FALSE);
+         LoadInventoryFrom("EarthArrow",FALSE);
+         LoadInventoryFrom("GasArrow",FALSE);
+         LoadInventoryFrom("RopeArrow",FALSE);
+      }
+      DefaultOnSim();
+   }
+END_SCRIPT(Loadup)
+
+
+
